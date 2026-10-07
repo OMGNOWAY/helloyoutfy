@@ -1,7 +1,7 @@
 // ============================================================================
 // BOOTSTRAP
 // ============================================================================
-
+var thisshouldwork = "hi";
 let backgroundImages = '';
 try { backgroundImages = localStorage.getItem('youtifiy_bgimage') || ''; } catch (e) {}
 
