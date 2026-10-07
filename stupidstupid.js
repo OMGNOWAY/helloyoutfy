@@ -1,7 +1,7 @@
 // ============================================================================
 // BOOTSTRAP
 // ============================================================================
-var thisshouldwork = "hi";
+console.log("the bootstrap works btw");
 let backgroundImages = '';
 try { backgroundImages = localStorage.getItem('youtifiy_bgimage') || ''; } catch (e) {}
 
