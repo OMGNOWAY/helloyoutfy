@@ -1,0 +1,925 @@
+<input type="file" style="display: none;">
+<div id="artBg">
+  <div class="art-blob" id="blob1"></div>
+  <div class="art-blob" id="blob2"></div>
+  <div class="art-blob" id="blob3"></div>
+  <div class="art-blob" id="blob4"></div>
+  <div class="art-blob" id="blob5"></div>
+  <div class="art-blob" id="blob6"></div>
+</div>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand" onclick="toggleSidebar()">
+      <div class="logo" id="logo">
+
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="32" cy="32" r="3"></circle>
+          <circle cx="24" cy="16" r="2.5"></circle>
+          <circle cx="48" cy="24" r="2.5"></circle>
+          <circle cx="44" cy="48" r="2.5"></circle>
+          <circle cx="16" cy="40" r="2.5"></circle>
+          <path d="M26 18 Q32 26 30 30"></path>
+          <path d="M46 26 Q38 30 34 32"></path>
+          <path d="M42 46 Q36 38 34 34"></path>
+          <path d="M18 38 Q26 34 30 34"></path>
+          <path d="M24 18 Q16 28 18 38"></path>
+          <path d="M48 24 Q52 36 44 48"></path>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">Youtifiy</div>
+        <div class="brand-sub" id="brandversion">1.4.3</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section"></div><div class="sidebar-section"></div>
+    <nav class="nav">
+      <div class="nav-item active" data-view="home" onclick="returnToHome()">
+        <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+</svg></span>
+        <span class="nav-text">Home</span>
+      </div>
+      <div class="nav-item" data-view="search" onclick="returnTo('search')">
+        <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="11" cy="11" r="8"></circle>
+  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+</svg></span>
+        <span class="nav-text">Search YouTube</span>
+      </div>
+      <div class="nav-item" data-view="downloads" onclick="returnTo('downloads')">
+        <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+  <polyline points="7 10 12 15 17 10"></polyline>
+  <line x1="12" y1="15" x2="12" y2="3"></line>
+</svg></span>
+        <span class="nav-text">Downloads</span>
+      </div>
+      <div class="nav-item" data-view="stats" onclick="returnTo('stats')">
+        <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="18" y1="20" x2="18" y2="10"></line>
+  <line x1="12" y1="20" x2="12" y2="4"></line>
+  <line x1="6" y1="20" x2="6" y2="14"></line>
+</svg></span>
+        <span class="nav-text">Stats</span>
+      </div>
+      <div class="nav-item" data-view="none" onclick="returnTo('album')">
+        <span class="nav-icon">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="10"></circle>
+  <circle cx="12" cy="12" r="4"></circle>
+  <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"></circle>
+</svg>
+        </span>
+        <span class="nav-text">Albums</span>
+      </div>
+    </nav>
+    <div class="sb-search-slot" id="sbSearchSlot"><div class="search-container">
+        <input type="text" class="search-input" placeholder="Search for songs, artists..." id="searchInput"><span class="search-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="11" cy="11" r="8"></circle>
+  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+</svg></span>
+      </div></div>
+
+    <div class="sidebar-section"></div>
+
+
+    <div class="sidebar-section">
+      <div class="nav-item-click" data-view="none" onclick="openFolderPicker()">
+        <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="12" y1="5" x2="12" y2="19"></line>
+  <line x1="5" y1="12" x2="19" y2="12"></line>
+</svg></span>
+        <span class="btn-text">Import Folder</span>
+    </div>
+      <div class="nav-item-click" data-view="none" onclick="showChangelogModal(true)">
+        <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+</svg></span>
+        <span class="btn-text">Changelog</span>
+      </div>
+      <div class="nav-item-click" data-view="none" onclick="YoutifyChat.toggle()">
+        <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+</svg></span>
+        <span class="btn-text">Chat</span>
+        <span class="yc-nav-pip" id="ycNavPip"></span>
+      </div>
+      <div class="nav-item-click" data-view="none" onclick="DevConsole.toggle()">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 17 10 11 4 5"></polyline>
+        <line x1="12" y1="19" x2="20" y2="19"></line>
+    </svg>
+  </div>
+      <input type="file" id="fileInput" accept="audio/*" multiple="">
+      <input type="file" id="folderInput" webkitdirectory="" directory="" multiple="">
+      </div>
+
+    <div class="nav-item-click" data-view="none" onclick="openSettings()" style="margin-top:auto;">
+      <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="3"></circle>
+  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+</svg></span>
+      <span class="nav-text">Settings</span>
+    </div>
+  </aside>
+
+  <main class="main" id="mainContent">
+    <div class="header" id="searchContainer">
+      
+    </div>
+
+    <div id="homeView">
+      <section class="ios-home-hero">
+        <div class="hero-now">
+          <div class="hero-art" id="heroArt"></div>
+          <div class="hero-now-meta">
+            <div class="hero-now-label">Now Playing</div>
+            <div class="hero-now-title" id="heroTitle">No track playing</div>
+            <div class="hero-now-artist" id="heroArtist">Choose something from your library</div>
+            <div class="hero-status" id="heroStatus">0 songs ready</div>
+          </div>
+        </div>
+      </section>
+      <div class="section-header">
+      </div>
+
+      <div class="queue-container">
+        <div class="queue-header">
+          <div class="queue-title">Songs</div>
+          <div class="queue-controls">
+            <div class="player-title queue-status" id="QueueSearchStatus"></div>
+            <button class="queue-utility-btn" onclick="jumpToCurrentTrack()" title="Jump to now playing"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="M3 12h3"></path><path d="M18 12h3"></path></svg>Now Playing</button>
+            <button class="queue-utility-btn" onclick="shuffleQueue()" title="Shuffle queue"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>Shuffle</button>
+            <div class="queue-overflow">
+              <button class="queue-utility-btn queue-sort-toggle" onclick="toggleQueueSort(event)" title="Sort queue" aria-haspopup="true" aria-expanded="false"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12"></path><path d="M3 12h8"></path><path d="M3 18h5"></path><path d="M17 9l3-3 3 3"></path><path d="M20 6v12"></path></svg><span class="queue-sort-label">Sort</span></button>
+              <div class="queue-overflow-menu queue-sort-menu" role="menu">
+                <button data-sort="title" onclick="sortQueueBy('title')" role="menuitem">Title</button>
+                <button data-sort="artist" onclick="sortQueueBy('artist')" role="menuitem">Artist</button>
+                <button data-sort="album" onclick="sortQueueBy('album')" role="menuitem">Album</button>
+                <button data-sort="duration" onclick="sortQueueBy('duration')" role="menuitem">Duration</button>
+              </div>
+            </div>
+            <div class="queue-overflow">
+              <button class="queue-utility-btn queue-overflow-toggle" id="queueOverflowToggle" onclick="toggleQueueOverflow(event)" title="More queue actions" aria-label="More queue actions" aria-expanded="false"><span aria-hidden="true">•••</span></button>
+              <div class="queue-overflow-menu" id="queueOverflowMenu" role="menu">
+                <button id="clearQueueSearchBtn" onclick="clearQueueSearch();closeQueueOverflow()" role="menuitem" style="display: none;">Clear search</button>
+                <button onclick="playRandomTrack();closeQueueOverflow()" role="menuitem">Random track</button>
+                <button id="favoriteNowBtn" onclick="toggleFavoriteCurrentTrack();closeQueueOverflow()" role="menuitem">Favorite current track</button>
+                <button onclick="copyNowPlaying();closeQueueOverflow()" role="menuitem">Copy now playing</button>
+                <div class="queue-overflow-divider"></div>
+                <div class="queue-storage-info" id="StorageInfo"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="queue-list" id="queueList">
+          <div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div><div class="empty-title">Your queue is empty</div><div class="empty-subtitle">Import some music to get started</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="searchView" style="display:none">
+      <div class="search-panel">
+        <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Search YouTube</h2>
+        <div class="search-panel-header">
+          <input class="search-panel-input" id="ytSearchInput" placeholder="Search for songs, artists, albums...">
+          <button class="btn primary" onclick="searchYouTube()">Search</button>
+        </div>
+        <div class="search-results" id="searchResults"></div>
+      </div>
+    </div>
+
+    <div id="downloadsView" style="display:none">
+      <div class="search-panel">
+        <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Downloads</h2>
+        <div class="search-panel-header">
+          <input class="search-panel-input" id="ytUrlInput" placeholder="Enter YouTube URL or ID...">
+          <button class="btn primary" onclick="addDownload()">Add Download</button>
+        </div>
+        <div class="search-results" id="downloadList">
+          <div class="empty-state">
+            <div class="empty-icon"><span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="18" y1="20" x2="18" y2="10"></line>
+  <line x1="12" y1="20" x2="12" y2="4"></line>
+  <line x1="6" y1="20" x2="6" y2="14"></line>
+</svg></span></div>
+            <div class="empty-title">No downloads yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="statsView" style="display:none">
+  <div class="search-panel">
+    <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Playback Statistics</h2>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stats-card">
+        <h4 id="statTotalPlays">0</h4>
+        <p>Total Plays</p>
+      </div>
+      <div class="stats-card">
+        <h4 id="statTotalTime">0h</h4>
+        <p>Listening Time</p>
+      </div>
+      <div class="stats-card">
+        <h4 id="statTopTrack">-</h4>
+        <p>Top Track</p>
+      </div>
+      <div class="stats-card" id="topartist">
+        <h4 id="statTopArtist">-</h4>
+        <p>Top Artist</p>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-top:32px;">
+      <div class="settings-section-title">Top Tracks</div>
+      <div class="top-tracks-list" id="topTracksList">
+        <p style="color:var(--text-muted);">No play data yet. Play some songs!</p>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-top:24px;">
+      <div class="settings-section-title">Recently Played</div>
+      <div class="top-tracks-list" id="recentTracksList">
+        <p style="color:var(--text-muted);">No history yet</p>
+      </div>
+    </div>
+
+    <button class="btn secondary" onclick="resetStats()" style="margin-top:24px;width:100%;background:linear-gradient(135deg,#ff4444 0%,#ff6b6b 100%);border:none;color:white;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="3 6 5 6 21 6"></polyline>
+  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+  <line x1="10" y1="11" x2="10" y2="17"></line>
+  <line x1="14" y1="11" x2="14" y2="17"></line>
+</svg> Reset All Statistics
+    </button>
+  </div>
+</div>
+  </main>
+<div>
+<div class="player" id="player">
+    <div class="player-track">
+      <img src="" alt="" style="display: none;" class="player-img" id="playerImg" role="button" tabindex="0" title="Open lyrics">
+      <div class="player-info">
+            <div class="player-title" id="playerTitle">No track playing</div>
+            <div class="player-artist" id="playerArtist">Select a track to play</div>
+      </div>
+          <div class="uq-panel" id="uqPanel" aria-label="Queue">
+            <div class="uq-head">
+              <div class="uq-head-title">
+                <span>Queue</span>
+                <span class="uq-head-count" id="uqCount">0</span>
+              </div>
+              <button class="uq-clear" onclick="uqClear()">Clear</button>
+            </div>
+            <div id="uqList"><div class="uq-empty">Nothing queued...</div></div>
+          </div>
+    </div>
+
+
+
+    <div class="player-controls-section">
+      <div class="player-controls">
+        <button class="player-btn" onclick="toggleShuffle()" id="shuffleBtn"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="16 3 21 3 21 8"></polyline>
+  <line x1="4" y1="20" x2="21" y2="3"></line>
+  <polyline points="21 16 21 21 16 21"></polyline>
+  <line x1="15" y1="15" x2="21" y2="21"></line>
+  <line x1="4" y1="4" x2="9" y2="9"></line>
+</svg></button>
+        <button class="player-btn" onclick="previousTrack()"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <polygon points="19 20 9 12 19 4 19 20"></polygon>
+  <rect x="5" y="4" width="2" height="16"></rect>
+</svg></button>
+        <button class="player-btn play-pause" onclick="togglePlay()" id="playPauseBtn"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+</svg></button>
+        <button class="player-btn" onclick="nextTrack(0, false)"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <polygon points="5 4 15 12 5 20 5 4"></polygon>
+  <rect x="17" y="4" width="2" height="16"></rect>
+</svg></button>
+        <button class="player-btn" onclick="toggleRepeat()" id="repeatBtn"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="17 1 21 5 17 9"></polyline>
+  <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+  <polyline points="7 23 3 19 7 15"></polyline>
+  <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+</svg></button>
+      </div>
+      <div class="progress-section">
+        <span class="time" id="currentTime">0:00</span>
+        <div class="progress-bar" id="progressBar" onclick="seekTo(event)">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <span class="time" id="duration">0:00</span>
+      </div>
+    </div>
+
+    <div class="player-embed" id="playerEmbed">
+      <!-- put the queue thing in here -->
+      <div class="player-embed-stage" id="playerEmbedStage">
+        <div class="player-embed-face player-embed-lyrics" id="playerEmbedLyricsFace">
+          <div class="player-embed-header">
+            <span class="player-embed-label">🎤 Lyrics</span>
+            <button class="btn secondary lyrics-fetch-btn" style="padding:2px 8px;font-size:11px;" onclick="fetchCurrentTrackLyrics()" title="Fetch lyrics for the current track">⟳ Fetch</button>
+            <button class="btn secondary lyrics-popout-btn" style="padding:2px 8px;font-size:11px;" onclick="openLyricsPopout()" title="Pop out lyrics into a floating window">⧉ Pop out</button>
+          </div>
+          <div class="player-embed-lyrics-content" id="playerEmbedLyricsContent"><div class="lyrics-empty"><div class="lyrics-empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div><div>Press the "Fetch" button to get lyrics</div><div style="font-size:12px;margin-top:8px;opacity:0.7;"></div></div></div>
+        </div>
+        <div class="player-embed-face player-embed-eq" id="playerEmbedEqFace">
+          <div class="player-embed-header">
+            <span class="player-embed-label">🎛️ Equalizer</span>
+          </div>
+          <div class="player-embed-eq-content">
+            <div class="eq-slider">
+              <label>Bass <span id="bassValueEmbed">0</span></label>
+              <input type="range" min="-36" max="36" value="0" id="bassSliderEmbed" oninput="updateEQ('bass', this.value)">
+            </div>
+            <div class="eq-slider">
+              <label>Mid <span id="midValueEmbed">0</span></label>
+              <input type="range" min="-12" max="12" value="0" id="midSliderEmbed" oninput="updateEQ('mid', this.value)">
+            </div>
+            <div class="eq-slider">
+              <label>Treble <span id="trebleValueEmbed">0</span></label>
+              <input type="range" min="-12" max="12" value="0" id="trebleSliderEmbed" oninput="updateEQ('treble', this.value)">
+            </div>
+            <div class="eq-slider">
+              <label>Speed <span id="speedValueEmbed">1</span></label>
+              <input type="range" min="0.1" max="2" step="0.05" value="1" id="speedSliderEmbed" oninput="setPlaybackSpeed(this.value); document.getElementById('speedValueEmbed').innerHTML = this.value;">
+            </div>
+            <div class="eq-slider">
+              <label>Crossfade <span id="crossfadeValue"></span></label>
+              <input type="range" min="0" max="10" value="5" id="crossfadeSliderEmbed" oninput="updateCrossfade(this.value)">
+            </div>
+            <div class="eq-slider">
+              <label>Gain <span id="gainValueEmbed">100%</span></label>
+              <input type="range" min="50" max="150" value="100" id="gainSliderEmbed" oninput="updateGain(this.value)">
+            </div>
+          </div>
+        </div>
+        <div class="player-embed-face player-embed-queue" id="playerEmbedQueueFace">
+          <div class="player-embed-header">
+            <span class="player-embed-label">Queue<span class="uq-head-count" id="uqEmbedCount">0</span></span>
+            <button class="btn secondary" style="padding:2px 8px;font-size:11px;min-height:0;" onclick="uqClear()" title="Clear the queue">Clear</button>
+          </div>
+          <div class="uq-embed-now" id="uqEmbedNow"></div>
+          <div class="uq-embed-list" id="uqEmbedList"><div class="uq-empty">Nothing queued...</div></div>
+        </div>
+      </div>
+
+      <div class="player-embed-face player-embed-eq" id="playerEmbedEqFace">
+
+      </div>
+    </div><div class="player-right">
+      <button class="lyrics-toggle-btn active" id="lyricsToggleBtn" onclick="handleLyricsButtonClick()" style="padding:0;" title="Lyrics"><svg style="display:block;margin:auto;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+  <line x1="12" y1="19" x2="12" y2="23"></line>
+  <line x1="8" y1="23" x2="16" y2="23"></line>
+</svg>
+</button><button class="effects-toggle-btn" id="effectsToggleBtn" onclick="handleEffectsButtonClick()" title="Equalizer"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="4" y1="21" x2="4" y2="14"></line>
+  <line x1="4" y1="10" x2="4" y2="3"></line>
+  <line x1="12" y1="21" x2="12" y2="12"></line>
+  <line x1="12" y1="8" x2="12" y2="3"></line>
+  <line x1="20" y1="21" x2="20" y2="16"></line>
+  <line x1="20" y1="12" x2="20" y2="3"></line>
+  <line x1="1" y1="14" x2="7" y2="14"></line>
+  <line x1="9" y1="8" x2="15" y2="8"></line>
+  <line x1="17" y1="16" x2="23" y2="16"></line>
+</svg></button><button class="uq-toggle-btn" id="uqBtn" onclick="uqToggle()" title="Queue" aria-label="Queue"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><polygon points="16 13 22 17 16 21 16 13" fill="currentColor"></polygon></svg><span class="uq-toggle-badge" id="uqBadge">0</span></button><button class="volume-btn" id="volumebutton" onclick="toggleMute()" title="Mute"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 10v4h3l5 4V6l-5 4H4z"></path>
+  <path d="M16 9.5a4 4 0 0 1 0 5"></path>
+  <path d="M18.8 7a7.5 7.5 0 0 1 0 10"></path>
+</svg></button>
+<div class="volume-slider" onclick="setVolume(event)">
+          <div class="volume-fill" id="volumeFill" style="width: 100%;"></div>
+      </div>
+    </div>
+
+
+  </div>
+</div>
+
+<!-- LYRICS PANEL -->
+<div id="lyricsPanel" class="lyrics-panel">
+  <div class="lyrics-header">
+    <span class="lyrics-title">Lyrics</span>
+      <button class="btn secondary lyrics-fetch-btn" style="padding:2px 8px;font-size:11px;margin-right:8px;" onclick="fetchCurrentTrackLyrics()" title="Fetch lyrics for the current track">⟳ Fetch</button>
+      <button class="btn secondary lyrics-popout-btn" style="padding:2px 8px;font-size:11px;margin-right:8px;" onclick="openLyricsPopout()" title="Pop out lyrics into a floating window">⧉ Pop out</button>
+      <button class="lyrics-close" onclick="toggleLyrics()">✕</button>
+  </div>
+  <div class="lyrics-content" id="lyricsContent"><div class="lyrics-empty"><div class="lyrics-empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div><div>Press the "Fetch" button to get lyrics</div><div style="font-size:12px;margin-top:8px;opacity:0.7;"></div></div></div>
+</div>
+
+
+<!-- APPLE MUSIC-STYLE FULL-SCREEN LYRICS PLAYER -->
+<div id="fullLyricsPlayer" class="full-lyrics-player" aria-hidden="true">
+  <div class="full-lyrics-topbar">
+    <button class="full-lyrics-close" type="button" onclick="closeFullLyricsPlayer()" aria-label="Close lyrics player" title="Close">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+
+  <div class="full-lyrics-main">
+    <section class="full-lyrics-art-side">
+      <img id="fullLyricsArt" class="full-lyrics-art" src="https://youtify.pythonanywhere.com/welcome/default/index" alt="">
+      <div class="full-lyrics-track-info">
+        <div id="fullLyricsTitle" class="full-lyrics-title">No track playing</div>
+        <div id="fullLyricsArtist" class="full-lyrics-artist">Select a track to play</div>
+      </div>
+
+      <div class="full-lyrics-controls">
+        <div class="full-lyrics-progress-row">
+          <span id="fullLyricsCurrentTime" class="full-lyrics-time">0:00</span>
+          <div id="fullLyricsProgress" class="progress-bar" onclick="seekFullLyricsProgress(event)">
+            <div id="fullLyricsProgressFill" class="full-lyrics-progress-fill" style="width: 0%;"></div>
+          </div>
+          <span id="fullLyricsDuration" class="full-lyrics-time">0:00</span>
+        </div>
+
+        <div class="full-lyrics-buttons">
+          <button class="btn secondary lyrics-fetch-btn" style="padding:2px 8px;font-size:11px;" onclick="fetchCurrentTrackLyrics()" title="Fetch lyrics for the current track">⟳ Fetch</button>
+          <button class="player-btn" type="button" onclick="previousTrack()" title="Previous">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 5h2v14H6zM19 6.5v11L9.5 12z"></path>
+            </svg>
+          </button>
+          <button class="play-pause player-btn" id="fullLyricsPlayBtn" type="button" onclick="togglePlay()" title="Play/Pause">
+            <svg id="fullLyricsPlayIcon" width="21" height="21" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+          </button>
+          <button class="player-btn" type="button" onclick="nextTrack(0, false)" title="Next">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 5h2v14h-2zM5 6.5v11l9.5-5.5z"></path>
+            </svg>
+          </button>
+          <button class="btn secondary lyrics-popout-btn" style="padding:2px 8px;font-size:11px;margin-right:8px;" onclick="openLyricsPopout()" title="Pop out lyrics into a floating window">⧉ Pop out</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="full-lyrics-lyrics-side">
+      <div class="full-lyrics-heading">Lyrics</div>
+      <div id="fullLyricsContent" class="full-lyrics-content"><div class="lyrics-empty"><div class="lyrics-empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div><div>Press the "Fetch" button to get lyrics</div><div style="font-size:12px;margin-top:8px;opacity:0.7;"></div></div></div>
+    </section>
+  </div>
+</div>
+
+<!-- EFFECTS PANEL -->
+<div class="effects-panel" id="effectsPanel">
+  <div class="modal-header" style="margin-bottom: 24px;">
+    <h2 class="modal-title">Audio Effects</h2>
+    <button class="modal-close" onclick="toggleEffects()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="18" y1="6" x2="6" y2="18"></line>
+  <line x1="6" y1="6" x2="18" y2="18"></line>
+</svg></button>
+  </div>
+
+  <div class="settings-section">
+    <input style="visibility: hidden" id="pitchCheckbox" type="checkbox">
+    <div class="settings-section-title">Playback Speed</div>
+    <div class="eq-slider">
+      <label>Speed<span id="speedValue">1</span></label>
+      <input type="range" min="0.1" max="2" step="0.05" value="1" id="speedSlider" oninput="setPlaybackSpeed(this.value); document.getElementById('speedValue').innerHTML = `${this.value}`;">
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">Equalizer</div>
+    <div class="eq-slider">
+      <label>Bass <span id="bassValue">0</span></label>
+      <input type="range" min="-36" max="36" value="0" id="bassSlider" oninput="updateEQ('bass', this.value)">
+    </div>
+    <div class="eq-slider">
+      <label>Mid <span id="midValue">0</span></label>
+      <input type="range" min="-12" max="12" value="0" id="midSlider" oninput="updateEQ('mid', this.value)">
+    </div>
+    <div class="eq-slider">
+      <label>Treble <span id="trebleValue">0</span></label>
+      <input type="range" min="-12" max="12" value="0" id="trebleSlider" oninput="updateEQ('treble', this.value)">
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">Crossfade</div>
+    <div class="crossfade-control">
+      <span>Off</span>
+      <input type="range" min="0" max="10" value="0" id="crossfadeSlider" oninput="updateCrossfade(this.value)">
+      <span>10s</span>
+    </div>
+    <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Crossfade duration: <span id="crossfadeValue2">5</span>s</p>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">Volume Boost</div>
+    <div class="eq-slider">
+      <label>Gain <span id="gainValue">100%</span></label>
+      <input type="range" min="50" max="150" value="100" id="gainSlider" oninput="updateGain(this.value)">
+    </div>
+  </div>
+</div>
+
+
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Settings</h2>
+      <button class="modal-close" onclick="closeSettings()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="18" y1="6" x2="6" y2="18"></line>
+  <line x1="6" y1="6" x2="18" y2="18"></line>
+</svg></button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Theme</div>
+      <div class="theme-grid" id="themeGrid">
+        <div class="color-swatch" data-theme="dark" style="background:#201f1f" onclick="changeTheme('dark')" title="Dark"></div>
+        <div class="color-swatch active" data-theme="default" style="background:#ff6b9d" onclick="changeTheme('default')" title="Default"></div>
+        <div class="color-swatch" data-theme="darkgreen" style="background:#4ade80" onclick="changeTheme('darkgreen')" title="Dark Green"></div>
+        <div class="color-swatch" data-theme="coffee" style="background:#d4a574" onclick="changeTheme('coffee')" title="Coffee"></div>
+        <div class="color-swatch" data-theme="og" style="background:#3b82f6" onclick="changeTheme('og')" title="OG Blue"></div>
+        <div class="color-swatch" data-theme="violet" style="background:#a78bfa" onclick="changeTheme('violet')" title="Violet"></div>
+        <div class="color-swatch" data-theme="red" style="background:#fa8b8b" onclick="changeTheme('red')" title="Red"></div>
+        <div class="color-swatch" data-theme="darkred" style="background:#f63b3b" onclick="changeTheme('darkred')" title="Dark Red"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn secondary" onclick="openThemeMaker()" id="ctb">Create Theme</button>
+        <button class="btn secondary" onclick="importThemeUI()">Import Theme</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Misc</div>
+      <div class="form-group" style="margin-top:12px;">
+        <div class="setting-toggle-row">
+          <span class="setting-toggle-label">Album Art Background</span>
+          <button class="toggle-slider" id="aab" type="button" role="switch" aria-checked="false" onclick="noAlbumArtBackground()">
+            <span class="slider-thumb"></span>
+          </button>
+        </div>
+        <div class="setting-toggle-row">
+          <span class="setting-toggle-label">Performance Mode</span>
+          <button class="toggle-slider" id="performanceModeBtn" type="button" role="switch" aria-checked="false" onclick="togglePerformanceMode()">
+            <span class="slider-thumb"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">YouTube API and Lyrics API Key</div>
+      <div class="form-group">
+        <input type="text" class="form-input" id="apiKeyInput" placeholder="Enter your RapidAPI key...">
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="btn secondary" onclick="saveApiKey()">Save Key</button>
+          <button class="btn secondary" onclick="resetApiKey()">Reset</button>
+        </div>
+      </div>
+    <div class="settings-section-title"></div>
+              <div style="margin-top:12px;font-size:12px;color:var(--text-muted);line-height:1.5;">
+      <strong>How to get an API key:</strong><br>
+      1. Go to <a href="https://rapidapi.com/" target="_blank" style="color:var(--accent)">rapidapi.com</a> and subscribe to:<br>
+       • <a href="https://rapidapi.com/DataFanatic/api/spotify-scraper" target="_blank" style="color:var(--accent)">Spotify Lyrics API</a><br>
+       • <a href="https://rapidapi.com/nguyenmanhict-MuTUtGWD7K/api/spotify-web-api3/" target="_blank" style="color:var(--accent)">Musix Lyrics API</a><br>
+       • <a href="https://rapidapi.com/Glavier/api/genius-song-lyrics1" target="_blank" style="color:var(--accent)">Genius Song Lyrics API</a><br>
+       • <a href="https://rapidapi.com/omarmhaimdat/api/youtube-v2" target="_blank" style="color:var(--accent)">Youtube Search API</a><br>
+    </div>
+    <div class="settings-section-title"></div>
+</div>
+
+
+  </div>
+</div>
+
+
+
+<!-- Toast Notification -->
+<div class="toast" id="toast" style="visibility: hidden;">
+  <span class="toast-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="10"></circle>
+  <line x1="12" y1="16" x2="12" y2="12"></line>
+  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+</svg>️</span>
+  <span class="toast-message" id="toastMessage"></span>
+</div>
+
+<div class="track-context-menu" id="trackContextMenu" role="menu" aria-hidden="true">
+  <button onclick="playContextTrack()" role="menuitem">Play now</button>
+  <button onclick="playContextTrackNext()" role="menuitem">Play next</button>
+  <button onclick="addContextTrackToQueue()" role="menuitem">Add to queue</button>
+  <button onclick="openContextTrackInfo()" role="menuitem">Track info</button>
+  <div class="track-context-divider"></div>
+  <button class="track-context-danger" onclick="removeContextTrack()" role="menuitem">Remove from queue</button>
+</div>
+
+<audio id="audioPlayer" preload="none" data-core-listeners-bound="1" data-lyrics-listeners-bound="1"></audio>
+<audio id="audioPlayer2" preload="none"></audio>
+<div id="PDpopup">
+</div>
+<div id="devConsole">
+    <div id="consoleHeader">
+        <div class="window-controls">
+            <button class="window-btn close" onclick="DevConsole.toggle()" title="Close"></button>
+            <button class="window-btn minimize" onclick="DevConsole.minimize()" title="Minimize"></button>
+            <button class="window-btn maximize" onclick="DevConsole.maximize()" title="Maximize"></button>
+        </div>
+        <span class="console-title">Developer Console</span>
+        <span id="consoleStatus">Ready</span>
+        <button class="header-btn" onclick="DevConsole.clear()" title="Clear (Ctrl+K)">🗑️</button>
+        <button class="header-btn" onclick="DevConsole.toggle()" title="Close">✕</button>
+    </div>
+
+    <div class="console-toolbar">
+        <button class="toolbar-btn" onclick="DevConsole.runLastCommand()">↻ Run Last</button>
+        <button class="toolbar-btn" onclick="DevConsole.copyOutput()">📋 Copy</button>
+        <div class="toolbar-separator"></div>
+        <label class="toolbar-label">
+            <input type="checkbox" id="preserveLog"> Preserve log
+        </label>
+        <label class="toolbar-label">
+            <input type="checkbox" id="catchErrors" checked=""> Catch errors
+        </label>
+    </div>
+
+    <div id="consoleOutput">
+        <div class="welcome-message">
+            <div class="welcome-title">Developer Console v3.1</div>
+            <div>Type JavaScript commands below. Use ↑↓ for history, Tab for autocomplete.</div>
+            <div style="margin-top:4px;font-size:11px;">Shortcuts: Ctrl+` to open | Ctrl+K to clear | Shift+Enter new line</div>
+        </div>
+    <div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"%cDevConsole initialized"</span> <span class="syntax-string">"color:#3fb950;font-weight:bold;"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ Lyrics manager initialized"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ Lyrics DB opened"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ StatsManager initialized"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"Initializing folder picker integration..."</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ Folder picker integration ready"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"%cDevConsole initialized"</span> <span class="syntax-string">"color:#3fb950;font-weight:bold;"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"%c🔧 Memory Profiler Loaded"</span> <span class="syntax-string">"color:#ff6b9d;font-size:14px;font-weight:bold;"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"Usage:
+  checkMemory()      - Run full analysis
+  monitorMemory(30)  - Monitor for 30 seconds"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"🎵 Youtify Music Player initialized!"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"Shortcuts: Press / for help, L for lyrics, E for effects"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ Lyrics manager initialized"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ Created lyrics store"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ StatsManager initialized"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"✅ Lyrics DB opened"</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"Initializing folder picker integration..."</span></div></div></div><div class="console-entry entry-log"><div class="entry-content"><span class="entry-icon"></span><div class="entry-body"><span class="syntax-string">"No saved folder handle"</span></div></div></div></div>
+
+    <div class="console-input-area">
+        <div class="input-wrapper">
+            <span class="input-prompt">❯</span>
+            <textarea id="consoleInput" placeholder="Enter JavaScript command..." rows="1" spellcheck="false"></textarea>
+            <button class="input-run-btn" onclick="DevConsole.execute()">Run</button>
+        </div>
+        <div id="autocompleteBox" style="display: none;"></div>
+    </div>
+</div>
+
+<div id="changelogModal" style="font-family: something; display: flex; position: fixed; top: 0px; left: 0px; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
+    <div style="background:var(--bg-primary); width:90%; max-width:500px; max-height:80vh; border-radius:16px; border:1px solid var(--border); display:flex; flex-direction:column; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);">
+
+        <div style="padding:20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="margin:0; font-size:1.5em; color:var(--text-primary);">What's New</h2>
+            <button onclick="closeChangelog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:24px; line-height:1;">×</button>
+        </div>
+
+        <div id="changelogList" style="padding:20px; overflow-y:auto; flex:1; scrollbar-width: thin;"><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.4.3</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added an ACTUAL queue.</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Uhm I think thats all... <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(maybe uhm the download server might be faster?)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.4.2</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I redid the youtube download API <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(you are welcome, also its better and yes i copied the same text from last update, also no more key for downloading)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>CHECK CHAT FOR COOL LITTLE THING <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(please)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>You can upload images in DM'S not the general chat <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(and or room)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed some lag with the chat <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(i hope...)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Guys give me ideas, im not burnt out anymore <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">and dont give me shit ideas or else</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.4.1</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>DMs now load the rest when you scroll up <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(well it should at least)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>The chat remembers your DMs so it doesnt re-download them every time <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(this was also the reason why the server was slow)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a reconnecting screen so you know when its dropped</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>You cant accidentally make a second account on the same browser anymore</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Pictures and GIFs get squished more before sending <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(they were taking up 98% of the server :)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I fixed the youtube download API <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(you are welcome)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.4.0</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added an emoji picker <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(1900 of them, and it doesnt lag, ive tested it :)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Emojis look the same for everyone now <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause these fucking chromebook emojis are ugly)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>You can type :shortcodes: to find emojis <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(like discord, also this is another QoL)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a loading screen so it doesnt look empty while it connects <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause it will do that and i know it will)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>The chat pushes the app over instead of covering it <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(like the old lyrics thing, alan would know what im talking about)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.3.4</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added notifications for DMs and @mentions <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(only when youre not looking, its in your profile)</span> <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(also this is just a QoL thing)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Your pfp, bio and stats now save to the server <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(so they stay the same on every device, cause i want that)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>GIFs look a bit nicer</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed emojis and replies making giant empty space</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed everything being see-through in performance mode</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed text being unreadable on the dark themes</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>You cant set a pfp before logging in anymore <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(it wasnt supposed to do that anyways but i was lazy so its fixed now)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed one person not being able to send messages at all</span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.3.3</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added listening jams <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(kinda like spotify but not really)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added typing indicators <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(room and DMs)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added read receipts in DMs <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(you can turn them off in your profile)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added reactions to messages <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause some people wanted it)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.3.0</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added replying and editing messages <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(THAT ARE YOUR OWN)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a sorting system for the queue <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(due to alan asking and wanted to do that for a while)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added the ability to @ people and made it so the room <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(and or global chat)</span> doesnt ping you</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Muting actually works now <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(refreshing doesnt get you out of it anymore)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.2.0</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Mostly bug fixes...</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the non-read messages <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(so like the badges)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added like a bio section to the thing!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Also you can you change your profile and stuff...</span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.1.1</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I added photo upload!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I also added so if someone messages you, it shows it on the title</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added update button thingy, so go in settings</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span><span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(server wise, i added a button that i can click if you need to update your version)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.1.0</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I added chat back <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(IT WORKS NOW! OKAY?)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I added annoucments to it now cause i need to tell you guys when updates are available</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>All of you please go put your name in the chat thing <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(its so i can give you guys updates, also no bad names)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Thats it for now.</span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">Release 1.0.0</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I've added so many updates that i dont know what version we are on...</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>If you guys have any problems and or features you want me to add, email me. <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(daniel.warren@student.pinecrestnv.org)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Also i merged the lyrics and youtube thing together</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Also people were complaining about lag so there is performance mode now <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(check settings)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.9 beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Very big update! <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(Release might come soon)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>REDID the entire ui! <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(i hope you like it)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed some bugs with crossfade!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the searching bug with the queue and the songs!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the mobile volume slider disappearing <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(yes there is a ui for mobile devices.)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the bottom of the page getting eaten by the player bar <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(finally)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a queue count + time thing so you know how long your music pile is</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a Clear Search button for songs <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause backspacing is boring)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Press Escape while searching and it clears it now</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a Now Playing jump button so you can find the song that is actually playing</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added Random Track button <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(for when you dont know what to play)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added Shuffle button in the Songs header too</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added Copy Now Playing <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(very unnecessary but i need stuff to add...)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added shortcuts for random tracks and jumping to the current song</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Made the lyrics and eq buttons behave better again</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Made mobile spacing less annoying <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(hopefully no more playbar jumpscare)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>uhm thats it... <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(for now)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.9 Alpha</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>TRIED to fix 'Database connection test failed' errors by syncing IDB versions.</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Improved layout responsiveness: Player buttons no longer disappear on small screens. <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(at least i hope...)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added 'Stale Connection' auto-refresh logic for smoother playback. <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(which doesnt work :/)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed race condition where the 'tracks' store wouldn't be created on first load.</span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.8 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Okay so basically this update is big but isnt...</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Music now loads from the folder where the music is!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the play/pause button! <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(it wouldn't update when it paused from unplugging headphones)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the media session thing to show the actual song playing and not the "next song" in the queue.</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span><span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(ill fix the crossfade later)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.7 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the crossfade, so it should work now! <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(i know its been a while)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Gave the UI a lil touch up so everything might be a lil dark... <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(if you want to see it enable the Album Art Background in settings)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Made code cleaner <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(so its easier for me to diagnose bugs)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Playback speed slider now actually changes pitch!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Crossfade settings now save again! <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(and redid it)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Moved the stuff in settings around a bit</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Can now edit and delete themes!</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Changed the theme maker UI to be more user-friendly <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(or something)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>This is going to be the new font for the Change Log...</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span><span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(if you have AAB on and go to the console, type getAABTheme();)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.6 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Got rid of the server/server commands <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause it isnt needed)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Removed the music quality option &amp; the lyrics toggle button from settings <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause that also isnt needed and why were they still there)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.5 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>"One, Two, Skip a few" ahh update 😭😭 <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(Anyways big update...)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fully REVAMPED the Album Art Cover Background Thingy</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added the ability to drag songs around to change the queue or whatever <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(dont know if it saves or not)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.4 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added loading thing for songs <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(so you know if they are loading or not)</span> <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(YES I STOLE IT FROM THE LYRICS PANEL)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Fixed the theme problem where it wouldn't apply custom themes</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Changed 'Your Queue' to 'Songs' <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(cause it makes more sense)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span><span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(maybe the next update is going to be a new ui 👀)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.3 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Got fully rid of the chat <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(the chat was really never needed...)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span><span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(Next update is going to be good trust 👀)</span></span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.2 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>I THINK i fixed the problem with the songs not loading <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(might be wrong though)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added like the ability to see past updates <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(you are looking at it!)</span></span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>New text formatting for small notes!</span></li></ul><div style="margin-top: 20px; margin-bottom: 10px; border-bottom: 1px solid var(--text-primary); padding-bottom: 5px;"><strong style="color:white;font-size:1.1em;">0.1 Beta</strong></div><ul style="list-style: none; padding: 0px;"><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a popup if you don't have access to download files.</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Put storage info on the Queue.</span></li><li style="margin-bottom: 8px; line-height: 1.5; font-size: 14px; display: flex; align-items: flex-start; gap: 8px;"><span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>Added a changelog thingy and the button <span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">(Hurray ^-^)</span></span></li></ul></div>
+
+        <div style="padding:15px; border-top:1px solid var(--border); text-align:right;">
+            <button onclick="closeChangelog()" style="font-family: something; background:var(--accent-primary); color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Got it</button>
+        </div>
+    </div>
+</div>
+<!-- ==========================================================================
+     YOUTIFY CHAT  —  markup
+     ========================================================================== -->
+
+<div class="yc-announce" id="ycAnnounce">
+  <div class="yc-announce-inner">
+    <span class="yc-announce-label">Announcement</span>
+    <span class="yc-announce-text" id="ycAnnounceText"></span>
+    <span id="ycAnnounceUpBut"></span>
+    <button class="yc-announce-close" id="ycAnnounceClose" onclick="YoutifyChat.dismissAnnouncement()">✕</button>
+  </div>
+</div>
+
+<div class="yc-panel" id="ycPanel">
+  <div class="yc-head">
+    <div class="yc-tabs">
+      <button class="yc-tab" data-tab="room" onclick="YoutifyChat.tab('room')">Room <span class="yc-badge" id="ycRoomBadge"></span></button>
+      <button class="yc-tab" data-tab="dms" onclick="YoutifyChat.tab('dms')">DMs <span class="yc-badge" id="ycDmBadge"></span></button>
+      <button class="yc-tab" data-tab="people" onclick="YoutifyChat.tab('people')">People <span class="yc-count" id="ycOnlineCount"></span></button>
+    </div>
+    <button class="yc-me-btn" id="ycMeBtn" onclick="YoutifyChat.tab('me')" title="Your profile" style="display:none">
+      <span class="yc-av sm" id="ycMeAv">?</span>
+    </button>
+    <button class="yc-close" onclick="YoutifyChat.close()" title="Close chat">✕</button>
+  </div>
+
+  <div class="yc-jam" id="ycJam">
+    <span class="eq"><i></i><i></i><i></i></span>
+    <span class="txt"></span>
+    <span class="acts"></span>
+  </div>
+
+  <div class="yc-loading" id="ycLoading">
+    <svg class="yc-loading-logo" width="76" height="76" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <path d="M26 18 Q32 26 30 30"></path>
+      <path d="M46 26 Q38 30 34 32"></path>
+      <path d="M42 46 Q36 38 34 34"></path>
+      <path d="M18 38 Q26 34 30 34"></path>
+      <path d="M24 18 Q16 28 18 38"></path>
+      <path d="M48 24 Q52 36 44 48"></path>
+      <circle cx="32" cy="32" r="3"></circle>
+      <circle cx="24" cy="16" r="2.5"></circle>
+      <circle cx="48" cy="24" r="2.5"></circle>
+      <circle cx="44" cy="48" r="2.5"></circle>
+      <circle cx="16" cy="40" r="2.5"></circle>
+    </svg>
+    <div class="yc-loading-text" id="ycLoadingText">connecting…</div>
+  </div>
+
+  <div class="yc-body">
+    <!-- name gate -->
+    <div class="yc-view" id="ycViewGate" style="display: flex;">
+      <div class="yc-gate">
+        <!-- no picture picker here: there's no account to attach one to yet -->
+        <div class="yc-pfp-pick static">
+          <span class="yc-av" id="ycGateAv">?</span>
+        </div>
+        <h3 id="ycGateTitle">Join the chat</h3>
+        <p id="ycGateSub">Pick a name and password. Everyone with Youtify open sees the same room.</p>
+        <input id="ycNameInput" placeholder="username" maxlength="24" autocomplete="username">
+        <input id="ycPassInput" type="password" placeholder="password" maxlength="64" autocomplete="current-password">
+        <input id="ycPass2Input" type="password" placeholder="confirm password" maxlength="64" autocomplete="new-password">
+        <button class="primary" id="ycGateSubmit" onclick="YoutifyChat.gateSubmit()">Join</button>
+        <button class="ghost" id="ycGateSwitch" onclick="YoutifyChat.gateSwitchMode()">Already have an account? Log in</button>
+        <div class="yc-note" id="ycGateNote"></div>
+      </div>
+    </div>
+
+    <!-- your profile -->
+    <div class="yc-view" id="ycViewMe" style="display:none">
+      <div class="yc-thread-head">
+        <button class="yc-back" onclick="YoutifyChat.tab('room')" title="Back">←</button>
+        <div class="yc-row-main">
+          <div class="yc-row-name">Your profile</div>
+          <div class="yc-row-sub" id="ycMeSub"></div>
+        </div>
+      </div>
+      <div class="yc-gate">
+        <button class="yc-pfp-pick" onclick="YoutifyChat.pickAvatar()" title="Change profile picture">
+          <span class="yc-av" id="ycMeBigAv">?</span>
+          <span class="yc-pfp-edit">Change</span>
+          <span class="yc-cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+        </button>
+        <input id="ycMeName" placeholder="your name" maxlength="24" autocomplete="off">
+        <div class="yc-handle-wrap">
+          <span class="at">@</span>
+          <input id="ycMeHandle" placeholder="handle" maxlength="16" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="yc-handle-note" id="ycHandleNote"></div>
+        <div class="yc-bio-wrap">
+          <textarea id="ycMeBio" placeholder="write a short bio…" maxlength="160" rows="3"></textarea>
+          <span class="yc-bio-count" id="ycMeBioCount">0/160</span>
+        </div>
+        <button class="primary" onclick="YoutifyChat.saveProfile()">Save</button>
+        <button class="ghost" id="ycPreviewProfile" onclick="YoutifyChat.previewProfile()">Preview my profile</button>
+        <button class="ghost" id="ycRemovePhoto" onclick="YoutifyChat.removeAvatar()">Remove photo</button>
+        <button class="ghost" id="ycLogOut" onclick="YoutifyChat.logOut()">Log out</button>
+        <div class="yc-note" id="ycMeNote">Pictures get resized before sending, so they stay small.</div>
+        <button class="yc-toggle-row" id="ycNotifRow" onclick="YoutifyChat.toggleNotifs()">
+          <span class="yc-toggle-main">
+            <span class="yc-toggle-t">Notifications</span>
+            <span class="yc-toggle-s">Alerts you for DMs and @mentions when you're not looking at the chat. <span id="ycNotifNote"></span></span>
+          </span>
+          <span class="yc-switch" id="ycNotifSwitch"></span>
+        </button>
+        <button class="yc-toggle-row" id="ycReceiptRow" onclick="YoutifyChat.toggleReceipts()">
+          <span class="yc-toggle-main">
+            <span class="yc-toggle-t">Read receipts</span>
+            <span class="yc-toggle-s">Shows people when you've read their DM. Turning this off hides theirs from you too.</span>
+          </span>
+          <span class="yc-switch" id="ycReceiptSwitch"></span>
+        </button>
+        <button class="yc-toggle-row" id="ycShareRow" onclick="YoutifyChat.toggleShareStats()">
+          <span class="yc-toggle-main">
+            <span class="yc-toggle-t">Share my stats</span>
+            <span class="yc-toggle-s">Lets other people see your play counts, listening time and top tracks.</span>
+          </span>
+          <span class="yc-switch" id="ycShareSwitch"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- someone's profile -->
+    <div class="yc-view" id="ycViewProfile" style="display:none">
+      <div class="yc-thread-head">
+        <button class="yc-back" id="ycProfileBack" onclick="YoutifyChat.backFromProfile()" title="Back">←</button>
+        <div class="yc-row-main">
+          <div class="yc-row-name" id="ycProfileTitle">Profile</div>
+          <div class="yc-row-sub" id="ycProfileSub"></div>
+        </div>
+        <button class="yc-statbtn" id="ycProfileDm" onclick="YoutifyChat.dmFromProfile()" title="Message them">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.9-.9L3 21l2-4.9A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"></path></svg>
+        </button>
+      </div>
+      <div class="yc-scroll" id="ycProfileScroll"></div>
+    </div>
+
+    <!-- public room -->
+    <div class="yc-view" id="ycViewRoom" style="display:none">
+      <div class="yc-scroll" id="ycRoomScroll"></div>
+    </div>
+
+    <!-- dm list -->
+    <div class="yc-view" id="ycViewDms" style="display:none">
+      <div class="yc-scroll" id="ycDmList"></div>
+    </div>
+
+    <!-- dm thread -->
+    <div class="yc-view" id="ycViewThread" style="display:none">
+      <div class="yc-thread-head">
+        <button class="yc-back" onclick="YoutifyChat.tab('dms')" title="Back">←</button>
+        <span class="yc-av-wrap"><span class="yc-av sm" id="ycThreadAv">?</span></span>
+        <div class="yc-row-main">
+          <div class="yc-row-name" id="ycThreadName">—</div>
+          <div class="yc-row-sub" id="ycThreadSub"></div>
+        </div>
+      </div>
+      <div class="yc-scroll" id="ycThreadScroll"></div>
+    </div>
+
+    <!-- people -->
+    <div class="yc-view" id="ycViewPeople" style="display:none">
+      <div class="yc-scroll" id="ycPeopleList"></div>
+    </div>
+  </div>
+
+  <input type="file" id="ycPictureInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
+  <input type="file" id="ycAvatarInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
+
+  <div class="yc-uploading" id="ycUploading"><span class="yc-spinner"></span><span id="ycUploadingText">sending picture…</span></div>
+
+  <div class="yc-react-picker" id="ycReactPicker"></div>
+
+  <div class="yc-emoji-pop" id="ycEmojiPop">
+    <div class="yc-emoji-head">
+      <input id="ycEmojiSearch" placeholder="search emoji" autocomplete="off" spellcheck="false">
+      <button class="yc-emoji-close" onclick="YoutifyChat.closeEmoji()" title="Close">×</button>
+    </div>
+    <div class="yc-emoji-cats" id="ycEmojiCats"></div>
+    <div class="yc-emoji-scroll" id="ycEmojiScroll"><div class="yc-emoji-layer" id="ycEmojiLayer"></div></div>
+    <div class="yc-emoji-foot" id="ycEmojiFoot"></div>
+  </div>
+
+  <div class="yc-mention-pop" id="ycMentionPop"></div>
+
+  <div class="yc-typing" id="ycTyping">
+    <span class="dots"><i></i><i></i><i></i></span>
+    <span class="who"></span>
+  </div>
+
+  <div class="yc-compose-chip" id="ycComposeChip" style="display:none">
+    <span class="bar"></span>
+    <span class="body">
+      <span class="lbl" id="ycChipLabel"></span>
+      <span class="txt" id="ycChipText"></span>
+    </span>
+    <button class="x" onclick="YoutifyChat.cancelCompose()" title="Cancel">×</button>
+  </div>
+
+  <div class="yc-composer" id="ycComposer" style="display:none">
+    <div class="yc-composer-inner">
+      <button class="yc-attach" id="ycEmojiBtn" onclick="YoutifyChat.toggleEmoji(event)" title="Emoji">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"></path>
+          <line x1="9" y1="9.5" x2="9.01" y2="9.5"></line>
+          <line x1="15" y1="9.5" x2="15.01" y2="9.5"></line>
+        </svg>
+      </button>
+      <button class="yc-attach" id="ycPictureBtn" onclick="YoutifyChat.sendPicture()" title="Send a picture">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+          <circle cx="8.5" cy="8.5" r="1.6"></circle>
+          <path d="M21 15l-5-5L5 21"></path>
+        </svg>
+      </button>
+      <textarea id="ycInput" rows="1" placeholder="message the room…" maxlength="1000" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+    </div>
+    <button class="yc-send" id="ycSendBtn" onclick="YoutifyChat.send()" title="Send">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12l16-8-6 16-2.5-6.5z"></path>
+      </svg>
+    </button>
+  </div>
+
+  <div class="yc-status">
+    <span id="ycStatusLeft" class="">signing in…</span>
+    <span id="ycStatusRight"></span>
+  </div>
+</div>
+
+<div class="yc-lightbox" id="ycLightbox" onclick="YoutifyChat.closeLightbox(event)">
+  <div class="yc-lightbox-bar">
+    <a id="ycLightboxDl" download="youtify-image.jpg" onclick="event.stopPropagation()">Download</a>
+    <button onclick="YoutifyChat.closeLightbox()">Close</button>
+  </div>
+  <img id="ycLightboxImg" alt="" onclick="event.stopPropagation()">
+</div>
+
+</div>
