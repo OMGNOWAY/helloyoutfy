@@ -7455,9 +7455,9 @@ button, input, select, textarea, optgroup, option, ::placeholder {
 }
 
 /* ==========================================================================
-   Sidebar at the bottom — now only active when <body> has class "sidebar-bottom"
-   Replace the previous bottom-sidebar block at the END of style1.css with this.
-   Without the class, your normal top-bar layout is untouched.
+   Sidebar at the bottom, only active when <body> has class "sidebar-bottom".
+   The player sits inside a bare wrapper <div>, so it is targeted as
+   ".app .player" (not ".app > .player", which never matched).
    ========================================================================== */
 :root { --player-w: 308px; }   /* width of the right-hand player column */
 
@@ -7467,11 +7467,10 @@ body.sidebar-bottom .app {
 }
 body.sidebar-bottom .app > .main    { grid-column: 1 !important; grid-row: 1 !important; min-height: 0; }
 body.sidebar-bottom .app > .sidebar { grid-column: 1 !important; grid-row: 2 !important; }
-body.sidebar-bottom .app > .player  { grid-column: 2 !important; grid-row: 1 / -1 !important; }
+body.sidebar-bottom .app .player    { grid-column: 2 !important; grid-row: 1 / -1 !important; }
 
 @media (max-width: 900px) {
   body.sidebar-bottom .app { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) auto auto !important; }
-  body.sidebar-bottom .app > .player  { grid-column: 1 !important; grid-row: 2 !important; }
+  body.sidebar-bottom .app .player  { grid-column: 1 !important; grid-row: 2 !important; }
   body.sidebar-bottom .app > .sidebar { grid-column: 1 !important; grid-row: 3 !important; }
 }
-
