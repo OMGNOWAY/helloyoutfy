@@ -1152,6 +1152,8 @@ let waveformData = new Map();
 let lyricsManager = null;
 let albumArtBackground = localStorage.getItem('youtifiy_aab') === 'on';
 let performanceModeEnabled = localStorage.getItem('youtify_performance_mode') === 'on';
+let sidebarBottom = localStorage.getItem('youtify_sidebar_bottom') === 'on';
+
 let playStats = { totalPlays: 0, totalTime: 0, trackStats: {} };
 let playHistory = [];
 
@@ -1159,6 +1161,7 @@ let audio  = document.getElementById('audioPlayer');
 let audio2 = document.getElementById('audioPlayer2');
 const aab_button = document.getElementById('aab');
 const performanceModeButton = document.getElementById('performanceModeBtn');
+const sidebarPosButton = document.getElementById('sidebarPosBtn');             
 
 // ============================================================================
 // YOUTUBE API
@@ -2975,6 +2978,13 @@ function togglePerformanceMode() {
   if (document.body.classList.contains('performance-mode')) {
    document.body.style.background = 'var(--accent)';
   }
+}
+
+function toggleSidebarPosition() {
+  sidebarBottom = !sidebarBottom;
+  localStorage.setItem('youtify_sidebar_bottom', sidebarBottom ? 'on' : 'off');
+  if (sidebarPosButton) sidebarPosButton.setAttribute('aria-checked', sidebarBottom ? 'true' : 'false');
+  document.body.classList.toggle('sidebar-bottom', sidebarBottom);
 }
 
 // ============================================================================
@@ -6181,6 +6191,8 @@ if (typeof version !== 'undefined') {
 }
 if (aab_button) aab_button.setAttribute('aria-checked', albumArtBackground ? 'true' : 'false');
 if (performanceModeButton) performanceModeButton.setAttribute('aria-checked', performanceModeEnabled ? 'true' : 'false');
+if (sidebarPosButton) sidebarPosButton.setAttribute('aria-checked', sidebarBottom ? 'true' : 'false');  
+document.body.classList.toggle('sidebar-bottom', sidebarBottom);                                          
 document.body.classList.toggle('performance-mode', performanceModeEnabled);
 
 // Miscellaneous helpers (called from HTML)
