@@ -7453,3 +7453,25 @@ body.performance-mode .yc-handle-wrap { background: var(--bg-tertiary) !importan
 button, input, select, textarea, optgroup, option, ::placeholder {
   font-family: "Margarine", system-ui, sans-serif;
 }
+
+/* ==========================================================================
+   Sidebar at the bottom — now only active when <body> has class "sidebar-bottom"
+   Replace the previous bottom-sidebar block at the END of style1.css with this.
+   Without the class, your normal top-bar layout is untouched.
+   ========================================================================== */
+:root { --player-w: 308px; }   /* width of the right-hand player column */
+
+body.sidebar-bottom .app {
+  grid-template-columns: minmax(0, 1fr) var(--player-w) !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+}
+body.sidebar-bottom .app > .main    { grid-column: 1 !important; grid-row: 1 !important; min-height: 0; }
+body.sidebar-bottom .app > .sidebar { grid-column: 1 !important; grid-row: 2 !important; }
+body.sidebar-bottom .app > .player  { grid-column: 2 !important; grid-row: 1 / -1 !important; }
+
+@media (max-width: 900px) {
+  body.sidebar-bottom .app { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) auto auto !important; }
+  body.sidebar-bottom .app > .player  { grid-column: 1 !important; grid-row: 2 !important; }
+  body.sidebar-bottom .app > .sidebar { grid-column: 1 !important; grid-row: 3 !important; }
+}
+
