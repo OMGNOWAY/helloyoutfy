@@ -19,8 +19,8 @@ window.YOUTIFY_CHAT_ROOT = "youtify";
 /* Login gate settings */
 window.YOUTIFY_GATE = {
   /* where the app is loaded from AFTER login (nothing below is in the page before that) */
-  appHtml: "https://originfastly.jsdelivr.net/gh/OMGNOWAY/helloyoutfy/app.html",
-  appJs:   "https://originfastly.jsdelivr.net/gh/OMGNOWAY/helloyoutfy/app-main.js",
+  appHtml: "https://cdn.jsdelivr.net/gh/OMGNOWAY/helloyoutfy/app.html",
+  appJs:   "https://cdn.jsdelivr.net/gh/OMGNOWAY/helloyoutfy/app-main.js",
   libs: [
     "https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js",
     "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
