@@ -7048,7 +7048,7 @@ function openLyricsPopout() {
   }
 }
 
-console.log('🎵 Youtify Music Player initialized!');
+console.log(`🎵 Youtify Music Player (Version: ${version}) initialized!`);
 console.log('Shortcuts: Press / for help, L for lyrics, E for effects');
 document.addEventListener("DOMContentLoaded", (event) => {
   handleLyricsButtonClick();
