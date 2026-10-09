@@ -1,6 +1,12 @@
 /* ===================== changelog.js ===================== */
-var version = "1.4.3";
+var version = "1.4.4";
 const CHANGELOG_DATA = {
+  "Release 1.4.4": [
+    `Redid (<(kinda)>) the chat UI`,
+    `Made the sidebar go to the top, and if you want you can make it go to the bottom`,
+    `Made it so you can save your API keys now (<(so they will be saved with your account)>)`,
+    `Thats it for now (<(no more updates for a while unless you guys give me more ideas)>)`
+  ],
   "Release 1.4.3": [
     `Added an ACTUAL queue.`,
     `Uhm I think thats all... (<(maybe uhm the download server might be faster?)>)`,
@@ -4140,6 +4146,7 @@ class SettingsManager {
     youtubeAPI.key = apiKey;
     lyricsManager.setApiKey(apiKey);
     toast('API key saved');
+    notifyKeysChanged();
   }
 
   static resetApiKey() {
@@ -4149,6 +4156,7 @@ class SettingsManager {
     youtubeAPI.key = '';
     document.getElementById('apiKeyInput').value = '';
     toast('API key reset');
+    notifyKeysChanged();
   }
 
   static changeAppTitle() {
@@ -4162,6 +4170,26 @@ const openSettings       = () => SettingsManager.open();
 const closeSettings      = () => SettingsManager.close();
 const saveApiKey         = () => SettingsManager.saveApiKey();
 const resetApiKey        = () => SettingsManager.resetApiKey();
+
+/* API keys follow the chat account (see YoutifyChat.keysChanged). */
+function notifyKeysChanged() {
+  try { if (window.YoutifyChat && window.YoutifyChat.keysChanged) window.YoutifyChat.keysChanged(); } catch (e) {}
+}
+
+/* Called by the chat when it pulls keys down from the account. */
+window.applySyncedKeys = function (api, lyrics) {
+  api = api || '';
+  lyrics = lyrics || '';
+  apiKey = api;
+  if (api) localStorage.setItem('youtifiy_api_key', api); else localStorage.removeItem('youtifiy_api_key');
+  if (lyrics) localStorage.setItem('youtifiy_lyrics_key', lyrics); else localStorage.removeItem('youtifiy_lyrics_key');
+  try { youtubeAPI.key = api; } catch (e) {}
+  try { if (lyricsManager) lyricsManager.apiKey = lyrics; } catch (e) {}
+  const a = document.getElementById('apiKeyInput');
+  if (a) a.value = api;
+  const l = document.getElementById('lyricsApiKey');
+  if (l) l.value = lyrics;
+};
 const changeAppTitle     = () => SettingsManager.changeAppTitle();
 
 function saveFileURL() {
@@ -5539,7 +5567,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     retry() { const t = queue[currentTrackIndex]; if (t) this.fetchLyrics(t); }
     escapeHtml(text) { return Utils.escapeHtml(typeof text === 'string' ? text : ''); }
-    setApiKey(key) { this.apiKey = key; localStorage.setItem('youtifiy_lyrics_key', key); }
+    setApiKey(key) { this.apiKey = key; localStorage.setItem('youtifiy_lyrics_key', key); notifyKeysChanged(); }
     getApiKey() { return this.apiKey; }
     clearCache() { this.cache.clear(); toast('Memory cache cleared'); }
 }
@@ -7583,6 +7611,7 @@ function startSession() {
   if (!chatLoaded) setLoading(true, "loading chat…");
 
   hydrateProfile().then(pullFullStats);
+  pullKeys();
   refreshOwnAvatars();
 
   // stats live in IndexedDB and load async, so give them a beat before the first push
@@ -10663,6 +10692,68 @@ async function pullFullStats() {
   }
 }
 
+/* ---------- API keys, saved with the account ----------
+   Lives at ROOT/keys/<uid>. Newest write wins (by timestamp), so resetting a key
+   on one device clears it everywhere instead of coming back from another one. */
+const KEYS_TS = "youtifiy_keys_ts";
+let keysPushTimer = null;
+
+function localKeys() {
+  return {
+    api: localStorage.getItem("youtifiy_api_key") || "",
+    lyrics: localStorage.getItem("youtifiy_lyrics_key") || ""
+  };
+}
+
+function keysRef() { return dbfns.ref(db, `${ROOT}/keys/${state.uid}`); }
+
+async function pushKeys() {
+  if (!db || !state.authUid || !state.name || state.kicked) return;
+  const k = localKeys();
+  const ts = Number(localStorage.getItem(KEYS_TS)) || Date.now();
+  try {
+    await dbfns.set(keysRef(), { api: k.api, lyrics: k.lyrics, ts });
+  } catch (err) {
+    console.error("[chat] couldn't save your API key to your account", err);
+    try { toast("couldn't sync your API key to your account"); } catch (e) {}
+  }
+}
+
+/* called whenever a key is saved or reset in settings */
+function keysChanged() {
+  try { localStorage.setItem(KEYS_TS, String(Date.now())); } catch (e) {}
+  if (!state.authUid || !state.name) return;      // not logged in — syncs on next login
+  clearTimeout(keysPushTimer);
+  keysPushTimer = setTimeout(pushKeys, 500);
+}
+
+async function pullKeys() {
+  if (!db || !state.authUid || !state.uid) return;
+  try {
+    const snap = await dbfns.get(keysRef());
+    const rec = snap && snap.val();
+    const k = localKeys();
+    const localHas = !!(k.api || k.lyrics);
+    const localTs = Number(localStorage.getItem(KEYS_TS)) || 0;
+
+    if (!rec) { if (localHas) { if (!localTs) localStorage.setItem(KEYS_TS, String(Date.now())); await pushKeys(); } return; }
+
+    const serverTs = Number(rec.ts) || 0;
+    const serverHas = !!(rec.api || rec.lyrics);
+
+    if (serverTs > localTs) {
+      // a key that only exists locally from before this feature shouldn't be wiped by an empty server copy
+      if (!localTs && localHas && !serverHas) { localStorage.setItem(KEYS_TS, String(Date.now())); await pushKeys(); return; }
+      localStorage.setItem(KEYS_TS, String(serverTs));
+      if (typeof window.applySyncedKeys === "function") window.applySyncedKeys(rec.api || "", rec.lyrics || "");
+    } else if (localTs > serverTs) {
+      await pushKeys();
+    }
+  } catch (err) {
+    console.error("[chat] couldn't load your API key", err);
+  }
+}
+
 function listenStats() {
   const { ref, onValue } = dbfns;
   return onValue(ref(db, `${ROOT}/stats`), (snap) => {
@@ -11112,9 +11203,12 @@ async function logOut() {
   endSessionLocal();                       // stop every listener and interval
   try { await authfns.signOut(auth); } catch (e) {}
   // the next person on this machine shouldn't inherit the last one's profile
-  ["yc_name", "yc_uid", "yc_pfp", "yc_bio"].forEach((k) => {
+  ["yc_name", "yc_uid", "yc_pfp", "yc_bio", KEYS_TS].forEach((k) => {
     try { localStorage.removeItem(k); } catch (e) {}
   });
+  clearTimeout(keysPushTimer);
+  // keys are on the account now, so they come back on next login
+  try { if (typeof window.applySyncedKeys === "function") window.applySyncedKeys("", ""); } catch (e) {}
   state.name = null;
   state.pfp = null;
   state.bio = "";
@@ -11131,6 +11225,7 @@ async function logOut() {
 window.YoutifyChat = {
   open, close, toggle, send,
   gateSubmit, gateSwitchMode, logOut,
+  keysChanged,
 
   /* Tell someone exactly why they can't send, instead of guessing.
      Have them run YoutifyChat.whyCantIChat() in the console. */
