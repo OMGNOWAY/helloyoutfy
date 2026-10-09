@@ -28,7 +28,7 @@
       </div>
       <div class="brand-text">
         <div class="brand-title">Youtifiy</div>
-        <div class="brand-sub" id="brandversion">1.4.4</div>
+        <div class="brand-sub" id="brandversion">1.4.3</div>
       </div>
     </div>
 
@@ -847,6 +847,30 @@
         </div>
       </div>
       <div class="yc-scroll" id="ycThreadScroll"></div>
+    </div>
+
+    <!-- new group -->
+    <div class="yc-view" id="ycViewNewGroup" style="display:none">
+      <div class="yc-thread-head">
+        <button class="yc-back" onclick="YoutifyChat.tab('dms')" title="Back">←</button>
+        <div class="yc-row-main">
+          <div class="yc-row-name">New group chat</div>
+          <div class="yc-row-sub">Name it and pick people</div>
+        </div>
+      </div>
+      <div class="yc-scroll" id="ycNewGroupScroll"></div>
+    </div>
+
+    <!-- group info -->
+    <div class="yc-view" id="ycViewGroup" style="display:none">
+      <div class="yc-thread-head">
+        <button class="yc-back" onclick="YoutifyChat.closeGroupInfo()" title="Back">←</button>
+        <div class="yc-row-main">
+          <div class="yc-row-name" id="ycGroupTitle">Group</div>
+          <div class="yc-row-sub" id="ycGroupSub"></div>
+        </div>
+      </div>
+      <div class="yc-scroll" id="ycGroupScroll"></div>
     </div>
 
     <!-- people -->
