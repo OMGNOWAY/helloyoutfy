@@ -1,6 +1,11 @@
 /* ===================== changelog.js ===================== */
-var version = "1.4.4";
+var version = "1.4.5";
 const CHANGELOG_DATA = {
+  "Release 1.4.5": [
+    `Added Group chats`,
+    `Added more download servers so people can download their songs (<or something>)`,
+    `Thats it for now i think`
+  ],
   "Release 1.4.4": [
     `Redid (<(kinda)>) the chat UI`,
     `Made the sidebar go to the top, and if you want you can make it go to the bottom`,
@@ -7157,6 +7162,7 @@ const state = {
   profiles: {},            // uid -> { name, bio, pfp, ts }
   lastSeen: {},            // uid -> ts, lets offline people show when they were last around
   threads: {},             // otherUid -> thread index entry
+  groups: {},              // groupId -> group info (name, owner, members, last)
   stats: {},               // uid -> shared listening summary
   bio: (function(){ try { return localStorage.getItem("yc_bio") || ""; } catch(e){ return ""; } })(),
   openProfile: null,       // uid whose profile is on screen
@@ -7203,7 +7209,20 @@ function status(left, right, cls) {
   if (l) { l.textContent = left; l.className = cls || ""; }
   if (r) r.textContent = right || "";
 }
-function threadId(a, b) { return [a, b].sort().join("_"); }
+/* A group chat is a thread whose "other person" is the group id (g_...). That is
+   what lets groups reuse the DM code for replies, edits, reactions, pictures,
+   paging, caching, typing and receipts. */
+function isGroupId(id) { return typeof id === "string" && id.startsWith("g_"); }
+function threadId(a, b) {
+  if (isGroupId(b)) return b;
+  if (isGroupId(a)) return a;
+  return [a, b].sort().join("_");
+}
+/* where each kind of thread keeps its data */
+function msgsPath(tid)   { return isGroupId(tid) ? `${ROOT}/groups/${tid}/msgs`   : `${ROOT}/dm/${tid}`; }
+function metaPath(tid)   { return isGroupId(tid) ? `${ROOT}/groups/${tid}/meta`   : `${ROOT}/dmMeta/${tid}`; }
+function readsPath(tid)  { return isGroupId(tid) ? `${ROOT}/groups/${tid}/reads`  : `${ROOT}/reads/${tid}`; }
+function typingPath(sc)  { return isGroupId(sc)  ? `${ROOT}/groups/${sc}/typing`  : `${ROOT}/typing/${sc}`; }
 
 function localUid() {
   let u = localStorage.getItem("yc_uid");
@@ -7229,6 +7248,10 @@ function pfpFor(uid) {
   return null;
 }
 function nameFor(uid, fallback) {
+  if (isGroupId(uid)) {
+    const g = state.groups && state.groups[uid];
+    return (g && g.name) || fallback || "Group chat";
+  }
   const p = state.people[uid] || state.profiles[uid];
   if (p && p.name) return p.name;
   const t = state.threads && state.threads[uid];
@@ -7583,7 +7606,7 @@ function endSessionLocal() {
   profileHydrated = false;
   state.people = {}; state.profiles = {}; state.threads = {};
   state.stats = {}; state.lastSeen = {}; state.typing = {};
-  state.people = {}; state.threads = {};
+  state.people = {}; state.threads = {}; state.groups = {};
   lastRoomMsgs = null; lastThreadMsgs = null;
 }
 
@@ -7664,6 +7687,7 @@ function startSession() {
   trackSession(listenLastSeen());
   trackSession(listenRoom());
   trackSession(listenThreads());
+  trackSession(listenGroups());
   trackSession(listenStats());
   if (!chatLoaded) setLoading(true, "loading chat…");
 
@@ -8310,7 +8334,7 @@ function typingScopeKey() {
 }
 
 function typingRef(scope) {
-  return dbfns.ref(db, `${ROOT}/typing/${scope}/${state.uid}`);
+  return dbfns.ref(db, `${typingPath(scope)}/${state.uid}`);
 }
 
 function announceTyping() {
@@ -8346,7 +8370,7 @@ function listenTyping(scope) {
   paintTyping();
   if (!scope || !db) return;
   const { ref, onValue } = dbfns;
-  state.unsubTyping = onValue(ref(db, `${ROOT}/typing/${scope}`), (snap) => {
+  state.unsubTyping = onValue(ref(db, typingPath(scope)), (snap) => {
     if (state.typingScope !== scope) return;
     state.typing = snap.val() || {};
     paintTyping();
@@ -8394,7 +8418,7 @@ function publishRead(otherUid, ts) {
   if (!db || !state.name || !otherUid || !ts) return;
   if (!receiptsOn()) return;
   const { ref, set } = dbfns;
-  set(ref(db, `${ROOT}/reads/${threadId(state.uid, otherUid)}/${state.uid}`), ts)
+  set(ref(db, `${readsPath(threadId(state.uid, otherUid))}/${state.uid}`), ts)
     .catch((err) => console.error("[chat] read receipt failed", err));
 }
 
@@ -8402,7 +8426,7 @@ function listenThreadReads(otherUid) {
   const { ref, onValue } = dbfns;
   if (state.unsubReads) { try { state.unsubReads(); } catch (e) {} state.unsubReads = null; }
   state.threadReads = {};
-  state.unsubReads = onValue(ref(db, `${ROOT}/reads/${threadId(state.uid, otherUid)}`), (snap) => {
+  state.unsubReads = onValue(ref(db, readsPath(threadId(state.uid, otherUid))), (snap) => {
     if (!state.openThread || state.openThread.uid !== otherUid) return;
     state.threadReads = snap.val() || {};
     if (lastThreadMsgs) renderMessages($("ycThreadScroll"), lastThreadMsgs, "No messages yet — say hi.");
@@ -8414,6 +8438,11 @@ function receiptFor(m) {
   if (!receiptsOn()) return null;                 // turning them off hides theirs too
   const other = state.openThread && state.openThread.uid;
   if (!other) return null;
+  if (isGroupId(other)) {
+    const seen = Object.entries(state.threadReads || {})
+      .filter(([u, ts]) => u !== state.uid && Number(ts) >= (m.ts || 0)).length;
+    return seen ? "Seen by " + seen : "Sent";
+  }
   const theirs = Number((state.threadReads || {})[other] || 0);
   if (theirs && theirs >= (m.ts || 0)) return "Seen " + shortTime(theirs);
   return "Sent";
@@ -8425,14 +8454,14 @@ function toggleReceipts() {
   paintReceiptSwitch();
   if (on) {
     // catch the other side up on everything already read
-    Object.keys(state.threads || {}).forEach((uid) => {
+    Object.keys(allThreads()).forEach((uid) => {
       const seen = readStamp(readKey(uid));
       if (seen) publishRead(uid, seen);
     });
   } else {
     const { ref, remove } = dbfns;
-    Object.keys(state.threads || {}).forEach((uid) => {
-      remove(ref(db, `${ROOT}/reads/${threadId(state.uid, uid)}/${state.uid}`)).catch(() => {});
+    Object.keys(allThreads()).forEach((uid) => {
+      remove(ref(db, `${readsPath(threadId(state.uid, uid))}/${state.uid}`)).catch(() => {});
     });
   }
   if (state.view === "thread" && lastThreadMsgs) {
@@ -8452,7 +8481,7 @@ function markRoomRead() {
 }
 function markThreadRead(uid, ts) {
   if (!uid) return;
-  const t = state.threads[uid];
+  const t = allThreads()[uid];
   // Fall back to the newest message actually loaded, not just the dmIndex
   // preview — the index can lag, which would hold the receipt back.
   const onScreen = (state.openThread && state.openThread.uid === uid && lastThreadMsgs && lastThreadMsgs.length)
@@ -8473,7 +8502,7 @@ function markVisibleRead() {
 
 function recountUnread() {
   let dms = 0;
-  Object.entries(state.threads).forEach(([other, t]) => {
+  Object.entries(allThreads()).forEach(([other, t]) => {
     const read = readStamp(readKey(other));
     if (t.lastFrom !== state.uid && (t.lastTs || 0) > read) dms++;
   });
@@ -8507,6 +8536,7 @@ function refreshThreadHead() {
   const uid = state.openThread.uid;
   const nm = nameFor(uid, state.openThread.name);
   $("ycThreadName").textContent = nm;
+  if (isGroupId(uid)) { paintGroupHead(uid); return; }
   const p = state.people[uid];
   $("ycThreadSub").textContent = p ? (p.track || "online") : "offline";
   paintAvatarInto("ycThreadAv", uid, nm);
@@ -8579,7 +8609,7 @@ async function cacheWrite(tid, msgs, rev) {
    whether their copy is current. Deliberately tiny. */
 function bumpThreadMeta(tid, newestKey) {
   if (!db || !tid) return;
-  try { dbfns.set(dbfns.ref(db, `${ROOT}/dmMeta/${tid}`), { k: newestKey || "", r: Date.now() }).catch(() => {}); }
+  try { dbfns.set(dbfns.ref(db, `${metaPath(tid)}`), { k: newestKey || "", r: Date.now() }).catch(() => {}); }
   catch (e) {}
 }
 
@@ -8629,7 +8659,7 @@ async function loadOlderThread() {
   const beforeTop = box ? box.scrollTop : 0;
 
   try {
-    const snap = await get(query(ref(db, `${ROOT}/dm/${tp.tid}`), orderByKey(), endBefore(oldestKey), limitToLast(THREAD_PAGE)));
+    const snap = await get(query(ref(db, `${msgsPath(tp.tid)}`), orderByKey(), endBefore(oldestKey), limitToLast(THREAD_PAGE)));
     if (threadPage !== tp) return;                 // switched threads mid-fetch
     const val = (snap && snap.val()) || {};
     const page = Object.entries(val).map(([k, v]) => ({ key: k, ...v }));
@@ -8706,7 +8736,7 @@ async function openThreadSynced(tid, uid) {
   let fresh = false;
   if (cached && cached.newestKey && startAfter && orderByKey) {
     try {
-      const meta = await get(ref(db, `${ROOT}/dmMeta/${tid}`));
+      const meta = await get(ref(db, `${metaPath(tid)}`));
       const v = meta && meta.val();
       const young = Date.now() - (cached.savedAt || 0) < CACHE_MAX_AGE;
       fresh = !!(v && v.r && v.r === cached.rev && young);
@@ -8717,8 +8747,8 @@ async function openThreadSynced(tid, uid) {
 
   // 3. listen
   const q = fresh
-    ? query(ref(db, `${ROOT}/dm/${tid}`), orderByKey(), startAfter(cached.newestKey))
-    : query(ref(db, `${ROOT}/dm/${tid}`), limitToLast(THREAD_PAGE));
+    ? query(ref(db, `${msgsPath(tid)}`), orderByKey(), startAfter(cached.newestKey))
+    : query(ref(db, `${msgsPath(tid)}`), limitToLast(THREAD_PAGE));
 
   const liveMap = new Map();
 
@@ -8761,7 +8791,7 @@ function cacheThread(tid, msgs) {
   cacheTimers[tid] = setTimeout(async () => {
     let rev = 0;
     try {
-      const mv = await dbfns.get(dbfns.ref(db, `${ROOT}/dmMeta/${tid}`));
+      const mv = await dbfns.get(dbfns.ref(db, `${metaPath(tid)}`));
       rev = (mv && mv.val() && mv.val().r) || 0;
     } catch (e) {}
     cacheWrite(tid, msgs, rev);
@@ -9455,7 +9485,30 @@ function renderThreads() {
   const box = $("ycDmList");
   if (!box) return;
   box.innerHTML = "";
-  const entries = Object.entries(state.threads)
+
+  // "new group" sits at the top of the list
+  const make = document.createElement("div");
+  make.className = "yc-row";
+  make.onclick = () => openNewGroup();
+  const mkAv = document.createElement("span");
+  mkAv.className = "yc-av-wrap";
+  const mkGlyph = document.createElement("span");
+  mkGlyph.className = "yc-av";
+  mkGlyph.textContent = "+";
+  mkAv.appendChild(mkGlyph);
+  const mkMain = document.createElement("div");
+  mkMain.className = "yc-row-main";
+  const mkName = document.createElement("div");
+  mkName.className = "yc-row-name";
+  mkName.textContent = "New group chat";
+  const mkSub = document.createElement("div");
+  mkSub.className = "yc-row-sub";
+  mkSub.textContent = "Start a chat with a few people";
+  mkMain.append(mkName, mkSub);
+  make.append(mkAv, mkMain);
+  box.appendChild(make);
+
+  const entries = Object.entries(allThreads())
     .map(([uid, t]) => ({ uid, ...t }))
     .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
 
@@ -9468,7 +9521,8 @@ function renderThreads() {
   }
 
   entries.forEach((t) => {
-    const online = !!state.people[t.uid];
+    const isGroup = !!t.group;
+    const online = !isGroup && !!state.people[t.uid];
     const read = Number(localStorage.getItem(readKey(t.uid)) || 0);
     const unread = t.lastFrom !== state.uid && (t.lastTs || 0) > read;
     const nmStr = nameFor(t.uid, t.name);
@@ -9479,10 +9533,17 @@ function renderThreads() {
 
     const avWrap = document.createElement("span");
     avWrap.className = "yc-av-wrap";
-    avWrap.appendChild(avatarEl(t.uid, nmStr));
-    const ring = document.createElement("span");
-    ring.className = "yc-ring" + (online ? "" : " off");
-    avWrap.appendChild(ring);
+    if (isGroup) {
+      const g = document.createElement("span");
+      g.className = "yc-av";
+      g.textContent = "\u{1F465}";
+      avWrap.appendChild(g);
+    } else {
+      avWrap.appendChild(avatarEl(t.uid, nmStr));
+      const ring = document.createElement("span");
+      ring.className = "yc-ring" + (online ? "" : " off");
+      avWrap.appendChild(ring);
+    }
 
     const main = document.createElement("div");
     main.className = "yc-row-main";
@@ -9496,7 +9557,8 @@ function renderThreads() {
     }
     const sub = document.createElement("div");
     sub.className = "yc-row-sub";
-    sub.textContent = (t.lastFrom === state.uid ? "you: " : "") + (t.lastText || "");
+    const who = t.lastFrom === state.uid ? "you: " : (isGroup && t.lastName ? t.lastName + ": " : "");
+    sub.textContent = who + (t.lastText || "");
     main.append(nm, sub);
 
     const when = document.createElement("span");
@@ -9506,6 +9568,381 @@ function renderThreads() {
     row.append(avWrap, main, when);
     box.appendChild(row);
   });
+}
+
+/* ============================ GROUP CHATS ============================
+   groups/<gid>/info    { name, owner, ownerAuth, ts, members:{uid:name}, last:{text,ts,from,name} }
+   groups/<gid>/msgs    messages (same shape as DMs)
+   groups/<gid>/reads   read receipts      groups/<gid>/meta     cache revision
+   groups/<gid>/typing  typing indicators
+   userGroups/<uid>/<gid> = true            your list of groups
+
+   Only the person who made a group can delete it. Deleting removes the whole
+   groups/<gid> node, so every message (and every picture inside them) is gone
+   from the database and the space is freed. */
+const GROUP_NAME_MAX = 32;
+const GROUP_MAX_MEMBERS = 25;
+const groupUi = { gid: null, picked: new Set(), deleting: null };
+
+(function injectGroupCss() {
+  if (document.getElementById("ycGroupCss")) return;
+  const s = document.createElement("style");
+  s.id = "ycGroupCss";
+  s.textContent = `
+    .yc-grp-form{display:flex;flex-direction:column;gap:12px;padding:14px;text-align:left}
+    .yc-grp-input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid var(--border,rgba(255,255,255,.15));background:rgba(255,255,255,.05);color:inherit;font:inherit;outline:none}
+    .yc-grp-input:focus{border-color:var(--accent-primary,#ff6b9d)}
+    .yc-grp-note{font-size:12px;color:var(--text-muted,#999);line-height:1.5}
+    .yc-grp-pick{display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow-y:auto}
+    .yc-grp-pick-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer}
+    .yc-grp-pick-row:hover{background:rgba(255,255,255,.06)}
+    .yc-grp-pick-row input{accent-color:var(--accent-primary,#ff6b9d);width:16px;height:16px;flex-shrink:0}
+    .yc-grp-pick-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .yc-grp-pick-row .st{font-size:11px;color:var(--text-muted,#999)}
+    .yc-grp-btn{padding:11px 14px;border-radius:10px;border:0;font:inherit;font-weight:700;cursor:pointer;background:var(--accent-primary,#ff6b9d);color:#fff}
+    .yc-grp-btn.danger{background:#e5484d}
+    .yc-grp-btn.ghost{background:transparent;border:1px solid var(--border,rgba(255,255,255,.2));color:inherit}
+    .yc-grp-btn:disabled{opacity:.5;cursor:default}
+    .yc-grp-tag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.12);margin-left:6px;vertical-align:middle}
+  `;
+  document.head.appendChild(s);
+})();
+
+function groupEntries() {
+  const out = {};
+  Object.entries(state.groups || {}).forEach(([gid, g]) => {
+    if (!g) return;
+    const l = g.last || {};
+    out[gid] = {
+      uid: gid, name: g.name, group: true,
+      lastText: l.text || "", lastTs: l.ts || g.ts || 0,
+      lastFrom: l.from || null, lastName: l.name || ""
+    };
+  });
+  return out;
+}
+/* DM index entries and groups, merged — for the list, unread badges and read markers */
+function allThreads() { return Object.assign({}, groupEntries(), state.threads || {}); }
+
+async function cacheDelete(tid) {
+  const d = await cacheDb();
+  if (!d) return;
+  try { d.transaction([CACHE_STORE], "readwrite").objectStore(CACHE_STORE).delete(tid); } catch (e) {}
+}
+
+/* Your list of groups, plus a small live listener on each one's info node
+   (name, members, newest-message preview). Message bodies are only ever
+   downloaded for the group you have open. */
+function listenGroups() {
+  const { ref, onValue } = dbfns;
+  const infoUnsubs = {};
+
+  const watch = (gid) => onValue(ref(db, `${ROOT}/groups/${gid}/info`), (snap) => {
+    const info = snap.val();
+    if (!info) { groupGone(gid); return; }
+    const prev = state.groups[gid];
+    state.groups[gid] = info;
+
+    const l = info.last;
+    if (l && l.from && l.from !== state.uid && (!prev || !prev.last || (prev.last.ts || 0) < (l.ts || 0))) {
+      maybeNotify(
+        { uid: l.from, key: gid + ":" + l.ts, name: (l.name || "Someone") + " · " + info.name, text: l.text || "", ts: l.ts },
+        "dm", gid
+      );
+    }
+    recountUnread();
+    if (state.view === "dms") renderThreads();
+    if (state.openThread && state.openThread.uid === gid) refreshThreadHead();
+    if (state.view === "group" && groupUi.gid === gid) renderGroupInfo();
+  }, (err) => console.warn("[chat] can't read group", gid, err && err.code));
+
+  const offList = onValue(ref(db, `${ROOT}/userGroups/${state.uid}`), (snap) => {
+    const ids = Object.keys(snap.val() || {}).filter(isGroupId);
+    ids.forEach((gid) => { if (!infoUnsubs[gid]) infoUnsubs[gid] = watch(gid); });
+    Object.keys(infoUnsubs).forEach((gid) => {
+      if (ids.includes(gid)) return;
+      try { infoUnsubs[gid](); } catch (e) {}
+      delete infoUnsubs[gid];
+      if (state.groups[gid]) groupGone(gid);
+    });
+    recountUnread();
+    if (state.view === "dms") renderThreads();
+  }, (err) => console.warn("[chat] group list unavailable", err && err.code));
+
+  return () => {
+    try { offList(); } catch (e) {}
+    Object.keys(infoUnsubs).forEach((gid) => { try { infoUnsubs[gid](); } catch (e) {} });
+  };
+}
+
+/* The group is gone for you — deleted by its owner, or you left. Clean up locally. */
+function groupGone(gid) {
+  const wasOpen = state.openThread && state.openThread.uid === gid;
+  const wasInfo = state.view === "group" && groupUi.gid === gid;
+  delete state.groups[gid];
+  try { localStorage.removeItem(readKey(gid)); } catch (e) {}
+  cacheDelete(gid);
+  try { dbfns.remove(dbfns.ref(db, `${ROOT}/userGroups/${state.uid}/${gid}`)).catch(() => {}); } catch (e) {}
+  if (wasOpen || wasInfo) {
+    showView("dms");
+    if (groupUi.deleting !== gid) say("That group chat was deleted.");
+  }
+  recountUnread();
+  if (state.view === "dms") renderThreads();
+}
+
+/* newest-message preview shown in everyone's list */
+function touchGroup(gid, preview, ts) {
+  return dbfns.update(dbfns.ref(db, `${ROOT}/groups/${gid}/info/last`), {
+    text: preview, ts, from: state.uid, name: state.name
+  });
+}
+
+function paintGroupHead(gid) {
+  const g = state.groups[gid];
+  const n = g && g.members ? Object.keys(g.members).length : 0;
+  const sub = $("ycThreadSub");
+  if (sub) sub.textContent = n ? (n + " members \u00B7 tap for info") : "group chat";
+  const av = $("ycThreadAv");
+  if (av) { av.innerHTML = ""; av.textContent = "\u{1F465}"; }
+  const open = () => openGroupInfo(gid);
+  const head = $("ycViewThread").querySelector(".yc-thread-head .yc-row-main");
+  if (head) { head.style.cursor = "pointer"; head.title = "Group info"; head.onclick = open; }
+  const avw = av && av.parentElement;
+  if (avw) { avw.style.cursor = "pointer"; avw.onclick = open; }
+}
+
+/* ---------- make a group ---------- */
+function openNewGroup() {
+  if (!sessionStarted) { say("You need to log in to make a group."); return; }
+  groupUi.picked = new Set();
+  showView("newgroup");
+  renderNewGroup();
+}
+
+function renderNewGroup() {
+  const box = $("ycNewGroupScroll");
+  if (!box) return;
+  box.innerHTML = "";
+  const form = document.createElement("div");
+  form.className = "yc-grp-form";
+
+  const name = document.createElement("input");
+  name.id = "ycGroupName";
+  name.className = "yc-grp-input";
+  name.placeholder = "group name";
+  name.maxLength = GROUP_NAME_MAX;
+  name.autocomplete = "off";
+  form.appendChild(name);
+
+  const note = document.createElement("div");
+  note.className = "yc-grp-note";
+  note.textContent = "Pick who to add (up to " + (GROUP_MAX_MEMBERS - 1) + " people). You'll be the owner \u2014 only you can delete the group, which erases all of its messages for everyone.";
+  form.appendChild(note);
+
+  const list = document.createElement("div");
+  list.className = "yc-grp-pick";
+  const people = Object.values(knownPeople()).filter((p) => p.name);
+  people.sort((a, b) => (!!state.people[b.uid] - !!state.people[a.uid]) || String(a.name).localeCompare(String(b.name)));
+  if (!people.length) {
+    const none = document.createElement("div");
+    none.className = "yc-grp-note";
+    none.textContent = "Nobody to add yet \u2014 people show up here once they've been around.";
+    list.appendChild(none);
+  }
+  people.forEach((p) => {
+    const row = document.createElement("label");
+    row.className = "yc-grp-pick-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.onchange = () => {
+      if (cb.checked) {
+        if (groupUi.picked.size >= GROUP_MAX_MEMBERS - 1) { cb.checked = false; say("That's the max for a group."); return; }
+        groupUi.picked.add(p.uid);
+      } else groupUi.picked.delete(p.uid);
+    };
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = p.name;
+    const st = document.createElement("span");
+    st.className = "st";
+    st.textContent = state.people[p.uid] ? "online" : "";
+    row.append(cb, avatarEl(p.uid, p.name, "sm"), nm, st);
+    list.appendChild(row);
+  });
+  form.appendChild(list);
+
+  const go = document.createElement("button");
+  go.id = "ycGroupCreate";
+  go.className = "yc-grp-btn";
+  go.textContent = "Create group";
+  go.onclick = () => createGroup();
+  form.appendChild(go);
+
+  box.appendChild(form);
+}
+
+async function createGroup() {
+  if (!sessionStarted || !state.authUid) { say("You need to log in to make a group."); return; }
+  if (state.kicked) { say("You've been removed from the chat."); return; }
+  if (state.muted)  { say("You're muted in chat."); return; }
+
+  const nameEl = $("ycGroupName");
+  const name = (nameEl ? nameEl.value : "").trim().slice(0, GROUP_NAME_MAX);
+  const picked = [...groupUi.picked].slice(0, GROUP_MAX_MEMBERS - 1);
+  if (!name) { say("Give the group a name."); return; }
+  if (!picked.length) { say("Pick at least one person."); return; }
+
+  const btn = $("ycGroupCreate");
+  if (btn) btn.disabled = true;
+
+  const { ref, set } = dbfns;
+  const gid = "g_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const ts = Date.now();
+  const known = knownPeople();
+  const members = {};
+  members[state.uid] = state.name;
+  picked.forEach((u) => { members[u] = (known[u] && known[u].name) || nameFor(u); });
+
+  try {
+    await set(ref(db, `${ROOT}/groups/${gid}/info`), {
+      name, owner: state.uid, ownerAuth: state.authUid, ts, members,
+      last: { text: "Group created", ts, from: state.uid, name: state.name }
+    });
+  } catch (err) {
+    console.error("[chat] create group failed", err);
+    say("Couldn't create the group \u2014 the database rules probably don't allow groups yet.");
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  // put it in everyone's list (yours first, so it shows up for you right away)
+  await Promise.all(Object.keys(members).map((u) =>
+    set(ref(db, `${ROOT}/userGroups/${u}/${gid}`), true).catch((e) => console.warn("[chat] couldn't add", u, e && e.code))
+  ));
+  groupUi.picked = new Set();
+  openThread(gid, name);
+}
+
+/* ---------- group info / delete / leave ---------- */
+function openGroupInfo(gid) {
+  groupUi.gid = gid;
+  showView("group");
+  renderGroupInfo();
+}
+function closeGroupInfo() {
+  if (state.openThread && state.openThread.uid === groupUi.gid) showView("thread");
+  else showView("dms");
+}
+
+function renderGroupInfo() {
+  const gid = groupUi.gid;
+  const g = state.groups[gid];
+  const box = $("ycGroupScroll");
+  if (!box) return;
+  box.innerHTML = "";
+  const title = $("ycGroupTitle"), sub = $("ycGroupSub");
+
+  if (!g) {
+    if (title) title.textContent = "Group";
+    if (sub) sub.textContent = "";
+    const e = document.createElement("div");
+    e.className = "yc-empty";
+    e.textContent = "This group isn't available.";
+    box.appendChild(e);
+    return;
+  }
+
+  const ids = Object.keys(g.members || {});
+  const ownerName = (g.members && g.members[g.owner]) || nameFor(g.owner, "the owner");
+  if (title) title.textContent = g.name;
+  if (sub) sub.textContent = ids.length + " members \u00B7 made by " + (g.owner === state.uid ? "you" : ownerName);
+
+  box.appendChild(sectionTitle("Members \u2014 " + ids.length));
+  ids.sort((a, b) => ((b === g.owner) - (a === g.owner)) || String((g.members || {})[a]).localeCompare(String((g.members || {})[b])))
+     .forEach((u) => {
+    const nm = u === state.uid ? state.name : ((g.members && g.members[u]) || nameFor(u));
+    const row = document.createElement("div");
+    row.className = "yc-row";
+    const avWrap = document.createElement("span");
+    avWrap.className = "yc-av-wrap";
+    avWrap.appendChild(avatarEl(u, nm));
+    const main = document.createElement("div");
+    main.className = "yc-row-main";
+    const n = document.createElement("div");
+    n.className = "yc-row-name";
+    n.textContent = nm + (u === state.uid ? " (you)" : "");
+    if (u === g.owner) {
+      const tag = document.createElement("span");
+      tag.className = "yc-grp-tag";
+      tag.textContent = "owner";
+      n.appendChild(tag);
+    }
+    main.appendChild(n);
+    row.append(avWrap, main);
+    if (u !== state.uid) row.onclick = () => { state.profileFrom = "thread"; openProfile(u); };
+    box.appendChild(row);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "yc-grp-form";
+  if (g.owner === state.uid) {
+    const note = document.createElement("div");
+    note.className = "yc-grp-note";
+    note.textContent = "Deleting the group erases every message in it for everyone and frees the space it was using. This can't be undone.";
+    const del = document.createElement("button");
+    del.className = "yc-grp-btn danger";
+    del.textContent = "Delete group chat";
+    del.onclick = () => deleteGroup(gid);
+    actions.append(note, del);
+  } else {
+    const note = document.createElement("div");
+    note.className = "yc-grp-note";
+    note.textContent = "Only " + (g.owner === state.uid ? "you" : ownerName) + " can delete this group. You can leave it \u2014 the messages stay for everyone else.";
+    const leave = document.createElement("button");
+    leave.className = "yc-grp-btn ghost";
+    leave.textContent = "Leave group";
+    leave.onclick = () => leaveGroup(gid);
+    actions.append(note, leave);
+  }
+  box.appendChild(actions);
+}
+
+async function deleteGroup(gid) {
+  const g = state.groups[gid];
+  if (!g || g.owner !== state.uid) { say("Only the person who made this group can delete it."); return; }
+  if (!window.confirm('Delete "' + g.name + '" for everyone?\n\nEvery message in it is permanently erased. This can\'t be undone.')) return;
+
+  const { ref, remove } = dbfns;
+  const members = Object.keys(g.members || {});
+  groupUi.deleting = gid;
+  try {
+    await remove(ref(db, `${ROOT}/groups/${gid}`));      // messages, receipts, typing, everything
+  } catch (err) {
+    console.error("[chat] delete group failed", err);
+    groupUi.deleting = null;
+    say("Couldn't delete the group \u2014 the database rules may not allow it.");
+    return;
+  }
+  // take it out of everyone's list (anyone this misses cleans itself up when it sees the group is gone)
+  await Promise.all(members.map((u) => remove(ref(db, `${ROOT}/userGroups/${u}/${gid}`)).catch(() => {})));
+  groupGone(gid);
+  groupUi.deleting = null;
+  say("Group deleted.");
+}
+
+async function leaveGroup(gid) {
+  const g = state.groups[gid];
+  if (!g) return;
+  if (g.owner === state.uid) { say("You made this group \u2014 delete it instead."); return; }
+  if (!window.confirm('Leave "' + g.name + '"?')) return;
+  const { ref, remove } = dbfns;
+  groupUi.deleting = gid;                                   // silences the "was deleted" toast
+  try { await remove(ref(db, `${ROOT}/groups/${gid}/info/members/${state.uid}`)); } catch (e) {}
+  await remove(ref(db, `${ROOT}/userGroups/${state.uid}/${gid}`)).catch(() => {});
+  groupGone(gid);
+  groupUi.deleting = null;
+  say("You left the group.");
 }
 
 /* ---------- loading state ---------- */
@@ -9532,7 +9969,7 @@ function showView(v) {
 
   // Leaving a DM for good? stop listening, otherwise its messages keep
   // arriving in the background and getting silently marked as read.
-  if (state.view === "thread" && v !== "thread" && v !== "profile" && state.unsubThread) {
+  if ((state.view === "thread" || state.view === "group") && v !== "thread" && v !== "profile" && v !== "group" && state.unsubThread) {
     try { state.unsubThread(); } catch (e) {}
     if (state.unsubReads) { try { state.unsubReads(); } catch (e) {} }
     state.unsubThread = null;
@@ -9548,7 +9985,7 @@ function showView(v) {
   const map = {
     gate: "ycViewGate", room: "ycViewRoom", dms: "ycViewDms",
     thread: "ycViewThread", people: "ycViewPeople", me: "ycViewMe",
-    profile: "ycViewProfile"
+    profile: "ycViewProfile", group: "ycViewGroup", newgroup: "ycViewNewGroup"
   };
   Object.entries(map).forEach(([k, id]) => {
     const el = $(id); if (el) el.style.display = k === v ? "flex" : "none";
@@ -9556,7 +9993,7 @@ function showView(v) {
 
   document.querySelectorAll(".yc-tab").forEach((t) => {
     const key = t.dataset.tab;
-    t.classList.toggle("active", key === v || (v === "thread" && key === "dms") || (v === "profile" && key === "people"));
+    t.classList.toggle("active", key === v || (v === "thread" && key === "dms") || ((v === "group" || v === "newgroup") && key === "dms") || (v === "profile" && key === "people"));
   });
 
   const comp = $("ycComposer");
@@ -9778,15 +10215,19 @@ async function handlePictureFile(file) {
 
     if (target) {
       const tid = threadId(state.uid, target.uid);
-      const pushed = await push(ref(db, `${ROOT}/dm/${tid}`), payload);
+      const pushed = await push(ref(db, `${msgsPath(tid)}`), payload);
       bumpThreadMeta(tid, pushed && pushed.key);   // tells other clients their cache is stale
       const preview = gif ? "GIF" : "📷 Picture";
-      await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${target.uid}`), {
-        name: target.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-      });
-      await update(ref(db, `${ROOT}/dmIndex/${target.uid}/${state.uid}`), {
-        name: state.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-      });
+      if (isGroupId(target.uid)) {
+        await touchGroup(target.uid, preview, payload.ts);
+      } else {
+        await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${target.uid}`), {
+          name: target.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
+        });
+        await update(ref(db, `${ROOT}/dmIndex/${target.uid}/${state.uid}`), {
+          name: state.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
+        });
+      }
       markThreadRead(target.uid, payload.ts);
     } else {
       await push(ref(db, `${ROOT}/room`), payload);
@@ -9807,7 +10248,7 @@ const compose = { mode: null, target: null };
 
 function msgPath(key) {
   if (state.view === "thread" && state.openThread) {
-    return `${ROOT}/dm/${threadId(state.uid, state.openThread.uid)}/${key}`;
+    return `${msgsPath(threadId(state.uid, state.openThread.uid))}/${key}`;
   }
   return `${ROOT}/room/${key}`;
 }
@@ -9870,11 +10311,15 @@ async function saveEdit(text) {
     // keep the DM list preview honest if this was the newest message
     if (state.view === "thread" && state.openThread) {
       const other = state.openThread.uid;
-      const t = state.threads[other];
+      const t = allThreads()[other];
       if (t && Math.abs((t.lastTs || 0) - (m.ts || 0)) < 1000) {
         const preview = text.slice(0, 60);
-        await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${other}`), { lastText: preview });
-        await update(ref(db, `${ROOT}/dmIndex/${other}/${state.uid}`), { lastText: preview });
+        if (isGroupId(other)) {
+          await update(ref(db, `${ROOT}/groups/${other}/info/last`), { text: preview });
+        } else {
+          await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${other}`), { lastText: preview });
+          await update(ref(db, `${ROOT}/dmIndex/${other}/${state.uid}`), { lastText: preview });
+        }
       }
     }
   } catch (err) {
@@ -10237,7 +10682,7 @@ function slashCommands() {
 
   const cmds = [];
   const p = P(), np = p && p.nowPlaying();
-  const inDm = state.view === "thread" && state.openThread && state.openThread.uid;
+  const inDm = state.view === "thread" && state.openThread && !isGroupId(state.openThread.uid) && state.openThread.uid;
 
   if (inDm && np && np.key) {
     const friend = state.openThread.name || nameFor(state.openThread.uid);
@@ -10441,15 +10886,19 @@ async function send() {
     if (state.view === "thread" && state.openThread) {
       const other = state.openThread.uid;
       const tid = threadId(state.uid, other);
-      const pushed = await push(ref(db, `${ROOT}/dm/${tid}`), payload);
+      const pushed = await push(ref(db, `${msgsPath(tid)}`), payload);
       bumpThreadMeta(tid, pushed && pushed.key);   // tells other clients their cache is stale
       const preview = text.slice(0, 60);
-      await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${other}`), {
-        name: state.openThread.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-      });
-      await update(ref(db, `${ROOT}/dmIndex/${other}/${state.uid}`), {
-        name: state.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-      });
+      if (isGroupId(other)) {
+        await touchGroup(other, preview, payload.ts);
+      } else {
+        await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${other}`), {
+          name: state.openThread.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
+        });
+        await update(ref(db, `${ROOT}/dmIndex/${other}/${state.uid}`), {
+          name: state.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
+        });
+      }
       markThreadRead(other, payload.ts);
     } else {
       await push(ref(db, `${ROOT}/room`), payload);
@@ -11283,6 +11732,7 @@ window.YoutifyChat = {
   open, close, toggle, send,
   gateSubmit, gateSwitchMode, logOut,
   keysChanged,
+  openNewGroup, createGroup, openGroupInfo, closeGroupInfo, deleteGroup, leaveGroup,
 
   /* Tell someone exactly why they can't send, instead of guessing.
      Have them run YoutifyChat.whyCantIChat() in the console. */
