@@ -7474,3 +7474,87 @@ body.sidebar-bottom .app .player    { grid-column: 2 !important; grid-row: 1 / -
   body.sidebar-bottom .app .player  { grid-column: 1 !important; grid-row: 2 !important; }
   body.sidebar-bottom .app > .sidebar { grid-column: 1 !important; grid-row: 3 !important; }
 }
+
+/* ==========================================================================
+   YOUTIFY CHAT — mix of original chat + lyrics panel
+   (floating + rounded + pushes app like lyrics; keeps the chat's accent glow,
+   deeper shadow and smoother slide-in)
+   ========================================================================== */
+.yc-panel {
+  width: 410px;
+  max-width: none;
+  top: 12px;
+  right: 12px;
+  height: calc(100vh - 24px);
+  border-radius: 26px;
+  overflow: hidden;
+  transform: translateX(calc(100% + 28px));
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  background:
+    radial-gradient(900px 340px at 100% 0%, rgba(var(--shadow-glow), 0.14), transparent 65%),
+    color-mix(in srgb, var(--bg-primary) 80%, transparent);
+  border: 1px solid var(--glass-border-color, var(--border));
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--glass-tint, #fff) 16%, rgba(255,255,255,0.2)),
+    -18px 0 60px rgba(0,0,0,0.45);
+}
+
+.yc-panel.open {
+  transform: translateX(0);
+}
+
+body.yc-chat-open .app {
+  margin-right: 422px;
+}
+
+@media (max-width: 900px) {
+  .yc-panel {
+    inset: 10px;
+    width: auto;
+    height: auto;
+    border-radius: 24px;
+    transform: translateY(calc(100% + 20px));
+  }
+
+  .yc-panel.open {
+    transform: translateY(0);
+  }
+
+  body.yc-chat-open .app {
+    margin-right: 0;
+  }
+}
+
+/* ==========================================================================
+   YOUTIFY CHAT — browser autofill was painting its own box inside the handle
+   field (and would do the same to the name/login inputs). Keep them looking
+   like the rest of the panel.
+   ========================================================================== */
+.yc-panel input:-webkit-autofill,
+.yc-panel input:-webkit-autofill:hover,
+.yc-panel input:-webkit-autofill:focus,
+.yc-panel input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+
+.yc-panel input:autofill {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.yc-handle-wrap input:-webkit-autofill,
+.yc-handle-wrap input:autofill {
+  border-radius: 10px;
+}
+
+/* performance mode paints every .yc-gate input with a solid background (!important),
+   which also hit the handle input sitting inside its own styled wrapper and made
+   a box-in-a-box. The wrapper already has the background, so the input stays clear. */
+body.performance-mode .yc-gate .yc-handle-wrap input {
+  background: none !important;
+  box-shadow: none !important;
+}
