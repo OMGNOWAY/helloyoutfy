@@ -1174,9 +1174,30 @@ const sidebarPosButton = document.getElementById('sidebarPosBtn');
 // ============================================================================
 
 class YouTubeAPI {
-  constructor(key) {
-    this.key = key;                       // still only used for search()
-    this.hosting = 'https://thisisatestthing-2.onrender.com';   // downloader backend (no key needed)
+  constructor(keys, hosts) {
+    this.keys = [].concat(keys || []).filter(Boolean);   // string or array
+    this.hosts = hosts || [
+      'https://thisisatestthing-2.onrender.com',
+      'https://thisisatestthing-1.onrender.com',
+      'https://thisisatestthing.onrender.com',
+    ];
+    this.keyIdx = 0;
+    this.hostIdx = 0;
+    this.cooldowns = new Map();   // host -> timestamp it's benched until
+  }
+
+  // ---------- round robin helpers ----------
+  nextHost() {
+    for (let i = 0; i < this.hosts.length; i++) {
+      const h = this.hosts[this.hostIdx++ % this.hosts.length];
+      if ((this.cooldowns.get(h) || 0) < Date.now()) return h;
+    }
+    // everything is benched, just keep rotating
+    return this.hosts[this.hostIdx++ % this.hosts.length];
+  }
+
+  benchHost(host, ms = 60000) {
+    this.cooldowns.set(host, Date.now() + ms);
   }
 
   parseID(input) {
@@ -1185,13 +1206,27 @@ class YouTubeAPI {
     return match ? match[1] : input;
   }
 
+  // ---------- search (rotates keys, skips rate-limited ones) ----------
   async search(query) {
-    if (!this.key) throw new Error('API key not set');
-    const res = await fetch('https://youtube-v2.p.rapidapi.com/search/?query=' + encodeURIComponent(query), {
-      method: 'GET',
-      headers: { 'x-rapidapi-key': this.key, 'x-rapidapi-host': 'youtube-v2.p.rapidapi.com' }
-    });
-    return res.json();
+    if (!this.keys.length) throw new Error('API key not set');
+    let lastErr;
+    for (let i = 0; i < this.keys.length; i++) {
+      const key = this.keys[this.keyIdx++ % this.keys.length];
+      try {
+        const res = await fetch('https://youtube-v2.p.rapidapi.com/search/?query=' + encodeURIComponent(query), {
+          method: 'GET',
+          headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'youtube-v2.p.rapidapi.com' }
+        });
+        if (res.status === 429 || res.status === 403) {   // quota / rate limit -> next key
+          lastErr = new Error('Key limited (' + res.status + ')');
+          continue;
+        }
+        return res.json();
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('All keys failed');
   }
 
   async getJSON(url) {
@@ -1200,43 +1235,69 @@ class YouTubeAPI {
     return res.json();
   }
 
-  async api(path, options = {}) {
-  const res = await fetch(`${this.hosting}${path}`, options);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `${path} failed (${res.status})`);
+  // ---------- backend call pinned to one host ----------
+  async api(host, path, options = {}) {
+    const res = await fetch(`${host}${path}`, options);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const e = new Error(err.detail || `${path} failed (${res.status})`);
+      e.retryable = res.status >= 500 || res.status === 429;
+      throw e;
+    }
+    return res;
   }
-  return res;
-}
 
-async download(track) {
-  try {
-    const url = `https://www.youtube.com/watch?v=${track.id}`;
+  // ---------- download (tries the next host if one dies) ----------
+  async download(track) {
     track.status = 'Fetching...';
     renderDownloads();
 
+    let lastErr;
+    for (let i = 0; i < this.hosts.length; i++) {
+      const host = this.nextHost();
+      try {
+        await this._downloadFrom(host, track);
+        return;
+      } catch (e) {
+        lastErr = e;
+        console.error(`[${host}]`, e);
+        const retryable = e.retryable || e instanceof TypeError;   // TypeError = network failure
+        if (!retryable) break;                                     // bad video etc, no point retrying
+        this.benchHost(host);
+        track.progress = 0;
+        track.status = 'Retrying...';
+        renderDownloads();
+      }
+    }
+
+    console.error(lastErr);
+    track.status = 'Error';
+    renderDownloads();
+  }
+
+  async _downloadFrom(host, track) {
+    const url = `https://www.youtube.com/watch?v=${track.id}`;
+
     // analyze (first request can take ~1 min if Render was asleep)
-    const info = await (await this.api('/api/analyze', {
+    const info = await (await this.api(host, '/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
     })).json();
 
-    // fill in title / thumbnail for tracks added via pasted link
     if (info.title && (!track.title || track.title.startsWith('YT: '))) track.title = info.title;
     if (!track.albumArt) {
       track.albumArt = info.thumbnailUrl || `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg`;
     }
 
     const mp3 = (info.formats || []).find(f => f.ext === 'mp3');
-    if (!mp3) { track.status = 'Error'; renderDownloads(); return; }
+    if (!mp3) throw new Error('No mp3 format');   // not retryable
 
-    // download as blob (with progress if the server sends content-length)
     track.status = 'Downloading...';
     track.progress = 0;
     renderDownloads();
 
-    const res = await this.api('/api/download', {
+    const res = await this.api(host, '/api/download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, formatId: mp3.formatId, title: track.title || info.title || '' })
@@ -1263,14 +1324,10 @@ async download(track) {
     track.type = 'youtube';
     track.status = 'Ready';
     renderDownloads();
-  } catch (e) {
-    console.error(e);
-    track.status = 'Error';
-    renderDownloads();
   }
 }
-}
 
+// one key or many, one host or many:
 const youtubeAPI = new YouTubeAPI(apiKey);
 
 // ============================================================================
