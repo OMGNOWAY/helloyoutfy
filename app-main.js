@@ -1690,6 +1690,37 @@ window.addEventListener('pageshow', resumeAudioContextIfNeeded);
 // THEME MANAGER
 // ============================================================================
 
+const AABColor = {
+  clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+  rgb2hsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+    let h = 0, s = 0;
+    if (d) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+      h *= 60; if (h < 0) h += 360;
+    }
+    return [h, s, l];
+  },
+  hsl2rgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+    return [r + m, g + m, b + m].map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
+  },
+  relLum(r, g, b) {
+    const f = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  },
+  contrast(a, b) {
+    const x = AABColor.relLum(a[0], a[1], a[2]), y = AABColor.relLum(b[0], b[1], b[2]);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+};
+
 class ThemeManager {
   static THEME_CSS_VARS = ['--bg-primary','--bg-secondary','--bg-tertiary','--bg-hover',
     '--text-primary','--text-secondary','--accent','--accent-secondary','--accent-hover','--border','--player-bg','--card-bg', '--shadow-glow'];
@@ -1698,7 +1729,7 @@ class ThemeManager {
   // Every place that clears AAB overrides must remove this exact same list, or a bug like
   // the stuck-text-color issue (fixed previously) can come back. If applyAlbumColors() ever
   // gains a new setProperty() call, add the matching property here — this is the only list.
-  static AAB_INLINE_PROPS = ['--accent','--accent-hover','--accent-secondary','--shadow-glow',
+  static AAB_INLINE_PROPS = ['--bg-card','--bg-elevated','--text-muted','--accent','--accent-hover','--accent-secondary','--shadow-glow',
     '--glass-tint','--bg-primary','--bg-secondary','--bg-tertiary','--bg-hover','--text-primary', '--bg-primary','--bg-secondary','--bg-tertiary','--bg-hover',
     '--text-primary','--text-secondary','--accent','--accent-secondary','--accent-hover','--border','--player-bg','--card-bg', '--shadow-glow'];
 
@@ -1869,27 +1900,43 @@ class ThemeManager {
       const light = pool.filter(c => c.L > 0.5);
       accentC = (light.length ? light : pool).slice().sort((a, b) => b.share - a.share)[0];
     } else {
-      accentC = pool.slice().sort((a, b) => b.score - a.score)[0];
+      // prefer a color that contrasts in hue with the dominant/background color, so the
+      // accent actually pops instead of being a brighter copy of the background
+      const domC = clusters[0];
+      const popBonus = c => {
+        if (c === domC || domC.C < 0.035) return 1;
+        const d = Math.abs(c.hsl[0] - domC.hsl[0]) % 360;
+        return 1 + 0.9 * Math.min(1, (d > 180 ? 360 - d : d) / 90);
+      };
+      accentC = pool.slice().sort((a, b) => b.score * popBonus(b) - a.score * popBonus(a))[0];
     }
 
-    // ---------- background seed: dominant hue (kept!), then pushed dark ----------
+    // ---------- background: built from the cover's own colors ----------
+    // Up to three distinct colors from the cover become the three background layers
+    // (the page gradient blends bg-primary / bg-tertiary / accent). They're kept dark
+    // for readability but NOT flattened to one muddy hue, so the UI looks like the album.
+    const hueGap = (x, y) => { const d = Math.abs(x - y) % 360; return d > 180 ? 360 - d : d; };
+    const chromatic = clusters.filter(c => c.C >= 0.04 && c.share >= 0.03);
     const dom = clusters[0];
-    let bgH = dom.hsl[0], bgS = dom.hsl[1];
-    if (mono) { bgH = accentC.hsl[0]; bgS = 0.03; }
-    else if (dom.C < 0.035) {
-      // dominant area is gray/black/white: tint it faintly with the accent's hue instead of going muddy
-      bgH = accentC.hsl[0];
-      bgS = accentC.share >= 0.08 ? 0.22 : 0.12;
-    } else {
-      bgS = clamp(bgS, 0.18, 0.6);
+    let h1, s1;
+    if (mono) { h1 = accentC.hsl[0]; s1 = 0.03; }
+    else if (dom.C < 0.035) { h1 = accentC.hsl[0]; s1 = accentC.share >= 0.08 ? 0.28 : 0.15; } // black/white cover: faint accent tint
+    else { h1 = dom.hsl[0]; s1 = clamp(dom.hsl[1], 0.25, 0.7); }
+    let h2 = h1 + 20, s2 = s1, h3 = h1 - 20, s3 = s1;
+    if (!mono) {
+      const c2 = chromatic.filter(c => c !== dom).find(c => hueGap(c.hsl[0], h1) >= 28) || null;
+      if (c2) { h2 = c2.hsl[0]; s2 = clamp(c2.hsl[1], 0.25, 0.7); }
+      const c3 = chromatic.filter(c => c !== dom && c !== c2).find(c => hueGap(c.hsl[0], h1) >= 28 && hueGap(c.hsl[0], h2) >= 28) || null;
+      if (c3) { h3 = c3.hsl[0]; s3 = clamp(c3.hsl[1], 0.25, 0.7); }
     }
-    const bgL = [0.10, 0.145, 0.19, 0.25];
-    const [bg1, bg2, bg3, bgHover] = bgL.map(l => hsl2rgb(bgH, bgS, l));
+    const bg1 = hsl2rgb(h1, s1, 0.13), bg2 = hsl2rgb(h2, s2, 0.18), bg3 = hsl2rgb(h3, s3, 0.235);
+    const bgHover = hsl2rgb(h1, s1, 0.26);
+    const bgCard = hsl2rgb(h1, s1 * 0.9, 0.17), bgElevated = hsl2rgb(h1, s1 * 0.9, 0.21);
 
     // ---------- accent color, tuned ----------
     let [aH, aS, aL] = accentC.hsl;
     if (mono || accentC.C < 0.03) { aS = Math.min(aS, 0.08); aL = clamp(aL, 0.7, 0.9); } // neutral accent stays neutral
-    else { aS = clamp(aS, 0.55, 0.95); aL = clamp(aL, 0.55, 0.72); }
+    else { aS = clamp(aS, 0.45, 0.85); aL = clamp(aL, 0.58, 0.74); }
     let accent = hsl2rgb(aH, aS, aL);
     for (let i = 0; i < 12 && contrast(accent, bg1) < 4.5 && aL < 0.88; i++) { aL += 0.03; accent = hsl2rgb(aH, aS, aL); }
     const accentHover = hsl2rgb(aH, aS, clamp(aL + 0.08, 0, 0.93));
@@ -1920,24 +1967,31 @@ class ThemeManager {
     const white = [245, 245, 250], ink = [15, 15, 20];
     const text = contrast(bg1, white) >= contrast(bg1, ink) ? white : ink;
     const textSecondary = mix(text, bg1, 0.38);
+    const textMuted = mix(text, bg1, 0.62);
 
-    return { accent, accentHover, accent2, bg1, bg2, bg3, bgHover, text, textSecondary, blobs };
+    return { accent, accentHover, accent2, bg1, bg2, bg3, bgHover, bgCard, bgElevated, text, textSecondary, textMuted, blobs };
   }
 
+  /* The AAB theme is generated entirely from the cover (see buildScheme). It sets
+     the whole palette itself, so it looks the same no matter which built-in theme
+     was active underneath. */
   static _applyScheme(s) {
     const root = document.documentElement.style;
     const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
     const [r1, g1, b1] = s.accent, [r3, g3, b3] = s.accent2;
 
-    root.setProperty('--accent', rgb(s.accent));
-    root.setProperty('--accent-hover', rgb(s.accentHover));
-    root.setProperty('--accent-secondary', rgb(s.accent2));
     root.setProperty('--bg-primary', rgb(s.bg1));
     root.setProperty('--bg-secondary', rgb(s.bg2));
     root.setProperty('--bg-tertiary', rgb(s.bg3));
     root.setProperty('--bg-hover', rgb(s.bgHover));
+    root.setProperty('--bg-card', rgb(s.bgCard));
+    root.setProperty('--bg-elevated', rgb(s.bgElevated));
     root.setProperty('--text-primary', rgb(s.text));
     root.setProperty('--text-secondary', rgb(s.textSecondary));
+    root.setProperty('--text-muted', rgb(s.textMuted));
+    root.setProperty('--accent', rgb(s.accent));
+    root.setProperty('--accent-hover', rgb(s.accentHover));
+    root.setProperty('--accent-secondary', rgb(s.accent2));
     root.setProperty('--shadow-glow', `${r1},${g1},${b1}`);
     root.setProperty('--glass-tint', rgb(s.accent));
 
@@ -1966,6 +2020,7 @@ class ThemeManager {
         el.classList.add('visible');
       });
     }, (crossfadeDuration || 1000));
+    try { ThemeManager.applyAccentInk(); } catch (e) {}
   }
 
   static applyAlbumColors(track) {
@@ -3478,7 +3533,8 @@ window.YoutifyPlayer = {
       artist: t.artist || "",
       duration: Number(t.duration) || 0,
       position: (audio && audio.currentTime) || 0,
-      playing: !!isPlaying
+      playing: !!isPlaying,
+      rate: Number(playbackSpeed) || 1
     };
   },
   findIndexByKey(key) {
@@ -3486,6 +3542,17 @@ window.YoutifyPlayer = {
     return queue.findIndex((t) => t && window.YoutifyPlayer.keyFor(t) === key);
   },
   position() { return (audio && audio.currentTime) || 0; },
+  speed() { return Number(playbackSpeed) || 1; },
+  /* Sets playback speed the same way the slider does, and moves the sliders so
+     the UI doesn't lie about what's playing. */
+  setSpeed(rate) {
+    rate = Math.min(2, Math.max(0.1, Number(rate) || 1));
+    try {
+      const slider = document.getElementById('speedSlider');
+      if (slider) { slider.value = rate; slider.dispatchEvent(new Event('input', { bubbles: true })); }
+    } catch (e) {}
+    try { AudioEngine.setPlaybackSpeed(rate); } catch (e) {}   // exact value (slider snaps to 0.05 steps)
+  },
   isPlaying() { return !!isPlaying; },
   seek(pos) { try { if (audio) audio.currentTime = Math.max(0, pos); } catch (e) {} },
   pause() { try { PlayerController.pause(); } catch (e) {} },
@@ -8393,7 +8460,7 @@ function startSession() {
   }, 15000));
 
   // when the host hits play/pause/seek/skip, push it out without waiting for the loop
-  ["play", "pause", "seeked", "ended", "loadedmetadata"].forEach((ev) => {
+  ["play", "pause", "seeked", "ended", "loadedmetadata", "ratechange"].forEach((ev) => {
     const a = document.getElementById("audioPlayer");
     if (a) a.addEventListener(ev, () => { if (jam.id && jam.host && !jam.applying) publishJam(true); });
   });
@@ -8651,6 +8718,7 @@ const jam = {
   applying: false,   // guard so our own seeks don't look like host input
   wantId: null,      // track we're waiting on a download for
   lastSent: null,
+  savedSpeed: null,  // guest's own speed before the jam took over; restored on leave
   dismissed: new Set() // jam "id:createdAt" keys you've declined or left — stops the invite from nagging you
 };
 
@@ -8669,6 +8737,21 @@ function visibleOpenJams() {
 
 function P() { return window.YoutifyPlayer || null; }
 
+/* Both sides stamp/compare times, so use the database's clock instead of each
+   machine's own. A guest whose PC clock is a second off would otherwise sit a
+   second out of sync forever. Falls back to local time until the offset arrives. */
+let jamClockOffset = 0, jamClockUnsub = null;
+function startJamClock() {
+  if (jamClockUnsub || !db || !dbfns) return;
+  try {
+    jamClockUnsub = dbfns.onValue(dbfns.ref(db, ".info/serverTimeOffset"), (snap) => {
+      const v = Number(snap.val());
+      if (isFinite(v)) jamClockOffset = v;
+    });
+  } catch (e) {}
+}
+function jamNow() { return Date.now() + jamClockOffset; }
+
 /* ---------- host side ---------- */
 function jamSnapshot() {
   const p = P();
@@ -8682,15 +8765,20 @@ function jamSnapshot() {
     duration: np.duration,
     position: np.position,
     playing: np.playing,
-    at: Date.now()
+    rate: np.rate || 1,
+    at: jamNow()
   };
 }
 
 function jamStateChanged(a, b) {
   if (!a || !b) return true;
   if (a.key !== b.key || a.playing !== b.playing) return true;
-  // a jump the listener would actually notice
-  return Math.abs((a.position || 0) - (b.position || 0)) > 1.5;
+  if ((a.rate || 1) !== (b.rate || 1)) return true;   // host changed speed
+  // a jump the listener would actually notice: compare against where the last
+  // message said we'd be by now (at the host's speed), not the raw old position
+  const elapsed = Math.max(0, ((a.at || 0) - (b.at || 0)) / 1000);
+  const expected = (b.position || 0) + (b.playing ? elapsed * (b.rate || 1) : 0);
+  return Math.abs((a.position || 0) - expected) > 1.5;
 }
 
 async function publishJam(force) {
@@ -8698,22 +8786,23 @@ async function publishJam(force) {
   const snap = jamSnapshot();
   if (!snap) return;
   if (!force && !jamStateChanged(snap, jam.lastSent) &&
-      Date.now() - ((jam.lastSent && jam.lastSent.at) || 0) < JAM_HEARTBEAT) return;
+      jamNow() - ((jam.lastSent && jam.lastSent.at) || 0) < JAM_HEARTBEAT) return;
   jam.lastSent = snap;
-  try { await dbfns.update(dbfns.ref(db, `${ROOT}/jams/${jam.id}`), { now: snap, beat: Date.now() }); }
+  try { await dbfns.update(dbfns.ref(db, `${ROOT}/jams/${jam.id}`), { now: snap, beat: jamNow() }); }
   catch (err) { console.error("[jam] publish failed", err); }
 }
 
 async function startJam(inviteUid) {
-  if (!state.name || !db) return;
+  if (!state.name || !db) { say("Log in to chat first to start a jam."); return; }
   if (jam.id) { say("You're already in a jam."); return; }
   const id = state.uid;                       // one jam per person, keeps it simple
+  startJamClock();
   const now = jamSnapshot();
   const invite = inviteUid || null;            // set only when started from a DM — makes it private
   try {
     await dbfns.set(dbfns.ref(db, `${ROOT}/jams/${id}`), {
       id, host: state.uid, hostName: state.name,
-      createdAt: Date.now(), beat: Date.now(),
+      createdAt: Date.now(), beat: jamNow(),
       now: now || null,
       invite,
       members: { [state.uid]: { name: state.name, ts: Date.now() } }
@@ -8722,6 +8811,7 @@ async function startJam(inviteUid) {
     jam.id = id; jam.host = true; jam.lastSent = null;
     watchJam(id);
     say(invite ? `Private jam started — just for ${nameFor(invite)}.` : "Jam started — people can join from the chat panel.");
+    if (!now) say("Nothing's playing yet — press play and they'll follow along.");
   } catch (err) {
     console.error("[jam] start failed", err);
     say("Couldn't start a jam.");
@@ -8740,6 +8830,7 @@ async function endJam() {
 async function joinJam(id) {
   if (!id || !db || !state.name) return;
   if (jam.id === id) return;
+  startJamClock();
   if (jam.id) await leaveJam();
   jam.id = id; jam.host = false; jam.wantId = null;
   try {
@@ -8752,6 +8843,10 @@ async function joinJam(id) {
 }
 
 function leaveJamLocal() {
+  if (jam.savedSpeed != null) {
+    const back = jam.savedSpeed; jam.savedSpeed = null;
+    try { const p = P(); if (p) p.setSpeed(back); } catch (e) {}
+  }
   if (jam.unsub) { try { jam.unsub(); } catch (e) {} }
   jam.unsub = null; jam.id = null; jam.host = false;
   jam.data = null; jam.wantId = null; jam.lastSent = null;
@@ -8788,7 +8883,9 @@ function watchJam(id) {
 function jamTargetPosition(now) {
   const base = Number(now.position) || 0;
   if (!now.playing) return base;
-  return base + Math.max(0, (Date.now() - (Number(now.at) || Date.now())) / 1000);
+  const rate = Number(now.rate) || 1;   // media advances `rate` seconds per real second
+  const t = jamNow();
+  return base + Math.max(0, (t - (Number(now.at) || t)) / 1000) * rate;
 }
 
 async function followJam(v) {
@@ -8797,6 +8894,15 @@ async function followJam(v) {
   if (!p || !now || jam.applying) return;
 
   if (!now.key) return;
+
+  // Match the host's speed (remember ours so we can give it back on leave).
+  // Without this a 1.2x host runs away from a 1x guest and the guest's drift
+  // correction keeps seeking, which sounds like constant skipping.
+  const hostRate = Number(now.rate) || 1;
+  if (Math.abs(p.speed() - hostRate) > 0.001) {
+    if (jam.savedSpeed == null) jam.savedSpeed = p.speed();
+    p.setSpeed(hostRate);
+  }
 
   const idx = p.findIndexByKey(now.key);
   if (idx === -1) {
@@ -8838,6 +8944,7 @@ async function followJam(v) {
 
 /* ---------- discovery ---------- */
 function listenJams() {
+  startJamClock();
   return dbfns.onValue(dbfns.ref(db, `${ROOT}/jams`), (snap) => {
     jam.list = snap.val() || {};
     paintJam();
@@ -8845,7 +8952,7 @@ function listenJams() {
 }
 
 function openJams() {
-  const now = Date.now();
+  const now = jamNow();
   return Object.values(jam.list || {})
     .filter((j) => j && j.host && j.host !== state.uid && (now - (j.beat || j.createdAt || 0)) < JAM_STALE)
     .filter((j) => !j.invite || j.invite === state.uid); // private jams only show to the person invited
@@ -11407,13 +11514,17 @@ function slashCommands() {
   const cmds = [];
   const p = P(), np = p && p.nowPlaying();
   const inDm = state.view === "thread" && state.openThread && !isGroupId(state.openThread.uid) && state.openThread.uid;
-
-  if (inDm && np && np.key) {
-    const friend = state.openThread.name || nameFor(state.openThread.uid);
-    cmds.push({ name: "/jam", note: `Start a private jam with ${friend}`, run: () => startJam(state.openThread.uid) });
-  }
-
   const open = visibleOpenJams();
+
+  // Always offered inside a DM. It used to need a song already playing, and
+  // otherwise just silently showed nothing, which looked like /jam was broken.
+  if (inDm) {
+    const friend = state.openThread.name || nameFor(state.openThread.uid);
+    const note = (np && np.key) ? `Start a private jam with ${friend}` : `Start a private jam with ${friend} (press play and they'll follow)`;
+    cmds.push({ name: "/jam", note, run: () => startJam(state.openThread.uid) });
+  } else if (!open.length) {
+    cmds.push({ name: "/jam", note: "Open a DM with someone to start a jam", run: () => say("Open a DM with the person you want to jam with, then type /jam.") });
+  }
   if (open.length) {
     const j = open[0];
     cmds.push({
