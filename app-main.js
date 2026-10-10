@@ -2629,6 +2629,8 @@ isPlaying2 = true;
 
   static async startCrossfade(a) {
     if (isCrossfading || Number(crossfadeDuration) <= 0) return;
+    // the crossfade would fight the sync, so we skip it while joined.
+    try { const j = window.YoutifyChat && window.YoutifyChat.jam; if (j && j.id && !j.host) return; } catch (e) {}
 
     const nextIndex = PlayerController.getNextIndex();
     if (nextIndex === -1) return;
