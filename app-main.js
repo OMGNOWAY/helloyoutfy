@@ -164,7 +164,7 @@ const CHANGELOG_DATA = {
 // ============================================================================
 // BOOTSTRAP
 // ============================================================================
-
+console.log('It works now');
 let backgroundImages = '';
 try { backgroundImages = localStorage.getItem('youtifiy_bgimage') || ''; } catch (e) {}
 
