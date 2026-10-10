@@ -4,8 +4,8 @@ const CHANGELOG_DATA = {
   "Release 1.4.5": [
     `Added Group chats`,
     `Added more download servers so people can download their songs (<or something>)`,
-    `Added playlists, so you can make playlists now or something...`,
     `Also updates should be able to popup after refresh now`,
+    `Added playlists, so you can make playlists now or something...`,
     `Thats it for now i think`,
   ],
   "Release 1.4.4": [
@@ -4108,6 +4108,90 @@ class PlaylistManager {
     setTimeout(() => input.focus(), 30);
   }
 
+  // Add-songs picker: search the library, tick a bunch, add them all at once.
+  static openLibraryPicker(id) {
+    const pl = PlaylistManager.get(id);
+    if (!pl) return;
+    if (!tracks.length) { toast('Your library is empty right now'); return; }
+    const modal = Utils.createModal(`Add songs to ${PlaylistManager.esc(pl.name)}`, true);
+    const have = new Set(pl.items.map(i => i.key));
+    const byKey = new Map();
+    tracks.forEach(t => { const k = PlaylistManager.keyFor(t); if (k && !byKey.has(k)) byKey.set(k, t); });
+    const all = [...byKey.entries()].map(([key, t]) => ({ key, t }));
+    const picked = new Set();
+    const LIMIT = 300;
+    let shown = [];
+
+    modal.body.innerHTML = `
+      <div class="form-group" style="display:flex;gap:8px;">
+        <input type="text" class="form-input pl-lib-search" placeholder="Search your songs..." style="flex:1;">
+        <button class="btn secondary pl-lib-all">Select shown</button>
+      </div>
+      <div class="pl-lib-list"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn secondary pl-lib-cancel">Cancel</button>
+        <button class="btn primary pl-lib-add" disabled>Add</button>
+      </div>`;
+    const search = modal.body.querySelector('.pl-lib-search');
+    const listEl = modal.body.querySelector('.pl-lib-list');
+    const addBtn = modal.body.querySelector('.pl-lib-add');
+
+    const paintCount = () => {
+      addBtn.disabled = picked.size === 0;
+      addBtn.textContent = picked.size ? `Add ${picked.size} song${picked.size === 1 ? '' : 's'}` : 'Add';
+    };
+
+    const render = () => {
+      const q = search.value.trim().toLowerCase();
+      shown = all.filter(({ t }) => !q
+        || (t.title || '').toLowerCase().includes(q)
+        || (t.artist || '').toLowerCase().includes(q)
+        || (t.album || '').toLowerCase().includes(q));
+      const slice = shown.slice(0, LIMIT);
+      listEl.innerHTML = '';
+      if (!slice.length) { listEl.innerHTML = '<div class="pl-pick-empty">No songs found</div>'; return; }
+      slice.forEach(({ key, t }) => {
+        const inPl = have.has(key);
+        const row = document.createElement('label');
+        row.className = 'pl-lib-row' + (inPl ? ' in-pl' : '');
+        row.innerHTML = `
+          <input type="checkbox" ${inPl || picked.has(key) ? 'checked' : ''} ${inPl ? 'disabled' : ''}>
+          <div class="pl-meta">
+            <div class="pl-title">${PlaylistManager.esc(t.title || 'Unknown Track')}</div>
+            <div class="pl-artist">${PlaylistManager.esc(t.artist || 'Unknown Artist')}${inPl ? ' • already in playlist' : ''}</div>
+          </div>`;
+        if (!inPl) {
+          row.querySelector('input').addEventListener('change', e => {
+            if (e.target.checked) picked.add(key); else picked.delete(key);
+            paintCount();
+          });
+        }
+        listEl.appendChild(row);
+      });
+      if (shown.length > LIMIT) {
+        const more = document.createElement('div');
+        more.className = 'pl-pick-empty';
+        more.textContent = `Showing ${LIMIT} of ${shown.length}, search to narrow it down`;
+        listEl.appendChild(more);
+      }
+    };
+
+    search.addEventListener('input', render);
+    modal.body.querySelector('.pl-lib-all').addEventListener('click', () => {
+      shown.forEach(({ key }) => { if (!have.has(key)) picked.add(key); });
+      render(); paintCount();
+    });
+    modal.body.querySelector('.pl-lib-cancel').addEventListener('click', modal.close);
+    addBtn.addEventListener('click', () => {
+      const list = [...picked].map(k => byKey.get(k)).filter(Boolean);
+      modal.close();
+      PlaylistManager.addTracks(id, list);
+      PlaylistManager.refresh();
+    });
+    render();
+    setTimeout(() => search.focus(), 30);
+  }
+
   // ---------- playback ----------
   static _startQueue(list, start, message) {
     queue = list;
@@ -4275,6 +4359,7 @@ class PlaylistManager {
         <button class="btn secondary" onclick="PlaylistManager.queueAll('${id}',true)" style="${circle}" title="Play next"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 4 6 20"></polyline><polygon points="10 7 19 12 10 17 10 7"></polygon></svg></button>
         <button class="btn secondary" onclick="PlaylistManager.rename('${id}')" style="${circle}" title="Rename"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></button>
         <button class="btn secondary" onclick="PlaylistManager.remove('${id}')" style="${circle}" title="Delete playlist"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+        <button class="btn primary" onclick="PlaylistManager.openLibraryPicker('${id}')" style="height:56px;padding:0 22px;border-radius:28px;" title="Add songs from your library">+ Add songs</button>
       </div>
       <div style="padding:0 24px;">
         ${pl.items.length === 0 ? `
@@ -4334,6 +4419,11 @@ const addContextTrackToPlaylist = () => {
   if (t) PlaylistManager.openPicker([t]);
 };
 const saveQueueAsPlaylist = () => PlaylistManager.saveQueue();
+const addShownToPlaylist = () => {
+  const list = getVisibleQueueEntries().map(e => e.track);
+  if (!list.length) { toast('No songs to add'); return; }
+  PlaylistManager.openPicker(list);
+};
 const addCurrentTrackToPlaylist = () => PlaylistManager.addCurrent();
 
 (function injectPlaylistCSS() {
@@ -4364,6 +4454,11 @@ const addCurrentTrackToPlaylist = () => PlaylistManager.addCurrent();
     .pl-pick-row:hover{background:var(--bg-hover);}
     .pl-pick-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .pl-pick-count{color:var(--text-muted);font-size:12px;flex-shrink:0;}
+    .pl-lib-list{margin-top:12px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+    .pl-lib-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:6px;cursor:pointer;}
+    .pl-lib-row:hover{background:var(--bg-hover);}
+    .pl-lib-row.in-pl{opacity:.5;cursor:default;}
+    .pl-lib-row input{flex-shrink:0;width:16px;height:16px;accent-color:var(--accent);}
     .pl-pick-empty{color:var(--text-muted);font-size:14px;padding:12px 4px;}
   `;
   const inject = () => Utils.addGlobalCSS(css);
@@ -5038,6 +5133,7 @@ class ViewManager {
                 <button onclick="copyNowPlaying();closeQueueOverflow()" role="menuitem">Copy now playing</button>
                 <button onclick="saveQueueAsPlaylist();closeQueueOverflow()" role="menuitem">Save queue as playlist</button>
                 <button onclick="addCurrentTrackToPlaylist();closeQueueOverflow()" role="menuitem">Add current track to playlist</button>
+                <button onclick="addShownToPlaylist();closeQueueOverflow()" role="menuitem">Add shown songs to playlist</button>
                 <div class="queue-overflow-divider"></div>
                 <div class="queue-storage-info" id="StorageInfo"></div>
               </div>
