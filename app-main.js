@@ -6008,7 +6008,7 @@ const savedTitle = localStorage.getItem('youtifiy_title');
 if (savedTitle) document.title = savedTitle;
 
 window.addEventListener('load', () => {
-  ChangelogManager.show(false);
+  // Changelog opens only when the user clicks the Changelog button.
   if (navigator.storage?.estimate) {
     navigator.storage.estimate().then(({ usage }) => {
       if ((usage / (1024 * 1024)) > 1) {
