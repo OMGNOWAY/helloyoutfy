@@ -4,7 +4,8 @@ const CHANGELOG_DATA = {
   "Release 1.4.5": [
     `Added Group chats`,
     `Added more download servers so people can download their songs (<or something>)`,
-    `Thats it for now i think`
+    `Also updates should be able to popup after refresh now`,
+    `Thats it for now i think`,
   ],
   "Release 1.4.4": [
     `Redid (<(kinda)>) the chat UI`,
