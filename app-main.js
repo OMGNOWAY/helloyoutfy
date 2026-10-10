@@ -1890,7 +1890,7 @@ class ThemeManager {
 
     const avgChroma = clusters.reduce((s, c) => s + c.share * c.C, 0);
     const maxChroma = Math.max(...clusters.map(c => c.C));
-    const mono = avgChroma < 0.035 && maxChroma < 0.09; // effectively grayscale cover
+    let mono = avgChroma < 0.035 && maxChroma < 0.09; // effectively grayscale cover
 
     // ---------- accent: most eye-catching visible color ----------
     let pool = clusters.filter(c => c.share >= 0.006); // small logos/text still count if they're vivid
@@ -1911,6 +1911,19 @@ class ThemeManager {
       accentC = pool.slice().sort((a, b) => b.score * popBonus(b) - a.score * popBonus(a))[0];
     }
 
+    // ---------- blank covers: pure black / pure white / one flat gray ----------
+    // No tonal range means no information at all. A "mono" scheme there is just white-on-black,
+    // so fall back to Youtify's own pink + violet look on a faintly tinted dark background.
+    let blank = false;
+    {
+      const Ls = clusters.map(c => c.L);
+      if (mono && Math.max(...Ls) - Math.min(...Ls) < 0.12) {
+        blank = true; mono = false;
+        const rgbP = hsl2rgb(338, 0.8, 0.68);
+        accentC = { hsl: [338, 0.8, 0.68], rgb: rgbP, lab: toLab(...rgbP), C: 0.2, L: 0.7, share: 1, score: 1 };
+      }
+    }
+
     // ---------- background: built from the cover's own colors ----------
     // Up to three distinct colors from the cover become the three background layers
     // (the page gradient blends bg-primary / bg-tertiary / accent). They're kept dark
@@ -1920,7 +1933,7 @@ class ThemeManager {
     const dom = clusters[0];
     let h1, s1;
     if (mono) { h1 = accentC.hsl[0]; s1 = 0.03; }
-    else if (dom.C < 0.035) { h1 = accentC.hsl[0]; s1 = accentC.share >= 0.08 ? 0.28 : 0.15; } // black/white cover: faint accent tint
+    else if (dom.C < 0.035) { h1 = accentC.hsl[0]; s1 = blank ? 0.2 : (accentC.share >= 0.08 ? 0.28 : 0.15); } // black/white cover: faint accent tint
     else { h1 = dom.hsl[0]; s1 = clamp(dom.hsl[1], 0.25, 0.7); }
     let h2 = h1 + 20, s2 = s1, h3 = h1 - 20, s3 = s1;
     if (!mono) {
@@ -1935,7 +1948,7 @@ class ThemeManager {
 
     // ---------- accent color, tuned ----------
     let [aH, aS, aL] = accentC.hsl;
-    if (mono || accentC.C < 0.03) { aS = Math.min(aS, 0.08); aL = clamp(aL, 0.7, 0.9); } // neutral accent stays neutral
+    if (mono || accentC.C < 0.03) { aS = Math.min(aS, 0.08); aL = clamp(aL, 0.6, 0.76); } // neutral accent stays neutral
     else { aS = clamp(aS, 0.45, 0.85); aL = clamp(aL, 0.58, 0.74); }
     let accent = hsl2rgb(aH, aS, aL);
     for (let i = 0; i < 12 && contrast(accent, bg1) < 4.5 && aL < 0.88; i++) { aL += 0.03; accent = hsl2rgb(aH, aS, aL); }
@@ -1951,6 +1964,7 @@ class ThemeManager {
     let accent2;
     if (secC) accent2 = hsl2rgb(secC.hsl[0], clamp(secC.hsl[1], 0.45, 0.9), clamp(secC.hsl[2], 0.5, 0.72));
     else accent2 = hsl2rgb(aH + 35, mono ? aS : clamp(aS * 0.85, 0.4, 0.9), clamp(aL - 0.04, 0.5, 0.72));
+    if (blank) accent2 = hsl2rgb(272, 0.7, 0.68); // Youtify's violet
 
     // ---------- 6 blob colors: vivid versions of the real palette, then analogous fill ----------
     const vivid = c => hsl2rgb(c.hsl[0], mono ? c.hsl[1] : clamp(c.hsl[1], 0.4, 0.9), clamp(c.hsl[2], 0.3, 0.58));
