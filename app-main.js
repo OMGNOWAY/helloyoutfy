@@ -6,6 +6,7 @@ const CHANGELOG_DATA = {
     `Added more download servers so people can download their songs (<or something>)`,
     `Also updates should be able to popup after refresh now`,
     `Added playlists, so you can make playlists now or something...`,
+    `Fixed a bug with playing a album (<(it would make the album your songs on the home page)>)`,
     `Thats it for now i think`,
   ],
   "Release 1.4.4": [
@@ -3783,8 +3784,7 @@ class AlbumManager {
     const uids = trackUids.split(',');
     const albumTracks = uids.map(uid => tracks.find(t => t.uid === uid)).filter(t => t);
     if (!albumTracks.length) return;
-    queue = albumTracks; currentTrackIndex = 0;
-    QueueManager.render(); playTrackAtIndex(0, audio, 0);
+    playTrackList(albumTracks);
     toast(`Playing album: ${albumTracks[0].album || 'Unknown Album'}`);
   }
 
@@ -3796,8 +3796,7 @@ class AlbumManager {
       const j = Math.floor(Math.random() * (i + 1));
       [albumTracks[i], albumTracks[j]] = [albumTracks[j], albumTracks[i]];
     }
-    queue = albumTracks; currentTrackIndex = 0;
-    QueueManager.render(); playTrackAtIndex(0, audio, 0);
+    playTrackList(albumTracks);
     toast(`Shuffling album: ${albumTracks[0].album || 'Unknown Album'}`);
   }
 
@@ -3816,12 +3815,7 @@ class AlbumManager {
       const albumTracks = uids.map(uid => tracks.find(t => t.uid === uid)).filter(t => t);
       const idx = albumTracks.findIndex(t => t.uid === trackUid);
       if (albumTracks.length && idx !== -1) {
-        const remainingAlbum = albumTracks.slice(idx);
-        const remainingUids = new Set(remainingAlbum.map(t => t.uid));
-        const restOfOldQueue = queue.slice(currentTrackIndex + 1).filter(t => !remainingUids.has(t.uid));
-        queue = [...remainingAlbum, ...restOfOldQueue];
-        currentTrackIndex = 0;
-        QueueManager.render(); playTrackAtIndex(0, audio, 0);
+        playTrackList(albumTracks.slice(idx));
         return;
       }
     }
@@ -3841,11 +3835,8 @@ const filterAlbums     = (...args) => AlbumManager.filter(...args);
 const showAlbumTracks  = (t, a) => {
   const albumTracks = tracks.filter(tr => (tr.album||'Unknown Album') === t && (tr.artist||'Unknown Artist') === a);
   if (!albumTracks.length) return;
-  queue = albumTracks;
-  currentTrackIndex = 0;
-  QueueManager.render();
   returnToHome();
-  playTrackAtIndex(0, audio, 0);
+  playTrackList(albumTracks);
 };
 const playAlbum        = (...args) => AlbumManager.play(...args);
 const shuffleAlbum     = (...args) => AlbumManager.shuffle(...args);
@@ -4194,12 +4185,7 @@ class PlaylistManager {
 
   // ---------- playback ----------
   static _startQueue(list, start, message) {
-    queue = list;
-    currentTrackIndex = start;
-    queueSort.field = null;
-    if (typeof paintQueueSortState === 'function') paintQueueSortState();
-    QueueManager.render();
-    playTrackAtIndex(0, audio, start);
+    playTrackList(list.slice(start));
     if (message) toast(message);
   }
 
@@ -4410,6 +4396,30 @@ class PlaylistManager {
   }
 }
 window.PlaylistManager = PlaylistManager;
+
+
+// Plays a list of library tracks WITHOUT touching `queue` (that's the home list, it has to
+// keep showing your whole library). The first track starts now, the rest go in Up Next in
+// order, and when they run out playback resumes in the library where it was before.
+function playTrackList(list) {
+  const valid = (list || []).filter(t => t && t.uid);
+  if (!valid.length) return;
+  const first = valid[0];
+  const rest = valid.slice(1);
+
+  let idx = queue.findIndex(t => t.uid === first.uid);
+  if (idx < 0) { queue.push(first); idx = queue.length - 1; QueueManager.render(); }
+
+  // keep anything already waiting in Up Next, minus duplicates of this list
+  const inList = new Set(valid.map(t => t.uid));
+  userQueue = rest.concat(userQueue.filter(t => !inList.has(t.uid)));
+
+  // where the library should pick back up once the list is done
+  if (uqReturnIndex < 0 && currentTrackIndex >= 0 && queue[currentTrackIndex]) uqReturnIndex = currentTrackIndex;
+  uqInternal = true;
+  uqRender();
+  playTrackAtIndex(0, audio, idx);
+}
 
 // Legacy-style wrappers so inline onclick="" handlers stay short
 const openAddToPlaylist = (queueIndex) => { const t = queue[queueIndex]; if (t) PlaylistManager.openPicker([t]); };
