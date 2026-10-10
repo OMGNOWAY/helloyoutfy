@@ -1690,37 +1690,6 @@ window.addEventListener('pageshow', resumeAudioContextIfNeeded);
 // THEME MANAGER
 // ============================================================================
 
-const AABColor = {
-  clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
-  rgb2hsl(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
-    let h = 0, s = 0;
-    if (d) {
-      s = d / (1 - Math.abs(2 * l - 1));
-      if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
-      h *= 60; if (h < 0) h += 360;
-    }
-    return [h, s, l];
-  },
-  hsl2rgb(h, s, l) {
-    h = ((h % 360) + 360) % 360;
-    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
-    else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
-    return [r + m, g + m, b + m].map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
-  },
-  relLum(r, g, b) {
-    const f = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
-  },
-  contrast(a, b) {
-    const x = AABColor.relLum(a[0], a[1], a[2]), y = AABColor.relLum(b[0], b[1], b[2]);
-    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
-  }
-};
-
 class ThemeManager {
   static THEME_CSS_VARS = ['--bg-primary','--bg-secondary','--bg-tertiary','--bg-hover',
     '--text-primary','--text-secondary','--accent','--accent-secondary','--accent-hover','--border','--player-bg','--card-bg', '--shadow-glow'];
@@ -1729,7 +1698,7 @@ class ThemeManager {
   // Every place that clears AAB overrides must remove this exact same list, or a bug like
   // the stuck-text-color issue (fixed previously) can come back. If applyAlbumColors() ever
   // gains a new setProperty() call, add the matching property here — this is the only list.
-  static AAB_INLINE_PROPS = ['--bg-card','--bg-elevated','--text-muted','--accent','--accent-hover','--accent-secondary','--shadow-glow',
+  static AAB_INLINE_PROPS = ['--accent','--accent-hover','--accent-secondary','--shadow-glow',
     '--glass-tint','--bg-primary','--bg-secondary','--bg-tertiary','--bg-hover','--text-primary', '--bg-primary','--bg-secondary','--bg-tertiary','--bg-hover',
     '--text-primary','--text-secondary','--accent','--accent-secondary','--accent-hover','--border','--player-bg','--card-bg', '--shadow-glow'];
 
@@ -1738,7 +1707,6 @@ class ThemeManager {
   }
 
   static resetToDefault(showBlobs = true) {
-    ThemeManager._aabToken++;
     ThemeManager.clearAABInlineOverrides();
     const playerImg = document.getElementById('playerImg');
     if (playerImg) { playerImg.style.boxShadow = ''; playerImg.style.border = ''; }
@@ -1758,313 +1726,184 @@ class ThemeManager {
     document.body.style.background = '';
   }
 
-  // ============================================================================
-  // SMART ALBUM-ART COLORS
-  // Pipeline: sample cover -> k-means in OKLab (perceptual) -> score clusters by
-  // population x vividness x usable-lightness -> build a coherent dark scheme:
-  //   * accent      = the most eye-catching *visible* color (not just the biggest)
-  //   * background  = dominant hue of the cover, pushed dark (keeps its hue)
-  //   * grayscale / very dark covers get neutral or subtly tinted schemes
-  //   * accent is nudged until it has real contrast against the background
-  // Results are cached per cover so skipping back and forth is instant.
-  // ============================================================================
-  static _aabToken = 0;
-  static _aabCache = new Map();
-
-  static buildScheme(img) {
-    const SIZE = 64;
-    const canvas = document.createElement('canvas');
-    canvas.width = SIZE; canvas.height = SIZE;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, SIZE, SIZE);
-    const data = ctx.getImageData(0, 0, SIZE, SIZE).data; // throws if canvas is tainted (caller handles)
-
-    // ---------- color helpers ----------
-    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-    const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-    const toLab = (r, g, b) => {
-      const R = lin(r), G = lin(g), B = lin(b);
-      const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
-      const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
-      const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
-      return [
-        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
-        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
-        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
-      ];
-    };
-    const labDist2 = (p, q) => { const a = p[0]-q[0], b = p[1]-q[1], c = p[2]-q[2]; return a*a + b*b + c*c; };
-    const rgb2hsl = (r, g, b) => {
-      r /= 255; g /= 255; b /= 255;
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
-      let h = 0, s = 0;
-      if (d) {
-        s = d / (1 - Math.abs(2 * l - 1));
-        if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
-        h *= 60; if (h < 0) h += 360;
-      }
-      return [h, s, l];
-    };
-    const hsl2rgb = (h, s, l) => {
-      h = ((h % 360) + 360) % 360;
-      const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
-      let r = 0, g = 0, b = 0;
-      if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
-      else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
-      return [r + m, g + m, b + m].map(v => Math.round(clamp(v, 0, 1) * 255));
-    };
-    const relLum = (r, g, b) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    const contrast = (a, b) => { const x = relLum(...a), y = relLum(...b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-    const mix = (a, b, t) => a.map((v, i) => Math.round(v * (1 - t) + b[i] * t));
-
-    // ---------- sample pixels (center-weighted: the subject is usually in the middle) ----------
-    const pts = [];
-    for (let y = 0; y < SIZE; y++) {
-      for (let x = 0; x < SIZE; x++) {
-        const i = (y * SIZE + x) * 4;
-        if (data[i + 3] < 125) continue;
-        const dx = (x + 0.5) / SIZE - 0.5, dy = (y + 0.5) / SIZE - 0.5;
-        const w = 1.25 - Math.min(1, Math.hypot(dx, dy) * 1.6) * 0.6;
-        pts.push({ r: data[i], g: data[i + 1], b: data[i + 2], lab: toLab(data[i], data[i + 1], data[i + 2]), w });
-      }
-    }
-    if (!pts.length) return null;
-
-    // ---------- k-means in OKLab (deterministic farthest-point init) ----------
-    const K = Math.min(8, pts.length);
-    let mean = [0, 0, 0], tw = 0;
-    pts.forEach(p => { mean[0] += p.lab[0]*p.w; mean[1] += p.lab[1]*p.w; mean[2] += p.lab[2]*p.w; tw += p.w; });
-    mean = mean.map(v => v / tw);
-    const centers = [];
-    let first = pts[0], fd = Infinity;
-    pts.forEach(p => { const d = labDist2(p.lab, mean); if (d < fd) { fd = d; first = p; } });
-    centers.push(first.lab.slice());
-    while (centers.length < K) {
-      let far = null, farD = -1;
-      for (let i = 0; i < pts.length; i += 2) {
-        let md = Infinity;
-        for (const c of centers) { const d = labDist2(pts[i].lab, c); if (d < md) md = d; }
-        if (md > farD) { farD = md; far = pts[i]; }
-      }
-      if (!far || farD < 1e-5) break;
-      centers.push(far.lab.slice());
-    }
-    let groups = [];
-    for (let iter = 0; iter < 8; iter++) {
-      groups = centers.map(() => ({ w: 0, lab: [0, 0, 0], rgb: [0, 0, 0] }));
-      for (const p of pts) {
-        let bi = 0, bd = Infinity;
-        for (let k = 0; k < centers.length; k++) { const d = labDist2(p.lab, centers[k]); if (d < bd) { bd = d; bi = k; } }
-        const g = groups[bi];
-        g.w += p.w;
-        g.lab[0] += p.lab[0]*p.w; g.lab[1] += p.lab[1]*p.w; g.lab[2] += p.lab[2]*p.w;
-        g.rgb[0] += p.r*p.w; g.rgb[1] += p.g*p.w; g.rgb[2] += p.b*p.w;
-      }
-      groups.forEach((g, k) => { if (g.w > 0) centers[k] = g.lab.map(v => v / g.w); });
-    }
-    let clusters = groups.filter(g => g.w > 0).map(g => ({
-      w: g.w, rgb: g.rgb.map(v => Math.round(v / g.w)), lab: g.lab.map(v => v / g.w)
-    }));
-    // merge near-identical clusters so one flat area doesn't split into rivals
-    for (let i = 0; i < clusters.length; i++) {
-      for (let j = clusters.length - 1; j > i; j--) {
-        if (labDist2(clusters[i].lab, clusters[j].lab) < 0.06 * 0.06) {
-          const a = clusters[i], b = clusters[j], t = a.w + b.w;
-          a.rgb = a.rgb.map((v, k) => Math.round((v * a.w + b.rgb[k] * b.w) / t));
-          a.lab = a.lab.map((v, k) => (v * a.w + b.lab[k] * b.w) / t);
-          a.w = t; clusters.splice(j, 1);
-        }
-      }
-    }
-    const total = clusters.reduce((s, c) => s + c.w, 0);
-    clusters.forEach(c => {
-      c.share = c.w / total;
-      c.L = c.lab[0];
-      c.C = Math.hypot(c.lab[1], c.lab[2]);       // OKLab chroma = how colorful (0 = gray)
-      c.hsl = rgb2hsl(...c.rgb);
-      // usable-lightness: near-black / near-white colors make poor accents
-      const lumOK = (c.L < 0.22 || c.L > 0.96) ? 0.25 : (c.L < 0.35 || c.L > 0.9) ? 0.7 : 1;
-      c.score = Math.sqrt(c.share) * (c.C + 0.015) * lumOK;
-    });
-    clusters.sort((a, b) => b.share - a.share);
-
-    const avgChroma = clusters.reduce((s, c) => s + c.share * c.C, 0);
-    const maxChroma = Math.max(...clusters.map(c => c.C));
-    let mono = avgChroma < 0.035 && maxChroma < 0.09; // effectively grayscale cover
-
-    // ---------- accent: most eye-catching visible color ----------
-    let pool = clusters.filter(c => c.share >= 0.006); // small logos/text still count if they're vivid
-    if (!pool.length) pool = clusters;
-    let accentC;
-    if (mono) {
-      const light = pool.filter(c => c.L > 0.5);
-      accentC = (light.length ? light : pool).slice().sort((a, b) => b.share - a.share)[0];
-    } else {
-      // prefer a color that contrasts in hue with the dominant/background color, so the
-      // accent actually pops instead of being a brighter copy of the background
-      const domC = clusters[0];
-      const popBonus = c => {
-        if (c === domC || domC.C < 0.035) return 1;
-        const d = Math.abs(c.hsl[0] - domC.hsl[0]) % 360;
-        return 1 + 0.9 * Math.min(1, (d > 180 ? 360 - d : d) / 90);
-      };
-      accentC = pool.slice().sort((a, b) => b.score * popBonus(b) - a.score * popBonus(a))[0];
-    }
-
-    // ---------- blank covers: pure black / pure white / one flat gray ----------
-    // No tonal range means no information at all. A "mono" scheme there is just white-on-black,
-    // so fall back to Youtify's own pink + violet look on a faintly tinted dark background.
-    let blank = false;
-    {
-      const Ls = clusters.map(c => c.L);
-      if (mono && Math.max(...Ls) - Math.min(...Ls) < 0.12) {
-        blank = true; mono = false;
-        const rgbP = hsl2rgb(338, 0.8, 0.68);
-        accentC = { hsl: [338, 0.8, 0.68], rgb: rgbP, lab: toLab(...rgbP), C: 0.2, L: 0.7, share: 1, score: 1 };
-      }
-    }
-
-    // ---------- background: built from the cover's own colors ----------
-    // Up to three distinct colors from the cover become the three background layers
-    // (the page gradient blends bg-primary / bg-tertiary / accent). They're kept dark
-    // for readability but NOT flattened to one muddy hue, so the UI looks like the album.
-    const hueGap = (x, y) => { const d = Math.abs(x - y) % 360; return d > 180 ? 360 - d : d; };
-    const chromatic = clusters.filter(c => c.C >= 0.04 && c.share >= 0.03);
-    const dom = clusters[0];
-    let h1, s1;
-    if (mono) { h1 = accentC.hsl[0]; s1 = 0.03; }
-    else if (dom.C < 0.035) { h1 = accentC.hsl[0]; s1 = blank ? 0.2 : (accentC.share >= 0.08 ? 0.28 : 0.15); } // black/white cover: faint accent tint
-    else { h1 = dom.hsl[0]; s1 = clamp(dom.hsl[1], 0.25, 0.7); }
-    let h2 = h1 + 20, s2 = s1, h3 = h1 - 20, s3 = s1;
-    if (!mono) {
-      const c2 = chromatic.filter(c => c !== dom).find(c => hueGap(c.hsl[0], h1) >= 28) || null;
-      if (c2) { h2 = c2.hsl[0]; s2 = clamp(c2.hsl[1], 0.25, 0.7); }
-      const c3 = chromatic.filter(c => c !== dom && c !== c2).find(c => hueGap(c.hsl[0], h1) >= 28 && hueGap(c.hsl[0], h2) >= 28) || null;
-      if (c3) { h3 = c3.hsl[0]; s3 = clamp(c3.hsl[1], 0.25, 0.7); }
-    }
-    const bg1 = hsl2rgb(h1, s1, 0.13), bg2 = hsl2rgb(h2, s2, 0.18), bg3 = hsl2rgb(h3, s3, 0.235);
-    const bgHover = hsl2rgb(h1, s1, 0.26);
-    const bgCard = hsl2rgb(h1, s1 * 0.9, 0.17), bgElevated = hsl2rgb(h1, s1 * 0.9, 0.21);
-
-    // ---------- accent color, tuned ----------
-    let [aH, aS, aL] = accentC.hsl;
-    if (mono || accentC.C < 0.03) { aS = Math.min(aS, 0.08); aL = clamp(aL, 0.6, 0.76); } // neutral accent stays neutral
-    else { aS = clamp(aS, 0.45, 0.85); aL = clamp(aL, 0.58, 0.74); }
-    let accent = hsl2rgb(aH, aS, aL);
-    for (let i = 0; i < 12 && contrast(accent, bg1) < 4.5 && aL < 0.88; i++) { aL += 0.03; accent = hsl2rgb(aH, aS, aL); }
-    const accentHover = hsl2rgb(aH, aS, clamp(aL + 0.08, 0, 0.93));
-
-    // ---------- secondary accent: a genuinely different color from the cover ----------
-    let secC = null, secBest = 0;
-    for (const c of clusters) {
-      if (c === accentC || c.C < 0.05 || c.share < 0.005) continue;
-      if (labDist2(c.lab, accentC.lab) < 0.12 * 0.12) continue;
-      if (c.score > secBest) { secBest = c.score; secC = c; }
-    }
-    let accent2;
-    if (secC) accent2 = hsl2rgb(secC.hsl[0], clamp(secC.hsl[1], 0.45, 0.9), clamp(secC.hsl[2], 0.5, 0.72));
-    else accent2 = hsl2rgb(aH + 35, mono ? aS : clamp(aS * 0.85, 0.4, 0.9), clamp(aL - 0.04, 0.5, 0.72));
-    if (blank) accent2 = hsl2rgb(272, 0.7, 0.68); // Youtify's violet
-
-    // ---------- 6 blob colors: vivid versions of the real palette, then analogous fill ----------
-    const vivid = c => hsl2rgb(c.hsl[0], mono ? c.hsl[1] : clamp(c.hsl[1], 0.4, 0.9), clamp(c.hsl[2], 0.3, 0.58));
-    const blobs = [accent, accent2];
-    for (const c of clusters.slice().sort((a, b) => b.score - a.score)) {
-      if (blobs.length >= 6) break;
-      const v = vivid(c);
-      if (blobs.every(b => labDist2(toLab(...b), toLab(...v)) > 0.07 * 0.07)) blobs.push(v);
-    }
-    const spin = [20, -20, 45, -45, 70, -70];
-    for (let i = 0; blobs.length < 6; i++) blobs.push(hsl2rgb(aH + spin[i % spin.length], mono ? aS : clamp(aS, 0.4, 0.85), clamp(aL - 0.12, 0.35, 0.6)));
-
-    // ---------- text ----------
-    const white = [245, 245, 250], ink = [15, 15, 20];
-    const text = contrast(bg1, white) >= contrast(bg1, ink) ? white : ink;
-    const textSecondary = mix(text, bg1, 0.38);
-    const textMuted = mix(text, bg1, 0.62);
-
-    return { accent, accentHover, accent2, bg1, bg2, bg3, bgHover, bgCard, bgElevated, text, textSecondary, textMuted, blobs };
-  }
-
-  /* The AAB theme is generated entirely from the cover (see buildScheme). It sets
-     the whole palette itself, so it looks the same no matter which built-in theme
-     was active underneath. */
-  static _applyScheme(s) {
-    const root = document.documentElement.style;
-    const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
-    const [r1, g1, b1] = s.accent, [r3, g3, b3] = s.accent2;
-
-    root.setProperty('--bg-primary', rgb(s.bg1));
-    root.setProperty('--bg-secondary', rgb(s.bg2));
-    root.setProperty('--bg-tertiary', rgb(s.bg3));
-    root.setProperty('--bg-hover', rgb(s.bgHover));
-    root.setProperty('--bg-card', rgb(s.bgCard));
-    root.setProperty('--bg-elevated', rgb(s.bgElevated));
-    root.setProperty('--text-primary', rgb(s.text));
-    root.setProperty('--text-secondary', rgb(s.textSecondary));
-    root.setProperty('--text-muted', rgb(s.textMuted));
-    root.setProperty('--accent', rgb(s.accent));
-    root.setProperty('--accent-hover', rgb(s.accentHover));
-    root.setProperty('--accent-secondary', rgb(s.accent2));
-    root.setProperty('--shadow-glow', `${r1},${g1},${b1}`);
-    root.setProperty('--glass-tint', rgb(s.accent));
-
-    const playerImg = document.getElementById('playerImg');
-    if (playerImg) {
-      playerImg.style.boxShadow = `0 0 22px 6px rgba(${r1},${g1},${b1},0.65), 0 4px 16px rgba(0,0,0,0.3)`;
-      playerImg.style.border = `1px solid rgba(${r1},${g1},${b1},0.5)`;
-    }
-    const grad = `linear-gradient(90deg, rgb(${r1},${g1},${b1}), rgb(${r3},${g3},${b3}))`;
-    const progressFill = document.getElementById('progressFill');
-    const fullProgressFill = document.getElementById('fullLyricsProgressFill');
-    if (progressFill) progressFill.style.background = grad;
-    if (fullProgressFill) fullProgressFill.style.background = grad;
-    const playBtn = document.getElementById('playPauseBtn');
-    const fullPlayBtn = document.getElementById('fullLyricsPlayBtn');
-    if (playBtn) playBtn.style.boxShadow = `0 4px 20px rgba(${r1},${g1},${b1},0.5)`;
-    if (fullPlayBtn) fullPlayBtn.style.boxShadow = `0 4px 20px rgba(${r1},${g1},${b1},0.5)`;
-
-    const ids = ['blob1','blob2','blob3','blob4','blob5','blob6'];
-    ids.forEach(id => document.getElementById(id)?.classList.remove('visible'));
-    setTimeout(() => {
-      ids.forEach((id, i) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.style.background = rgb(s.blobs[i]);
-        el.classList.add('visible');
-      });
-    }, (crossfadeDuration || 1000));
-    try { ThemeManager.applyAccentInk(); } catch (e) {}
-  }
-
   static applyAlbumColors(track) {
-    if (!albumArtBackground || !track.albumArt) {
-      ThemeManager.resetToDefault(albumArtBackground);
-      return;
-    }
-    const token = ++ThemeManager._aabToken;
-    const src = track.albumArt;
+  if (!albumArtBackground || !track.albumArt) {
+    ThemeManager.resetToDefault(albumArtBackground);
+    return;
+  }
+    const tempImg = new Image();
+    tempImg.onload = function () {
+      const SIZE = 80; // upsized from the old 50px sample so quantization has more data to work with
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE; canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(tempImg, 0, 0, SIZE, SIZE);
+      const pixels = ctx.getImageData(0, 0, SIZE, SIZE).data;
 
-    const cached = ThemeManager._aabCache.get(src);
-    if (cached) { ThemeManager._applyScheme(cached); return; }
+      // --- Dominant color extraction ---
+      // Quantizes every pixel into a fine RGB bucket, tallies bucket population, then
+      // greedily merges buckets within a perceptual distance of each other (largest-first)
+      // so a real dominant tone consolidates even when photographic grain/gradient noise
+      // scatters its exact pixel values across many nearby buckets. Filters out
+      // near-black/near-white/transparent noise before bucketing.
+      function colorDist(a, b) {
+        const dr = a.r-b.r, dg = a.g-b.g, db = a.b-b.b;
+        return Math.sqrt(dr*dr + dg*dg + db*db);
+      }
+      function extractDominantColors(maxColors) {
+        const BUCKET = 16;
+        const buckets = new Map();
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+          if (a < 125) continue;
+          const bright = (r + g + b) / 3;
+          if (bright < 5 || bright > 230) continue;
 
-    const load = (useCors) => {
-      const img = new Image();
-      if (useCors) img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        if (token !== ThemeManager._aabToken || !albumArtBackground) return; // track changed / AAB turned off meanwhile
-        let scheme = null;
-        try { scheme = ThemeManager.buildScheme(img); }
-        catch (e) { console.warn('AAB: could not read cover pixels', e); }
-        if (!scheme) { ThemeManager.resetToDefault(true); return; }
-        if (ThemeManager._aabCache.size >= 60) ThemeManager._aabCache.delete(ThemeManager._aabCache.keys().next().value);
-        ThemeManager._aabCache.set(src, scheme);
-        ThemeManager._applyScheme(scheme);
-      };
-      img.onerror = () => { if (useCors) load(false); }; // host without CORS headers: retry plain
-      img.src = src;
+          const qr = Math.round(r / BUCKET) * BUCKET;
+          const qg = Math.round(g / BUCKET) * BUCKET;
+          const qb = Math.round(b / BUCKET) * BUCKET;
+          const key = qr + ',' + qg + ',' + qb;
+
+          let entry = buckets.get(key);
+          if (!entry) { entry = { r: 0, g: 0, b: 0, count: 0 }; buckets.set(key, entry); }
+          entry.r += r; entry.g += g; entry.b += b; entry.count++;
+        }
+
+        let clusters = Array.from(buckets.values())
+          .map(e => ({ r: Math.round(e.r / e.count), g: Math.round(e.g / e.count), b: Math.round(e.b / e.count), count: e.count }))
+          .sort((a, b) => b.count - a.count);
+
+        const DIST_THRESHOLD = 40;
+        const merged = [];
+        for (const c of clusters) {
+          let best = null, bestDist = Infinity;
+          for (const m of merged) {
+            const d = colorDist(m, c);
+            if (d < DIST_THRESHOLD && d < bestDist) { best = m; bestDist = d; }
+          }
+          if (best) {
+            const total = best.count + c.count;
+            best.r = Math.round((best.r * best.count + c.r * c.count) / total);
+            best.g = Math.round((best.g * best.count + c.g * c.count) / total);
+            best.b = Math.round((best.b * best.count + c.b * c.count) / total);
+            best.count = total;
+          } else {
+            merged.push(Object.assign({}, c));
+          }
+          merged.sort((a, b) => b.count - a.count); // keep greedy "merge into largest nearby" correct
+        }
+        return merged.slice(0, maxColors);
+      }
+
+      function luminance01(r, g, b) { return (r + g + b) / 3 / 255; }
+      function saturationOf(r, g, b) {
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        return max === 0 ? 0 : (max - min) / max;
+      }
+      // Picks the seed color for the background specifically. A small flat, saturated
+      // splash of color (e.g. a red graphic) can end up as a single big bucket while a
+      // genuinely dominant dark/muted region gets fragmented by grain/gradient noise into
+      // several smaller buckets that individually rank below the splash. This groups all
+      // dark, low-saturation clusters together and compares their combined weight against
+      // the single largest cluster, so the background reflects what the image actually
+      // reads as (e.g. "mostly dark") instead of getting hijacked by a minor color accent.
+      function pickBackgroundSeed(clusters, totalPixelCount) {
+        let darkNeutralWeight = 0, sumR = 0, sumG = 0, sumB = 0;
+        for (const c of clusters) {
+          const l = luminance01(c.r, c.g, c.b), s = saturationOf(c.r, c.g, c.b);
+          if (l < 0.42 && s < 0.55) {
+            darkNeutralWeight += c.count;
+            sumR += c.r * c.count; sumG += c.g * c.count; sumB += c.b * c.count;
+          }
+        }
+        const topOverall = clusters[0];
+        if (darkNeutralWeight > totalPixelCount * 0.35 && darkNeutralWeight >= topOverall.count) {
+          return { r: Math.round(sumR / darkNeutralWeight), g: Math.round(sumG / darkNeutralWeight), b: Math.round(sumB / darkNeutralWeight) };
+        }
+        return topOverall;
+      }
+
+      function luminance(r, g, b) {
+        const lin = [r, g, b].map(c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+      }
+      function contrastRatio(l1, l2) {
+        const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+        return (hi + 0.05) / (lo + 0.05);
+      }
+      // Picks readable near-white or near-black text against a given background,
+      // so AAB text never lands back in the "text color unreadable" state.
+      function readableTextFor(r, g, b) {
+        const bgL = luminance(r, g, b);
+        const whiteL = luminance(245, 245, 250), darkL = luminance(15, 15, 20);
+        return contrastRatio(bgL, whiteL) >= contrastRatio(bgL, darkL) ? [245, 245, 250] : [15, 15, 20];
+      }
+      function scale(c, f) { return Math.max(0, Math.min(255, Math.floor(c * f))); }
+
+      let dominant = extractDominantColors(6);
+      if (dominant.length === 0) dominant = [{ r: 60, g: 60, b: 70, count: 1 }];
+      // Pad out to 6 entries (for the 6 background blobs) by repeating/darkening
+      // existing dominant colors if the artwork didn't yield enough distinct ones.
+      while (dominant.length < 6) {
+        const src = dominant[dominant.length % Math.max(1, dominant.length)] || { r: 60, g: 60, b: 70 };
+        dominant.push({ r: scale(src.r, 0.75), g: scale(src.g, 0.75), b: scale(src.b, 0.75) });
+      }
+
+      const blobColors = dominant.slice(0, 6).map(c => [c.r, c.g, c.b]);
+      const [r1, g1, b1] = blobColors[0];
+      const [r2, g2, b2] = blobColors[1];
+      const [r3, g3, b3] = blobColors[2];
+      const [r4, g4, b4] = blobColors[3];
+
+      // Background: use the dedicated background-seed pick (see pickBackgroundSeed above),
+      // darkened, so text stays readable regardless of how bright/saturated the seed is.
+      const bgSeed = pickBackgroundSeed(dominant, (SIZE * SIZE));
+      const dR = scale(bgSeed.r, 0.35), dG = scale(bgSeed.g, 0.35), dB = scale(bgSeed.b, 0.35);
+
+      // Accent: the single most dominant color (not the background seed — the accent should
+      // still reflect the most eye-catching color even if it lost the background vote),
+      // boosted toward full saturation/brightness so it reads clearly as an accent.
+      const top = dominant[0];
+      const accentR = scale(top.r, 1.25), accentG = scale(top.g, 1.25), accentB = scale(top.b, 1.25);
+
+      const [tR, tG, tB] = readableTextFor(dR, dG, dB);
+
+      document.documentElement.style.setProperty('--accent', `rgb(${accentR},${accentG},${accentB})`);
+      document.documentElement.style.setProperty('--accent-hover', `rgb(${Math.min(255,r1+40)},${Math.min(255,g1+40)},${Math.min(255,b1+40)})`);
+      document.documentElement.style.setProperty('--bg-primary', `rgb(${dR},${dG},${dB})`);
+      document.documentElement.style.setProperty('--text-primary', `rgb(${tR},${tG},${tB})`);
+      document.documentElement.style.setProperty('--bg-secondary', `rgb(${r3},${g3},${b3})`);
+      document.documentElement.style.setProperty('--bg-tertiary', `rgb(${r4},${g4},${b4})`);
+      document.documentElement.style.setProperty('--bg-hover', `rgb(${Math.min(255,r2+40)},${Math.min(255,g2+40)},${Math.min(255,b2+40)})`);
+      document.documentElement.style.setProperty('--accent-secondary', `rgb(${r3},${g3},${b3})`);
+      document.documentElement.style.setProperty('--shadow-glow', `${accentR},${accentG},${accentB}`);
+      document.documentElement.style.setProperty('--glass-tint', `rgb(${accentR},${accentG},${accentB})`);
+
+      const playerImg = document.getElementById('playerImg');
+      if (playerImg) {
+        playerImg.style.boxShadow = `0 0 22px 6px rgba(${r1},${g1},${b1},0.65), 0 4px 16px rgba(0,0,0,0.3)`;
+        playerImg.style.border = `1px solid rgba(${r1},${g1},${b1},0.5)`;
+      }
+      const progressFill = document.getElementById('progressFill');
+      const fullprogressFill = document.getElementById('fullLyricsProgressFill');
+      if (progressFill) progressFill.style.background = `linear-gradient(90deg, rgb(${r1},${g1},${b1}), rgb(${r3},${g3},${b3}))`;
+      if (fullprogressFill) fullprogressFill.style.background = `linear-gradient(90deg, rgb(${r1},${g1},${b1}), rgb(${r3},${g3},${b3}))`;
+      const playBtn = document.getElementById('playPauseBtn');
+      const fullplayBtn = document.getElementById('fullLyricsPlayBtn');
+      if (fullplayBtn) fullplayBtn.style.boxShadow = `0 4px 20px rgba(${r1},${g1},${b1},0.5)`;
+      if (playBtn) playBtn.style.boxShadow = `0 4px 20px rgba(${r1},${g1},${b1},0.5)`;
+
+      ['blob1','blob2','blob3','blob4','blob5','blob6'].forEach(id => document.getElementById(id).classList.remove('visible'));
+      setTimeout(() => {
+        ['blob1','blob2','blob3','blob4','blob5','blob6'].forEach((id, i) => {
+          const [r,g,b] = blobColors[i];
+          const el = document.getElementById(id);
+          el.style.background = `rgb(${r},${g},${b})`;
+          el.classList.add('visible');
+        });
+      }, (crossfadeDuration || 1000));
     };
-    load(!/^(data|blob):/i.test(src));
+    tempImg.src = track.albumArt;
   }
 
   static hideBlobs() {
