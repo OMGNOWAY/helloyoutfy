@@ -2629,7 +2629,6 @@ isPlaying2 = true;
 
   static async startCrossfade(a) {
     if (isCrossfading || Number(crossfadeDuration) <= 0) return;
-    // the crossfade would fight the sync, so we skip it while joined.
     try { const j = window.YoutifyChat && window.YoutifyChat.jam; if (j && j.id && !j.host) return; } catch (e) {}
 
     const nextIndex = PlayerController.getNextIndex();
@@ -2733,6 +2732,7 @@ isPlaying2 = true;
       rebindAudioListeners();
       updatePlayerUIWithoutAAB(queue[currentTrackIndex]);
       PlayerController.highlightCurrentTrack();
+      try { document.dispatchEvent(new CustomEvent('youtify:crossfade-swapped')); } catch (e) {}
     }, fadeDurationMs + 100);
   }
 
@@ -3397,6 +3397,8 @@ window.YoutifyPlayer = {
     return queue.findIndex((t) => t && window.YoutifyPlayer.keyFor(t) === key);
   },
   position() { return (audio && audio.currentTime) || 0; },
+  // crossfade swaps which physical <audio> is active, so listeners need to ask
+  isActiveElement(el) { return !!el && el === audio; },
   speed() { return Number(playbackSpeed) || 1; },
   /* Sets playback speed the same way the slider does, and moves the sliders so
      the UI doesn't lie about what's playing. */
@@ -8315,9 +8317,23 @@ function startSession() {
   }, 15000));
 
   // when the host hits play/pause/seek/skip, push it out without waiting for the loop
+  // Crossfade swaps which of the two <audio> elements is the live one, so listen on both
+  // and only react to the active one. Otherwise play/pause/seek/speed stop publishing after
+  // the first crossfade, and the fading-out/in element's events publish mid-fade.
   ["play", "pause", "seeked", "ended", "loadedmetadata", "ratechange"].forEach((ev) => {
-    const a = document.getElementById("audioPlayer");
-    if (a) a.addEventListener(ev, () => { if (jam.id && jam.host && !jam.applying) publishJam(true); });
+    ["audioPlayer", "audioPlayer2"].forEach((id) => {
+      const a = document.getElementById(id);
+      if (!a) return;
+      a.addEventListener(ev, (e) => {
+        const p = P();
+        if (p && p.isActiveElement && !p.isActiveElement(e.target)) return;
+        if (jam.id && jam.host && !jam.applying) publishJam(true);
+      });
+    });
+  });
+  // the crossfade finishing is the moment the host's track actually changes
+  document.addEventListener("youtify:crossfade-swapped", () => {
+    if (jam.id && jam.host && !jam.applying) publishJam(true);
   });
 
   window.addEventListener("beforeunload", () => {
