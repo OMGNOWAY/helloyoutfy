@@ -4,6 +4,7 @@ const CHANGELOG_DATA = {
   "Release 1.4.5": [
     `Added Group chats`,
     `Added more download servers so people can download their songs (<or something>)`,
+    `Added playlists, so you can make playlists now or something...`,
     `Also updates should be able to popup after refresh now`,
     `Thats it for now i think`,
   ],
@@ -3130,6 +3131,7 @@ class QueueManager {
         </div>
         <div class="queue-actions">
           <button class="queue-action-btn" onclick="event.stopPropagation();openTrackInfo('${track.uid}')" title="Track info"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+          <button class="queue-action-btn" onclick="event.stopPropagation();openAddToPlaylist(${index})" title="Add to playlist"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="12" y2="6"></line><line x1="3" y1="12" x2="12" y2="12"></line><line x1="3" y1="18" x2="9" y2="18"></line><line x1="18" y1="10" x2="18" y2="20"></line><line x1="13" y1="15" x2="23" y2="15"></line></svg></button>
           <button class="queue-action-btn" onclick="event.stopPropagation();addToUserQueue(${index})" title="Add to queue" style="font-weight:700;font-size:18px">+</button>
           <button class="queue-action-btn" onclick="event.stopPropagation();removeFromQueue(${index})" title="Remove"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
         </div>
@@ -3227,6 +3229,7 @@ class QueueManager {
       currentTrackIndex = nextIndex;
     }
     QueueManager.render();
+    if (currentView === 'playlists' && typeof PlaylistManager !== 'undefined') PlaylistManager.refresh();
     /*setStorageInfo();*/
   }
 
@@ -3848,6 +3851,525 @@ const playAlbum        = (...args) => AlbumManager.play(...args);
 const shuffleAlbum     = (...args) => AlbumManager.shuffle(...args);
 const addAlbumToQueue  = (...args) => AlbumManager.addToQueue(...args);
 const playAlbumTrack   = (...args) => AlbumManager.playTrack(...args);
+
+// ============================================================================
+// PLAYLIST MANAGER — custom playlists
+// ============================================================================
+// Track uids get regenerated every launch (the library is rebuilt from your
+// folder each time), so a playlist can't store uids. Instead each song gets a
+// stable key (youtube id, or filename + size) and the playlist is matched back
+// to the library whenever it's shown or played. Songs that aren't loaded right
+// now stay in the playlist, they just show greyed out until they're back.
+// Saved in localStorage under `youtify_playlists`.
+
+class PlaylistManager {
+  static STORAGE_KEY = 'youtify_playlists';
+  static playlists = [];
+  static openId = null;
+  static _drag = null;
+  static _loaded = false;
+  static COLORS = ['#ff6b6b','#4ecdc4','#45b7d1','#96ceb4','#fd79a8','#a29bfe','#fdcb6e','#6c5ce7'];
+
+  // ---------- storage ----------
+  static load() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(PlaylistManager.STORAGE_KEY) || '[]');
+      PlaylistManager.playlists = Array.isArray(raw)
+        ? raw.filter(p => p && p.id && Array.isArray(p.items))
+        : [];
+    } catch (e) { PlaylistManager.playlists = []; }
+    PlaylistManager._loaded = true;
+  }
+
+  static save() {
+    try { localStorage.setItem(PlaylistManager.STORAGE_KEY, JSON.stringify(PlaylistManager.playlists)); }
+    catch (e) { console.warn('Could not save playlists', e); toast('Could not save playlists'); }
+  }
+
+  static all() {
+    if (!PlaylistManager._loaded) PlaylistManager.load();
+    return PlaylistManager.playlists;
+  }
+
+  static get(id) { return PlaylistManager.all().find(p => p.id === id) || null; }
+
+  // ---------- helpers ----------
+  static esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  static norm(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+  static keyFor(t) {
+    if (!t) return null;
+    if (t.id) return 'yt:' + t.id;
+    const fileName = t._fileName || (t.file && t.file.name) || '';
+    if (fileName) return 'f:' + fileName.toLowerCase() + '|' + (t.fileSize || 0);
+    const title = PlaylistManager.norm(t.title);
+    if (!title) return null;
+    return 't:' + title + '|' + PlaylistManager.norm(t.artist) + '|' + (t.fileSize || 0);
+  }
+
+  static itemFor(t) {
+    const item = {
+      key: PlaylistManager.keyFor(t),
+      title: t.title || 'Unknown Track',
+      artist: t.artist || 'Unknown Artist'
+    };
+    // embedded art is a giant base64 string, only keep small plain urls
+    if (t.albumArt && !String(t.albumArt).startsWith('data:') && String(t.albumArt).length < 300) item.art = t.albumArt;
+    return item;
+  }
+
+  // playlist items -> [{ item, track|null }] matched against the current library
+  static resolve(pl) {
+    const byKey = new Map();
+    tracks.forEach(t => {
+      const k = PlaylistManager.keyFor(t);
+      if (k && !byKey.has(k)) byKey.set(k, t);
+    });
+    return pl.items.map(item => ({ item, track: byKey.get(item.key) || null }));
+  }
+
+  static playableTracks(pl) {
+    return PlaylistManager.resolve(pl).map(r => r.track).filter(Boolean);
+  }
+
+  static totalSeconds(list) {
+    return list.reduce((s, t) => s + (Number(t && t.duration) > 0 ? Number(t.duration) : 0), 0);
+  }
+
+  // ---------- create / edit ----------
+  static create(name, trackList = []) {
+    const pl = {
+      id: 'pl' + Utils.generateUID(),
+      name: String(name || '').trim().slice(0, 60) || 'Untitled playlist',
+      created: Date.now(),
+      updated: Date.now(),
+      items: []
+    };
+    PlaylistManager.all().push(pl);
+    PlaylistManager.addTracks(pl.id, trackList, true);
+    PlaylistManager.save();
+    return pl;
+  }
+
+  static addTracks(id, trackList, silent = false) {
+    const pl = PlaylistManager.get(id);
+    if (!pl) return 0;
+    const have = new Set(pl.items.map(i => i.key));
+    let added = 0;
+    (trackList || []).forEach(t => {
+      const k = PlaylistManager.keyFor(t);
+      if (!k || have.has(k)) return;
+      have.add(k);
+      pl.items.push(PlaylistManager.itemFor(t));
+      added++;
+    });
+    if (added) { pl.updated = Date.now(); PlaylistManager.save(); }
+    if (!silent) {
+      if (added) toast(`Added ${added} song${added === 1 ? '' : 's'} to ${pl.name}`);
+      else toast(`Already in ${pl.name}`);
+    }
+    return added;
+  }
+
+  static removeItem(id, index) {
+    const pl = PlaylistManager.get(id);
+    if (!pl || !pl.items[index]) return;
+    pl.items.splice(index, 1);
+    pl.updated = Date.now();
+    PlaylistManager.save();
+    PlaylistManager.showDetail(id);
+  }
+
+  static rename(id) {
+    const pl = PlaylistManager.get(id);
+    if (!pl) return;
+    PlaylistManager.promptName({ title: 'Rename playlist', initial: pl.name, confirmText: 'Save' }, name => {
+      pl.name = name;
+      pl.updated = Date.now();
+      PlaylistManager.save();
+      PlaylistManager.refresh();
+    });
+  }
+
+  static remove(id) {
+    const pl = PlaylistManager.get(id);
+    if (!pl) return;
+    if (!confirm(`Delete playlist "${pl.name}"?`)) return;
+    PlaylistManager.playlists = PlaylistManager.all().filter(p => p.id !== id);
+    PlaylistManager.save();
+    PlaylistManager.openId = null;
+    toast(`Deleted ${pl.name}`);
+    PlaylistManager.show();
+  }
+
+  static newPlaylist() {
+    PlaylistManager.promptName({ title: 'New playlist', initial: '', confirmText: 'Create' }, name => {
+      const pl = PlaylistManager.create(name);
+      toast(`Created ${pl.name}`);
+      PlaylistManager.showDetail(pl.id);
+    });
+  }
+
+  static saveQueue() {
+    if (!queue.length) { toast('Queue is empty'); return; }
+    const snapshot = queue.slice();
+    PlaylistManager.promptName({ title: 'Save queue as playlist', initial: '', confirmText: 'Save' }, name => {
+      const pl = PlaylistManager.create(name, snapshot);
+      toast(`Saved ${pl.items.length} song${pl.items.length === 1 ? '' : 's'} to ${pl.name}`);
+      if (currentView === 'playlists') PlaylistManager.refresh();
+    });
+  }
+
+  static addCurrent() {
+    const t = queue[currentTrackIndex];
+    if (!t) { toast('No track playing'); return; }
+    PlaylistManager.openPicker([t]);
+  }
+
+  // ---------- dialogs ----------
+  static promptName({ title, initial = '', confirmText = 'OK' }, onDone) {
+    const modal = Utils.createModal(PlaylistManager.esc(title));
+    modal.body.innerHTML = `
+      <div class="form-group">
+        <input type="text" class="form-input" maxlength="60" placeholder="Playlist name..." value="${PlaylistManager.esc(initial)}">
+        <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn secondary pl-cancel">Cancel</button>
+          <button class="btn primary pl-ok">${PlaylistManager.esc(confirmText)}</button>
+        </div>
+      </div>`;
+    const input = modal.body.querySelector('input');
+    const submit = () => {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      modal.close();
+      onDone(name);
+    };
+    modal.body.querySelector('.pl-ok').addEventListener('click', submit);
+    modal.body.querySelector('.pl-cancel').addEventListener('click', modal.close);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') modal.close();
+    });
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  }
+
+  // "Add to playlist" picker. Takes an array of library tracks.
+  static openPicker(trackList) {
+    const list = (trackList || []).filter(t => t && PlaylistManager.keyFor(t));
+    if (!list.length) { toast('Nothing to add'); return; }
+    const modal = Utils.createModal(list.length === 1 ? 'Add to playlist' : `Add ${list.length} songs to playlist`);
+    const keys = list.map(t => PlaylistManager.keyFor(t));
+
+    modal.body.innerHTML = `
+      <div class="form-group" style="display:flex;gap:8px;">
+        <input type="text" class="form-input" maxlength="60" placeholder="New playlist name..." style="flex:1;">
+        <button class="btn primary pl-create">Create</button>
+      </div>
+      <div class="pl-pick-list"></div>`;
+
+    const input = modal.body.querySelector('input');
+    const listEl = modal.body.querySelector('.pl-pick-list');
+
+    const create = () => {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      const pl = PlaylistManager.create(name, list);
+      modal.close();
+      toast(`Created ${pl.name} with ${pl.items.length} song${pl.items.length === 1 ? '' : 's'}`);
+      if (currentView === 'playlists') PlaylistManager.refresh();
+    };
+    modal.body.querySelector('.pl-create').addEventListener('click', create);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); create(); } });
+
+    const pls = PlaylistManager.all().slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    if (!pls.length) {
+      listEl.innerHTML = `<div class="pl-pick-empty">No playlists yet. Name one above to make your first.</div>`;
+    }
+    pls.forEach(pl => {
+      const have = new Set(pl.items.map(i => i.key));
+      const already = keys.every(k => have.has(k));
+      const row = document.createElement('button');
+      row.className = 'pl-pick-row';
+      row.innerHTML = `
+        <span class="pl-pick-name">${PlaylistManager.esc(pl.name)}</span>
+        <span class="pl-pick-count">${already ? '✓ added' : `${pl.items.length} song${pl.items.length === 1 ? '' : 's'}`}</span>`;
+      row.addEventListener('click', () => {
+        PlaylistManager.addTracks(pl.id, list);
+        modal.close();
+        if (currentView === 'playlists') PlaylistManager.refresh();
+      });
+      listEl.appendChild(row);
+    });
+    setTimeout(() => input.focus(), 30);
+  }
+
+  // ---------- playback ----------
+  static _startQueue(list, start, message) {
+    queue = list;
+    currentTrackIndex = start;
+    queueSort.field = null;
+    if (typeof paintQueueSortState === 'function') paintQueueSortState();
+    QueueManager.render();
+    playTrackAtIndex(0, audio, start);
+    if (message) toast(message);
+  }
+
+  static play(id, shuffle = false) {
+    const pl = PlaylistManager.get(id);
+    if (!pl) return;
+    const list = PlaylistManager.playableTracks(pl);
+    if (!list.length) {
+      toast(pl.items.length ? 'None of these songs are loaded right now' : 'This playlist is empty');
+      return;
+    }
+    if (shuffle) {
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+    }
+    PlaylistManager._startQueue(list, 0, `${shuffle ? 'Shuffling' : 'Playing'} ${pl.name}`);
+  }
+
+  // click on a row: whole playlist becomes the queue, starting at that song
+  static playFrom(id, itemIndex) {
+    const pl = PlaylistManager.get(id);
+    if (!pl || !pl.items[itemIndex]) return;
+    const list = PlaylistManager.playableTracks(pl);
+    const start = list.findIndex(t => PlaylistManager.keyFor(t) === pl.items[itemIndex].key);
+    if (start === -1) { toast('That song is not loaded right now'); return; }
+    PlaylistManager._startQueue(list, start, null);
+  }
+
+  static queueAll(id, playNext = false) {
+    const pl = PlaylistManager.get(id);
+    if (!pl) return;
+    const list = PlaylistManager.playableTracks(pl);
+    if (!list.length) { toast('Nothing loaded to queue'); return; }
+    // first song of the playlist should be the first one up
+    userQueue = playNext ? list.concat(userQueue) : userQueue.concat(list);
+    uqRender();
+    toast(playNext
+      ? `Playing next: ${pl.name}`
+      : `Added ${list.length} song${list.length === 1 ? '' : 's'} to Up Next`);
+  }
+
+  static queueItem(id, itemIndex) {
+    const pl = PlaylistManager.get(id);
+    if (!pl || !pl.items[itemIndex]) return;
+    const t = PlaylistManager.resolve(pl)[itemIndex].track;
+    if (!t) { toast('That song is not loaded right now'); return; }
+    userQueue.push(t);
+    uqRender();
+    toast(`Added to queue: ${t.title || 'Unknown Track'}`);
+  }
+
+  // ---------- views ----------
+  static refresh() {
+    if (currentView !== 'playlists') return;
+    if (PlaylistManager.openId && PlaylistManager.get(PlaylistManager.openId)) PlaylistManager.showDetail(PlaylistManager.openId);
+    else PlaylistManager.show();
+  }
+
+  static coverHTML(pl, resolved, size) {
+    const first = resolved.find(r => r.track && r.track.albumArt && r.track.albumArt.trim());
+    const art = first ? first.track.albumArt : (pl.items.find(i => i.art) || {}).art || '';
+    const letter = (pl.name || 'P').trim().charAt(0).toUpperCase() || 'P';
+    const color = PlaylistManager.COLORS[(pl.name || 'P').charCodeAt(0) % PlaylistManager.COLORS.length];
+    return `<div class="pl-cover ${size}">
+      <div class="pl-cover-fallback" style="background:${color};">${PlaylistManager.esc(letter)}</div>
+      ${art ? `<img src="${PlaylistManager.esc(art)}" alt="" onerror="this.style.display='none'">` : ''}
+    </div>`;
+  }
+
+  static show() {
+    const main = document.getElementById('mainContent');
+    if (!main) return;
+    PlaylistManager.openId = null;
+    currentView = 'playlists';
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === 'playlists'));
+
+    const pls = PlaylistManager.all().slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    const cards = pls.map(pl => {
+      const resolved = PlaylistManager.resolve(pl);
+      const loaded = resolved.filter(r => r.track).length;
+      const secs = PlaylistManager.totalSeconds(resolved.map(r => r.track).filter(Boolean));
+      const sub = `${pl.items.length} song${pl.items.length === 1 ? '' : 's'}${secs > 0 ? ' • ' + Utils.formatDuration(secs) : ''}${loaded < pl.items.length ? ' • ' + (pl.items.length - loaded) + ' not loaded' : ''}`;
+      return `<div class="album-card" onclick="PlaylistManager.showDetail('${pl.id}')">
+        ${PlaylistManager.coverHTML(pl, resolved, 'sm')}
+        <h4>${PlaylistManager.esc(pl.name)}</h4>
+        <p>${PlaylistManager.esc(sub)}</p>
+      </div>`;
+    }).join('');
+
+    main.innerHTML = `
+      <div class="header"><div class="search-container"></div><div class="user-profile"></div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+        <h2 class="section-title" style="margin:0;">Playlists (${pls.length})</h2>
+        <button class="btn primary" onclick="PlaylistManager.newPlaylist()">+ New Playlist</button>
+      </div>
+      ${pls.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><path d="M18 10v8"></path><path d="M14 14h8"></path></svg></div>
+          <div class="empty-title">No playlists yet</div>
+          <div class="empty-subtitle">Make one here, or right click a song and pick "Add to playlist"</div>
+        </div>` : `<div class="album-grid" id="playlistGrid">${cards}</div>`}`;
+  }
+
+  static showDetail(id) {
+    const pl = PlaylistManager.get(id);
+    const main = document.getElementById('mainContent');
+    if (!pl || !main) { PlaylistManager.show(); return; }
+    PlaylistManager.openId = id;
+    currentView = 'playlists';
+
+    const resolved = PlaylistManager.resolve(pl);
+    const loadedTracks = resolved.map(r => r.track).filter(Boolean);
+    const secs = PlaylistManager.totalSeconds(loadedTracks);
+    const missing = pl.items.length - loadedTracks.length;
+    const curUid = queue[currentTrackIndex]?.uid;
+    const playingNow = (typeof isPlaying1 !== 'undefined' && isPlaying1) || (typeof isPlaying2 !== 'undefined' && isPlaying2);
+    const E = PlaylistManager.esc;
+
+    const rows = resolved.map(({ item, track }, i) => {
+      const isMissing = !track;
+      const isCur = !!track && track.uid === curUid;
+      const title = track ? (track.title || item.title) : item.title;
+      const artist = track ? (track.artist || item.artist) : item.artist;
+      const dur = track && track.duration > 0 ? Utils.formatTime(track.duration) : '';
+      return `<div class="pl-row ${isCur ? 'playing' : ''} ${isMissing ? 'missing' : ''}" data-idx="${i}" draggable="true"
+          ${isMissing ? 'title="Not in your library right now"' : `onclick="PlaylistManager.playFrom('${id}',${i})"`}>
+        <span class="pl-num">${isCur && playingNow ? '▶' : i + 1}</span>
+        <div class="pl-meta">
+          <div class="pl-title">${E(title)}</div>
+          <div class="pl-artist">${E(artist)}${isMissing ? ' • not in library' : ''}</div>
+        </div>
+        <span class="pl-dur">${dur}</span>
+        <div class="pl-actions">
+          ${isMissing ? '' : `<button class="pl-icon-btn" title="Add to queue" onclick="event.stopPropagation();PlaylistManager.queueItem('${id}',${i})" style="font-weight:700;font-size:18px;line-height:1;width:32px;justify-content:center;">+</button>`}
+          <button class="pl-icon-btn" title="Remove from playlist" onclick="event.stopPropagation();PlaylistManager.removeItem('${id}',${i})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+      </div>`;
+    }).join('');
+
+    const circle = 'border-radius:50%;width:56px;height:56px;font-size:20px;display:flex;align-items:center;justify-content:center;';
+    main.innerHTML = `
+      <div class="header"><div class="search-container"><button class="btn secondary" onclick="PlaylistManager.show()" style="margin-right:12px;">← Back to Playlists</button></div><div class="user-profile"></div></div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:32px;padding:24px;background:linear-gradient(to bottom,var(--bg-tertiary),transparent);border-radius:12px;">
+        ${PlaylistManager.coverHTML(pl, resolved, 'lg')}
+        <div style="display:flex;flex-direction:column;justify-content:flex-end;min-width:0;">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);margin-bottom:8px;">Playlist</div>
+          <h1 style="font-size:48px;font-weight:800;margin-bottom:16px;line-height:1.1;overflow-wrap:anywhere;">${E(pl.name)}</h1>
+          <div style="color:var(--text-secondary);font-size:14px;">${pl.items.length} song${pl.items.length === 1 ? '' : 's'}${secs > 0 ? ', ' + Utils.formatDuration(secs) : ''}${missing > 0 ? ` • ${missing} not loaded right now` : ''}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:32px;padding:0 24px;flex-wrap:wrap;">
+        <button class="btn primary" onclick="PlaylistManager.play('${id}')" style="${circle}" title="Play"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="7 4 19 12 7 20 7 4"></polygon></svg></button>
+        <button class="btn secondary" onclick="PlaylistManager.play('${id}',true)" style="${circle}" title="Shuffle"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg></button>
+        <button class="btn secondary" onclick="PlaylistManager.queueAll('${id}')" style="${circle}" title="Add to Up Next"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
+        <button class="btn secondary" onclick="PlaylistManager.queueAll('${id}',true)" style="${circle}" title="Play next"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 4 6 20"></polyline><polygon points="10 7 19 12 10 17 10 7"></polygon></svg></button>
+        <button class="btn secondary" onclick="PlaylistManager.rename('${id}')" style="${circle}" title="Rename"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg></button>
+        <button class="btn secondary" onclick="PlaylistManager.remove('${id}')" style="${circle}" title="Delete playlist"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+      </div>
+      <div style="padding:0 24px;">
+        ${pl.items.length === 0 ? `
+          <div class="empty-state">
+            <div class="empty-title">This playlist is empty</div>
+            <div class="empty-subtitle">Right click a song (or hit the playlist button on a row) and pick "Add to playlist"</div>
+          </div>` : rows}
+      </div>`;
+
+    PlaylistManager.bindDrag(id);
+  }
+
+  static bindDrag(id) {
+    document.querySelectorAll('.pl-row[draggable="true"]').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        PlaylistManager._drag = Number(row.dataset.idx);
+        row.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', 'playlist-row'); } catch (_) {}
+      });
+      row.addEventListener('dragover', e => {
+        if (PlaylistManager._drag === null) return;
+        e.preventDefault();
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const from = PlaylistManager._drag;
+        const to = Number(row.dataset.idx);
+        PlaylistManager._drag = null;
+        if (from === null || from === to) return;
+        const pl = PlaylistManager.get(id);
+        if (!pl) return;
+        const [moved] = pl.items.splice(from, 1);
+        pl.items.splice(to, 0, moved);
+        pl.updated = Date.now();
+        PlaylistManager.save();
+        PlaylistManager.showDetail(id);
+      });
+      row.addEventListener('dragend', () => {
+        PlaylistManager._drag = null;
+        row.style.opacity = '';
+        document.querySelectorAll('.pl-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+      });
+    });
+  }
+}
+window.PlaylistManager = PlaylistManager;
+
+// Legacy-style wrappers so inline onclick="" handlers stay short
+const openAddToPlaylist = (queueIndex) => { const t = queue[queueIndex]; if (t) PlaylistManager.openPicker([t]); };
+const addContextTrackToPlaylist = () => {
+  const t = queue[contextTrackIndex];
+  closeTrackContextMenu();
+  if (t) PlaylistManager.openPicker([t]);
+};
+const saveQueueAsPlaylist = () => PlaylistManager.saveQueue();
+const addCurrentTrackToPlaylist = () => PlaylistManager.addCurrent();
+
+(function injectPlaylistCSS() {
+  const css = `
+    .pl-cover{position:relative;width:100%;aspect-ratio:1;border-radius:8px;overflow:hidden;margin-bottom:12px;background:var(--bg-secondary);}
+    .pl-cover.lg{width:232px;height:232px;margin:0;flex-shrink:0;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+    .pl-cover-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700;color:#fff;}
+    .pl-cover.lg .pl-cover-fallback{font-size:84px;}
+    .pl-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
+    .pl-row{display:grid;grid-template-columns:44px 1fr auto auto;gap:16px;padding:10px 16px;border-radius:6px;cursor:pointer;align-items:center;transition:background .15s;}
+    .pl-row:hover{background:var(--bg-hover);}
+    .pl-row.playing{background:var(--bg-tertiary);}
+    .pl-row.playing .pl-title{color:var(--accent);}
+    .pl-row.missing{opacity:.45;cursor:default;}
+    .pl-row.drag-over{box-shadow:0 -2px 0 var(--accent);}
+    .pl-num{color:var(--text-muted);font-size:16px;font-variant-numeric:tabular-nums;}
+    .pl-meta{min-width:0;}
+    .pl-title{font-weight:600;font-size:16px;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pl-artist{font-size:14px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pl-dur{color:var(--text-muted);font-size:14px;text-align:right;font-variant-numeric:tabular-nums;}
+    .pl-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s;}
+    .pl-row:hover .pl-actions,.pl-row:focus-within .pl-actions{opacity:1;}
+    @media (hover:none){.pl-actions{opacity:1;}}
+    .pl-icon-btn{background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:6px;border-radius:6px;display:flex;align-items:center;}
+    .pl-icon-btn:hover{color:var(--text-primary);background:var(--bg-tertiary);}
+    .pl-pick-list{margin-top:12px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:4px;}
+    .pl-pick-row{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:12px 14px;border:none;border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;text-align:left;font:inherit;}
+    .pl-pick-row:hover{background:var(--bg-hover);}
+    .pl-pick-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pl-pick-count{color:var(--text-muted);font-size:12px;flex-shrink:0;}
+    .pl-pick-empty{color:var(--text-muted);font-size:14px;padding:12px 4px;}
+  `;
+  const inject = () => Utils.addGlobalCSS(css);
+  if (document.body) inject(); else document.addEventListener('DOMContentLoaded', inject);
+})();
+
 
 
 function rebindAudioListeners() {
@@ -4514,6 +5036,8 @@ class ViewManager {
                 <button onclick="playRandomTrack();closeQueueOverflow()" role="menuitem">Random track</button>
                 <button id="favoriteNowBtn" onclick="toggleFavoriteCurrentTrack();closeQueueOverflow()" role="menuitem">Favorite current track</button>
                 <button onclick="copyNowPlaying();closeQueueOverflow()" role="menuitem">Copy now playing</button>
+                <button onclick="saveQueueAsPlaylist();closeQueueOverflow()" role="menuitem">Save queue as playlist</button>
+                <button onclick="addCurrentTrackToPlaylist();closeQueueOverflow()" role="menuitem">Add current track to playlist</button>
                 <div class="queue-overflow-divider"></div>
                 <div class="queue-storage-info" id="StorageInfo"></div>
               </div>
@@ -4617,6 +5141,7 @@ class ViewManager {
     document.getElementById('searchContainer').style.display = "none";
     if (place === 'stats') renderStatsView();
     if (place === 'album') AlbumManager.show();
+    if (place === 'playlists') PlaylistManager.show();
   }
 }
 

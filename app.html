@@ -74,6 +74,10 @@
         </span>
         <span class="nav-text">Albums</span>
       </div>
+      <div class="nav-item" data-view="playlists" onclick="returnTo('playlists')">
+        <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><path d="M18 9v9"></path><circle cx="16" cy="18" r="2"></circle></svg></span>
+        <span class="nav-text">Playlists</span>
+      </div>
     </nav>
     <div class="sb-search-slot" id="sbSearchSlot"><div class="search-container">
         <input type="text" class="search-input" placeholder="Search for songs, artists..." id="searchInput"><span class="search-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -168,6 +172,8 @@
                 <button onclick="playRandomTrack();closeQueueOverflow()" role="menuitem">Random track</button>
                 <button id="favoriteNowBtn" onclick="toggleFavoriteCurrentTrack();closeQueueOverflow()" role="menuitem">Favorite current track</button>
                 <button onclick="copyNowPlaying();closeQueueOverflow()" role="menuitem">Copy now playing</button>
+                <button onclick="saveQueueAsPlaylist();closeQueueOverflow()" role="menuitem">Save queue as playlist</button>
+                <button onclick="addCurrentTrackToPlaylist();closeQueueOverflow()" role="menuitem">Add current track to playlist</button>
                 <div class="queue-overflow-divider"></div>
                 <div class="queue-storage-info" id="StorageInfo"></div>
               </div>
@@ -620,6 +626,7 @@
   <button onclick="playContextTrack()" role="menuitem">Play now</button>
   <button onclick="playContextTrackNext()" role="menuitem">Play next</button>
   <button onclick="addContextTrackToQueue()" role="menuitem">Add to queue</button>
+  <button onclick="addContextTrackToPlaylist()" role="menuitem">Add to playlist...</button>
   <button onclick="openContextTrackInfo()" role="menuitem">Track info</button>
   <div class="track-context-divider"></div>
   <button class="track-context-danger" onclick="removeContextTrack()" role="menuitem">Remove from queue</button>
