@@ -3386,7 +3386,7 @@ window.YoutifyPlayer = {
       artist: t.artist || "",
       duration: Number(t.duration) || 0,
       position: (audio && audio.currentTime) || 0,
-      playing: !!isPlaying,
+      playing: !!(isPlaying1 || isPlaying2),
       rate: Number(playbackSpeed) || 1
     };
   },
@@ -3406,7 +3406,7 @@ window.YoutifyPlayer = {
     } catch (e) {}
     try { AudioEngine.setPlaybackSpeed(rate); } catch (e) {}   // exact value (slider snaps to 0.05 steps)
   },
-  isPlaying() { return !!isPlaying; },
+  isPlaying() { return !!(isPlaying1 || isPlaying2); },
   seek(pos) { try { if (audio) audio.currentTime = Math.max(0, pos); } catch (e) {} },
   pause() { try { PlayerController.pause(); } catch (e) {} },
   resume() { try { PlayerController.resume(); } catch (e) {} },
