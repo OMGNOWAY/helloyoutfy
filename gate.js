@@ -205,10 +205,14 @@ function launch() {
    3. replay DOMContentLoaded / load       -> the app code was loaded late, so its
                                               startup listeners would otherwise never fire
    4. remove the login screen                                                       */
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
-    s.src = src; s.async = false;
+    const url = new URL(src);
+    url.searchParams.set("_cb", Date.now().toString());
+    s.src = url.href;
+    s.async = false;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error("failed to load " + src));
     document.head.appendChild(s);
@@ -217,7 +221,9 @@ function loadScript(src) {
 async function loadApp() {
   showLoading("loading…");
   try {
-    const res = await fetch(G.appHtml, { cache: "no-cache" });
+    const url = new URL(G.appHtml);
+    url.searchParams.set("_cb", Date.now().toString());
+    const res = await fetch(url.href, { cache: "no-store" });
     if (!res.ok) throw new Error("app.html " + res.status);
     const html = await res.text();
     const t = document.createElement("template");
