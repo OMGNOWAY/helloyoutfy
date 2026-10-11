@@ -3,7 +3,9 @@ var version = "1.4.5";
 const CHANGELOG_DATA = {
   "Release 1.4.5": [
     `Added Group chats`,
+    `You can share songs and themes in chat now (<(click the music note next to the picture button)>)`,
     `Added more download servers so people can download their songs (<or something>)`,
+    `Your themes now save to the server... (<(hope this doesnt break the server)>)`,
     `Also updates should be able to popup after refresh now`,
     `Added playlists, so you can make playlists now or something...`,
     `Fixed a bug with playing a album (<(it would make the album your songs on the home page)>)`,
@@ -2008,11 +2010,13 @@ class ThemeManager {
   static loadCustom() {
     try {
       const saved = localStorage.getItem('youtifiy_custom_themes');
-      if (!saved) return;
+      if (!saved) { ThemeSync.init(); return; }
       customThemes = JSON.parse(saved);
+      if (!Array.isArray(customThemes)) customThemes = [];
       customThemes.forEach(theme => { ThemeManager.applyCSS(theme); ThemeManager.addToGrid(theme); });
       const cur = localStorage.getItem('theme');
       if (cur) document.querySelectorAll('.color-swatch').forEach(s => { if (s.dataset.theme === cur) s.classList.add('active'); });
+      ThemeSync.init();
     } catch (e) { console.error('Error loading custom themes:', e); }
   }
 
@@ -2331,7 +2335,7 @@ class ThemeManager {
         ThemeManager.addToGrid(theme);
       }
 
-      localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes));
+      localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes)); ThemeSync.changed();
       ThemeManager.applyCSS(theme);
       document.documentElement.style.removeProperty('--glass-tint');
       document.documentElement.setAttribute('data-theme', theme.name);
@@ -2378,7 +2382,7 @@ class ThemeManager {
       themes = themes.filter(t => t.name !== `${theme.name}`);
 
       customThemes = themes;
-      localStorage.setItem('youtifiy_custom_themes', JSON.stringify(themes));
+      localStorage.setItem('youtifiy_custom_themes', JSON.stringify(themes)); ThemeSync.changed();
 
       toast('Theme deleted');
       modal.close();
@@ -2399,7 +2403,7 @@ class ThemeManager {
         const idx = customThemes.findIndex(t => t.name === theme.name);
         if (idx !== -1) { if (!confirm(`Theme "${theme.name}" already exists. Overwrite?`)) return; customThemes[idx] = theme; }
         else customThemes.push(theme);
-        localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes));
+        localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes)); ThemeSync.changed();
         ThemeManager.applyCSS(theme);
         ThemeManager.addToGrid(theme);
         document.documentElement.style.removeProperty('--glass-tint');
@@ -2421,6 +2425,295 @@ const importThemeUI       = () => ThemeManager.openImporter();
 const editThemes          = () => ThemeManager.openEditor();
 const loadCustomThemes    = () => ThemeManager.loadCustom();
 const addThemeToGrid      = (...args) => ThemeManager.addToGrid(...args);
+
+/* ===================== theme-sync.js =====================
+   Cloud sync for custom themes (Firebase Auth + Cloud Firestore).
+   Cloud layout:  users/{uid}/themes/{themeId}
+                  { name, theme:[13 colours], deleted:bool, editedAt:ms, updatedAt:serverTimestamp }
+   - every theme gets a random id, so renames/edits keep the same cloud record
+   - only themes that actually changed are written (one batched request)
+   - deletes write a small "deleted" marker so other devices can remove it too
+   - pulls are incremental (updatedAt > last seen), so unchanged themes cost 0 reads
+   - an empty local list never deletes anything; deleting is always per-theme
+   - both devices edited the same theme -> cloud copy wins, your version is kept
+     as "<name> (this device)" so nothing is lost
+   Local themes keep working with no network / no login; changes queue up in
+   localStorage and go out when you're back online and signed in. */
+const ThemeSync = (() => {
+  const LS_THEMES = 'youtifiy_custom_themes';
+  const LS_STATE  = 'youtifiy_theme_sync';
+  const FB        = 'https://www.gstatic.com/firebasejs/10.12.5/';
+  const BUILTIN   = ['dark', 'default', 'darkgreen', 'coffee', 'og', 'violet', 'red', 'darkred'];
+  const PUSH_DELAY = 1500, NET_TIMEOUT = 20000, RETRY_MAX = 300000;
+
+  let fs = null, db = null, uid = null, started = false, inited = false;
+  let state = { uid: null, seen: null, items: {} };   // items[id] = { sync, pending, name, editedAt }
+  let prevIds = [];                                   // theme ids by array position after the last reconcile
+  let pushTimer = null, retryTimer = null, retryMs = 5000;
+  let pushing = false, pulling = false, pulled = false, warned = false;   // pulled = did the login check succeed yet
+
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+  const jsonOf = (t) => JSON.stringify({ name: t.name, theme: t.theme });
+  const list = () => (Array.isArray(customThemes) ? customThemes : (customThemes = []));
+  const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), NET_TIMEOUT))]);
+
+  function loadState() {
+    try {
+      const s = JSON.parse(localStorage.getItem(LS_STATE) || 'null');
+      if (s && typeof s === 'object' && s.items && typeof s.items === 'object') state = { uid: s.uid || null, seen: s.seen || null, items: s.items };
+    } catch (e) {}
+  }
+  function saveState() { try { localStorage.setItem(LS_STATE, JSON.stringify(state)); } catch (e) {} }
+  function saveThemes() { try { localStorage.setItem(LS_THEMES, JSON.stringify(list())); } catch (e) {} }
+
+  /* Same colour whitelist as YoutifyPlayer.sanitizeTheme (cloud data goes into a <style> rule),
+     but names keep their original characters/length except the ones that could break the CSS selector. */
+  function validate(d) {
+    try {
+      if (!d || typeof d !== 'object' || !Array.isArray(d.theme)) return null;
+      if (d.theme.length !== ThemeManager.THEME_CSS_VARS.length) return null;
+      let name = String(d.name || '').replace(/["\\<>\u0000-\u001f]/g, '').trim().slice(0, 60);
+      if (!name) return null;
+      const OK = /^(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([0-9.,%\s\/deg-]+\)|[0-9.,\s]+|[a-z]{3,20})$/i;
+      const colors = d.theme.map((v) => String(v == null ? '' : v).trim());
+      if (colors.some((c) => c.length > 60 || !OK.test(c))) return null;
+      if (BUILTIN.includes(name.toLowerCase())) name += ' (cloud)';
+      return { name, theme: colors };
+    } catch (e) { return null; }
+  }
+
+  function uniqueName(name, exceptId) {
+    let n = name, i = 2;
+    while (list().some((t) => t && t.id !== exceptId && t.name === n)) n = `${name} ${i++}`;
+    return n;
+  }
+
+  /* Works out which themes were added/edited/deleted since last time. The editor, importer,
+     shared-theme installer etc. replace theme objects, so ids are carried over by array position
+     (edits/renames replace in place) or by name (overwrite). Anything else is a new theme. */
+  function reconcile() {
+    const arr = list();
+    const present = new Set(arr.filter((t) => t && t.id).map((t) => t.id));
+    const orphans = prevIds.filter((id) => id && !present.has(id));
+    const used = new Set();
+    let assigned = false;
+    arr.forEach((t, i) => {
+      if (!t) return;
+      if (t.id && !used.has(t.id)) { used.add(t.id); return; }
+      let id = null;
+      const pi = prevIds[i];
+      if (pi && orphans.includes(pi) && !used.has(pi)) id = pi;
+      else id = orphans.find((o) => !used.has(o) && state.items[o] && state.items[o].name === t.name) || null;
+      t.id = id || uuid();
+      used.add(t.id);
+      assigned = true;
+    });
+    // ids that disappeared = deleted locally
+    Object.keys(state.items).forEach((id) => {
+      if (used.has(id)) return;
+      const it = state.items[id];
+      if (it.pending === 'del') return;
+      if (it.sync == null) delete state.items[id];      // never reached the cloud, nothing to delete there
+      else { it.pending = 'del'; it.editedAt = Date.now(); }
+    });
+    arr.forEach((t) => {
+      if (!t) return;
+      const it = state.items[t.id] || (state.items[t.id] = { sync: null, pending: null, name: t.name });
+      const cur = jsonOf(t);
+      if (cur !== it.sync) { if (it.pending !== 'set') { it.pending = 'set'; it.editedAt = Date.now(); } }
+      else if (it.pending) it.pending = null;
+      it.name = t.name;
+    });
+    prevIds = arr.map((t) => t && t.id);
+    if (assigned) saveThemes();
+    saveState();
+  }
+
+  function schedulePush() {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(sync, PUSH_DELAY);
+  }
+  function scheduleRetry() {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(sync, retryMs);
+    retryMs = Math.min(retryMs * 2, RETRY_MAX);
+  }
+  const hasPending = () => Object.keys(state.items).some((id) => state.items[id].pending);
+
+  async function sync() {
+    if (!db || !uid || !navigator.onLine) return;
+    if (!pulled) await pull();       // the only pull: once per login (retried only if it failed)
+    if (pulled) await push();
+  }
+
+  async function pull() {
+    if (pulling || !db || !uid) return;
+    pulling = true;
+    try {
+      const col = fs.collection(db, 'users', uid, 'themes');
+      const q = state.seen ? fs.query(col, fs.where('updatedAt', '>', new fs.Timestamp(state.seen.s, state.seen.n))) : col;
+      const snap = await withTimeout(fs.getDocs(q));
+      pulled = true;
+      const remote = [];
+      snap.forEach((d) => remote.push({ id: d.id, data: d.data() }));
+      if (remote.length) applyRemote(remote);
+      retryMs = 5000;
+    } catch (e) {
+      console.warn('[theme-sync] pull failed', e);
+      noteError(e);
+      scheduleRetry();
+    } finally { pulling = false; }
+  }
+
+  function applyRemote(remote) {
+    const added = [], removed = [];
+    let newCount = 0;
+    for (const { id, data } of remote) {
+      const ts = data && data.updatedAt && data.updatedAt.seconds != null ? data.updatedAt : null;
+      if (!ts) continue;
+      if (!state.seen || ts.seconds > state.seen.s || (ts.seconds === state.seen.s && ts.nanoseconds > state.seen.n)) state.seen = { s: ts.seconds, n: ts.nanoseconds };
+      const it = state.items[id];
+      const idx = list().findIndex((t) => t && t.id === id);
+
+      if (data.deleted) {
+        if (it && it.pending === 'set') continue;           // a local edit beats a remote delete, it will be re-uploaded
+        if (idx !== -1) { removed.push(list()[idx].name); list().splice(idx, 1); }
+        delete state.items[id];
+        continue;
+      }
+      const clean = validate(data);
+      if (!clean) continue;                                  // broken/unsafe record: ignore it
+      const remoteJson = jsonOf(clean);
+
+      if (it && it.pending === 'del') {
+        if (it.sync === remoteJson) continue;                // nothing new remotely, our delete stands
+        it.pending = null;                                   // edited elsewhere after we deleted: bring it back
+      } else if (it && it.pending === 'set' && idx !== -1) {
+        const local = list()[idx];
+        if (jsonOf(local) === remoteJson) { it.sync = remoteJson; it.pending = null; continue; }
+        if (it.sync === remoteJson) continue;                // just an old/echoed version, our edit stands
+        // both sides changed it: cloud wins, but keep this device's version as a copy
+        const copy = { id: uuid(), name: uniqueName(local.name + ' (this device)'), theme: local.theme.slice() };
+        list().push(copy);
+        state.items[copy.id] = { sync: null, pending: 'set', name: copy.name, editedAt: Date.now() };
+        added.push(copy);
+      } else if (idx !== -1 && jsonOf(list()[idx]) === remoteJson) {
+        state.items[id] = { sync: remoteJson, pending: null, name: clean.name };   // our own write coming back
+        continue;
+      }
+
+      const theme = { id, name: uniqueName(clean.name, id), theme: clean.theme };
+      if (idx !== -1) { if (list()[idx].name !== theme.name) removed.push(list()[idx].name); list()[idx] = theme; }
+      else { list().push(theme); newCount++; }
+      state.items[id] = { sync: remoteJson, pending: null, name: theme.name };
+      added.push(theme);
+    }
+    saveThemes();
+    reconcile();
+    try {
+      removed.forEach((n) => { if (!list().some((t) => t.name === n)) document.querySelector('.theme-grid')?.querySelector(`[data-theme="${n}"]`)?.remove(); });
+      added.forEach((t) => { ThemeManager.applyCSS(t); ThemeManager.addToGrid(t); });
+      const cur = localStorage.getItem('theme');
+      if (cur) document.querySelectorAll('.color-swatch').forEach((s) => { if (s.dataset.theme === cur) s.classList.add('active'); });
+      if (newCount) toast(`${newCount} theme${newCount > 1 ? 's' : ''} restored from your account`);
+    } catch (e) { console.warn('[theme-sync] UI refresh failed', e); }
+    if (hasPending()) schedulePush();
+  }
+
+  async function push() {
+    if (pushing || !db || !uid || !navigator.onLine) return;
+    const ids = Object.keys(state.items).filter((id) => state.items[id].pending);
+    if (!ids.length) return;
+    pushing = true;
+    let failed = false;
+    try {
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = fs.writeBatch(db);
+        const sent = [];
+        for (const id of ids.slice(i, i + 400)) {
+          const it = state.items[id];
+          const ref = fs.doc(db, 'users', uid, 'themes', id);
+          if (it.pending === 'del') {
+            batch.set(ref, { name: String(it.name || 'deleted').slice(0, 60) || 'deleted', theme: [], deleted: true, editedAt: it.editedAt || Date.now(), updatedAt: fs.serverTimestamp() });
+            sent.push([id, 'del', null]);
+          } else {
+            const t = list().find((x) => x && x.id === id);
+            const clean = t && validate(t);
+            if (!clean) { it.pending = null; continue; }     // vanished or invalid, nothing to send
+            batch.set(ref, { name: clean.name, theme: clean.theme, deleted: false, editedAt: it.editedAt || Date.now(), updatedAt: fs.serverTimestamp() });
+            sent.push([id, 'set', jsonOf(t)]);
+          }
+        }
+        if (!sent.length) continue;
+        await withTimeout(batch.commit());
+        for (const [id, kind, json] of sent) {
+          const it = state.items[id];
+          if (!it) continue;
+          if (kind === 'del') { if (it.pending === 'del') delete state.items[id]; }
+          else { it.sync = json; const t = list().find((x) => x && x.id === id); if (t && jsonOf(t) === json) it.pending = null; }
+        }
+        saveState();
+      }
+      retryMs = 5000;
+    } catch (e) {
+      failed = true;
+      console.warn('[theme-sync] push failed', e);
+      noteError(e);
+      scheduleRetry();
+    } finally { pushing = false; saveState(); }
+    if (!failed && hasPending()) schedulePush();             // something changed while we were sending
+  }
+
+  function noteError(e) {
+    if (warned) return;
+    const code = e && e.code;
+    if (code === 'permission-denied') { warned = true; try { toast("Theme sync blocked — check your Firestore rules"); } catch (x) {} }
+  }
+
+  function onUser(user) {
+    if (!user) { uid = null; clearTimeout(pushTimer); clearTimeout(retryTimer); return; }   // signed out: keep everything local
+    if (uid === user.uid) return;
+    uid = user.uid;
+    if (state.uid !== uid) {
+      // first sign-in here, or a different account: nothing is known about this account's cloud yet,
+      // so every local theme counts as "not uploaded" (additive, never deletes) and we pull everything once
+      state = { uid, seen: null, items: {} };
+      reconcile();
+    }
+    warned = false; pulled = false; retryMs = 5000;
+    sync();
+  }
+
+  return {
+    /* called from ThemeManager.loadCustom() */
+    init() {
+      if (inited) return;
+      inited = true;
+      loadState();
+      prevIds = list().map((t) => t && t.id);
+      reconcile();
+    },
+    /* called after every write to youtifiy_custom_themes */
+    changed() {
+      if (!inited) this.init();
+      reconcile();
+      if (uid && hasPending()) schedulePush();
+    },
+    /* called from chat boot() with the Firebase app that chat already created */
+    async attach(app) {
+      if (started) return;
+      started = true;
+      try {
+        const [authMod, fsMod] = await Promise.all([import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
+        fs = fsMod;
+        db = fsMod.getFirestore(app);
+        authMod.onAuthStateChanged(authMod.getAuth(app), onUser);
+        window.addEventListener('online', () => { if (uid) sync(); });
+      } catch (e) { console.error('[theme-sync] Firebase load failed', e); }
+    },
+    status() { return { signedIn: !!uid, pending: Object.keys(state.items).filter((id) => state.items[id].pending), tracked: Object.keys(state.items).length }; }
+  };
+})();
 
 // ============================================================================
 // PLAYER CONTROLLER — play, pause, seek, volume, shuffle, repeat, crossfade
@@ -3391,6 +3684,73 @@ window.YoutifyPlayer = {
       playing: !!(isPlaying1 || isPlaying2),
       rate: Number(playbackSpeed) || 1
     };
+  },
+  /* ---- share cards in chat (songs + themes) ---- */
+  shareableTrack() {
+    const t = queue[currentTrackIndex];
+    if (!t) return null;
+    const id = (typeof t.id === 'string' && /^[\w-]{11}$/.test(t.id)) ? t.id : null;
+    return { id, title: t.title || 'Unknown', artist: t.artist || '' };
+  },
+  /* 'have' | 'downloading' | 'missing' for a track somebody shared */
+  trackStatus(info) {
+    const P = window.YoutifyPlayer;
+    const key = P.keyFor({ id: info.id, title: info.title, artist: info.artist });
+    const t = queue.find((x) => x && P.keyFor(x) === key);
+    if (t) {
+      if (['Fetching...', 'Downloading...', 'Retrying...'].includes(t.status)) return 'downloading';
+      if (t.status !== 'Error') return 'have';
+    }
+    if (info.id && downloads.some((d) => d && d.id === info.id && d.status !== 'Error')) return 'downloading';
+    return 'missing';
+  },
+  playShared(info) {
+    const P = window.YoutifyPlayer;
+    const idx = P.findIndexByKey(P.keyFor({ id: info.id, title: info.title, artist: info.artist }));
+    if (idx < 0) return false;
+    P.playAt(idx, 0);
+    return true;
+  },
+  listCustomThemes() {
+    return (Array.isArray(customThemes) ? customThemes : []).map((t) => ({ name: t.name, theme: Array.isArray(t.theme) ? t.theme.slice() : [] }));
+  },
+  /* Shared themes come from other people and go straight into a <style> rule,
+     so only plain colours are allowed through and the name is scrubbed. */
+  sanitizeTheme(raw) {
+    try {
+      if (!raw || typeof raw !== 'object' || !Array.isArray(raw.theme)) return null;
+      if (raw.theme.length !== ThemeManager.THEME_CSS_VARS.length) return null;
+      const name = String(raw.name || '').replace(/[^\p{L}\p{N} _.'\-]/gu, '').trim().slice(0, 30);
+      if (!name) return null;
+      const OK = /^(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([0-9.,%\s\/deg-]+\)|[0-9.,\s]+|[a-z]{3,20})$/i;
+      const colors = raw.theme.map((v) => String(v == null ? '' : v).trim());
+      if (colors.some((c) => c.length > 60 || !OK.test(c))) return null;
+      return { name, theme: colors };
+    } catch (e) { return null; }
+  },
+  installTheme(raw) {
+    const theme = window.YoutifyPlayer.sanitizeTheme(raw);
+    if (!theme) { toast('That theme looks broken'); return false; }
+    // a shared theme must never replace one of the built-in looks
+    if (['dark', 'default', 'darkgreen', 'coffee', 'og', 'violet', 'red', 'darkred'].includes(theme.name.toLowerCase())) theme.name += ' (shared)';
+    const idx = customThemes.findIndex((t) => t.name === theme.name);
+    if (idx !== -1) {
+      const same = JSON.stringify(customThemes[idx].theme) === JSON.stringify(theme.theme);
+      if (!same && !confirm(`You already have a theme called "${theme.name}". Overwrite it?`)) return false;
+      customThemes[idx] = theme;
+    } else customThemes.push(theme);
+    localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes)); ThemeSync.changed();
+    ThemeManager.applyCSS(theme);
+    ThemeManager.addToGrid(theme);
+    ThemeManager.clearAABInlineOverrides();
+    ThemeManager.hideBlobs();
+    document.documentElement.style.removeProperty('--glass-tint');
+    document.documentElement.setAttribute('data-theme', theme.name);
+    ThemeManager.applyAccentInk();
+    localStorage.setItem('theme', theme.name);
+    document.querySelectorAll('.color-swatch').forEach((s) => s.classList.toggle('active', s.dataset.theme === theme.name));
+    toast('Theme added: ' + theme.name);
+    return true;
   },
   findIndexByKey(key) {
     if (!key) return -1;
@@ -6944,7 +7304,7 @@ function getAABTheme() {
     const idx = customThemes.findIndex(t => t.name === theme.name);
     if (idx !== -1) { if (!confirm(`Theme "${theme.name}" already exists. Overwrite?`)) return; customThemes[idx] = theme; }
     else customThemes.push(theme);
-    localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes));
+    localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes)); ThemeSync.changed();
     ThemeManager.applyCSS(theme);
     ThemeManager.addToGrid(theme);
     document.documentElement.style.removeProperty('--glass-tint');
@@ -8128,6 +8488,7 @@ async function boot() {
     const app = appMod.initializeApp(CFG, "youtify-chat");
     db = dbMod.getDatabase(app);
     auth = authMod.getAuth(app);
+    try { ThemeSync.attach(app); } catch (e) { console.error("[theme-sync]", e); }
   } catch (err) {
     console.error("[chat] firebase load failed", err);
     status("offline — couldn't load Firebase", "", "bad");
@@ -8193,6 +8554,7 @@ function applyMuted(on) {
     else i.placeholder = state.view === "thread" ? ("message " + (state.openThread?.name || "")) : "message the room…";
   }
   const pb = $("ycPictureBtn"); if (pb) pb.disabled = blocked;
+  const shb = $("ycShareBtn"); if (shb) shb.disabled = blocked;
   const eb = $("ycEmojiBtn");    if (eb) eb.disabled = blocked;
   const sb = $("ycSendBtn");    if (sb) sb.disabled = blocked;
 
@@ -9001,7 +9363,7 @@ function maybeNotify(m, kind, threadUid) {
     if (canSee("room")) return;
     notify(
       (m.name || nameFor(m.uid)) + " mentioned you",
-      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : m.text,
+      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : previewText(m.text),
       "room:" + m.key,
       () => showView("room")
     );
@@ -9010,7 +9372,7 @@ function maybeNotify(m, kind, threadUid) {
     if (looking) return;
     notify(
       m.name || nameFor(m.uid),
-      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : m.text,
+      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : previewText(m.text),
       "dm:" + m.key,
       () => openThread(threadUid, nameFor(threadUid))
     );
@@ -9500,6 +9862,289 @@ function cacheThread(tid, msgs) {
   }, 1500);
 }
 
+/* ---------- share cards (songs + themes) ----------
+   A card is a normal text message: a tag, then JSON. That keeps it working with
+   the existing database rules, DMs, groups, replies and reactions — nothing new
+   has to be allowed server-side. Older versions just show the raw text. */
+const CARD_PREFIX = "[[youtify:";
+const CARD_MAX = 950;
+
+function encodeCard(kind, data) { return CARD_PREFIX + kind + "]]" + JSON.stringify(data); }
+
+function cardOf(m) {
+  const t = m && typeof m.text === "string" ? m.text : "";
+  if (!t.startsWith(CARD_PREFIX)) return null;
+  const end = t.indexOf("]]");
+  if (end < 0) return null;
+  const kind = t.slice(CARD_PREFIX.length, end);
+  let data;
+  try { data = JSON.parse(t.slice(end + 2)); } catch (e) { return null; }
+  if (!data || typeof data !== "object") return null;
+  if (kind === "song") {
+    const title = String(data.t || "").slice(0, 120).trim();
+    if (!title) return null;
+    const id = /^[\w-]{11}$/.test(String(data.id || "")) ? String(data.id) : null;
+    return { kind, title, artist: String(data.a || "").slice(0, 80), id };
+  }
+  if (kind === "theme") {
+    const P = window.YoutifyPlayer;
+    const theme = P && P.sanitizeTheme ? P.sanitizeTheme(data) : null;
+    return theme ? { kind, theme } : null;
+  }
+  return null;
+}
+
+/* what to show where there's no room for a card (notifications, DM list, reply quotes) */
+function previewText(text) {
+  const c = cardOf({ text });
+  if (!c) return text;
+  return c.kind === "song" ? "🎵 " + c.title : "🎨 " + c.theme.name;
+}
+
+function mk(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function renderCard(bub, card) {
+  const P = window.YoutifyPlayer || {};
+  const wrap = mk("div", "yc-card yc-card-" + card.kind);
+  const body = mk("div", "yc-card-body");
+  const btn = mk("button", "yc-card-btn");
+  btn.type = "button";
+
+  if (card.kind === "song") {
+    const art = mk("div", "yc-card-art");
+    if (card.id) {
+      const img = document.createElement("img");
+      img.src = "https://i.ytimg.com/vi/" + card.id + "/hqdefault.jpg";
+      img.alt = "";
+      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer";
+      img.onerror = () => { img.remove(); art.textContent = "🎵"; };
+      art.appendChild(img);
+    } else art.textContent = "🎵";
+    const note = mk("div", "yc-card-note");
+    body.append(mk("div", "yc-card-kind", "Song"), mk("div", "yc-card-title", card.title),
+                mk("div", "yc-card-sub", card.artist || "Unknown artist"), btn, note);
+    wrap.append(art, body);
+
+    let timer = null;
+    const stopPoll = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const poll = () => {
+      if (timer) return;
+      const started = Date.now();
+      timer = setInterval(() => {
+        if (!btn.isConnected || Date.now() - started > 5 * 60 * 1000) { stopPoll(); return; }
+        paint();
+      }, 1500);
+    };
+    const paint = () => {
+      const st = P.trackStatus ? P.trackStatus(card) : "missing";
+      note.textContent = "";
+      btn.style.display = "";
+      btn.disabled = false;
+      if (st === "have") {
+        stopPoll();
+        btn.textContent = "▶ Play";
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          if (!(P.playShared && P.playShared(card))) say("Couldn't find that song in your library.");
+        };
+      } else if (st === "downloading") {
+        btn.textContent = "Downloading…";
+        btn.disabled = true;
+        poll();
+      } else if (card.id) {
+        stopPoll();
+        btn.textContent = "⬇ Download";
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const ok = P.fetchById ? P.fetchById(card.id, card.title, card.artist) : false;
+          if (!ok) { say("Couldn't start the download — check your API key in settings."); return; }
+          paint();
+        };
+      } else {
+        stopPoll();
+        btn.style.display = "none";
+        note.textContent = "Local file — it only exists on their device";
+      }
+    };
+    paint();
+  } else {
+    const c = card.theme.theme;
+    const prev = mk("div", "yc-theme-prev");
+    prev.style.background = c[0];
+    [["s1", 4], ["s2", 2], ["s3", 6], ["s4", 7]].forEach(([cls, i]) => {
+      const s = document.createElement("i");
+      s.className = cls;
+      s.style.background = c[i];
+      prev.appendChild(s);
+    });
+    btn.textContent = "Add & apply";
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (P.installTheme && P.installTheme(card.theme)) { btn.textContent = "Added ✓"; btn.disabled = true; }
+    };
+    body.append(mk("div", "yc-card-kind", "Theme"), mk("div", "yc-card-title", card.theme.name),
+                mk("div", "yc-card-sub", "Shared theme"), btn);
+    wrap.append(prev, body);
+  }
+  bub.appendChild(wrap);
+}
+
+/* ---------- share menu (the music-note button in the composer) ---------- */
+function closeShare() { const p = $("ycSharePop"); if (p) p.classList.remove("open"); }
+
+function shareCard(kind, data) {
+  if (!data) return;
+  const text = encodeCard(kind, data);
+  if (text.length > CARD_MAX) { say("That one's too big to share."); return; }
+  send(text);
+}
+
+function paintSharePop(pop) {
+  const P = window.YoutifyPlayer || {};
+  pop.textContent = "";
+
+  const track = P.shareableTrack ? P.shareableTrack() : null;
+  const songBtn = mk("button", "yc-share-item");
+  songBtn.type = "button";
+  const meta = mk("span", "meta");
+  meta.append(mk("div", "t", track ? "Share what's playing" : "Nothing playing"),
+              mk("div", "s", track ? track.title + (track.artist ? " — " + track.artist : "") : "Play a song first"));
+  songBtn.append(mk("span", "ico", "🎵"), meta);
+  songBtn.disabled = !track;
+  songBtn.onclick = (e) => {
+    e.stopPropagation();
+    closeShare();
+    if (!track) return;
+    const data = { t: String(track.title).slice(0, 100), a: String(track.artist || "").slice(0, 70) };
+    if (track.id) data.id = track.id;
+    shareCard("song", data);
+  };
+  pop.appendChild(songBtn);
+
+  pop.appendChild(mk("div", "yc-share-label", "Share a theme"));
+  const themes = (P.listCustomThemes ? P.listCustomThemes() : [])
+    .map((t) => (P.sanitizeTheme ? P.sanitizeTheme(t) : null))
+    .filter(Boolean);
+  if (!themes.length) {
+    pop.appendChild(mk("div", "yc-share-empty", "No custom themes yet — make one in Settings"));
+  }
+  themes.forEach((t) => {
+    const row = mk("button", "yc-share-item");
+    row.type = "button";
+    const dot = mk("span", "yc-share-dot");
+    dot.style.background = "linear-gradient(135deg," + t.theme[0] + " 50%," + t.theme[6] + " 50%)";
+    const m2 = mk("span", "meta");
+    m2.append(mk("div", "t", t.name));
+    row.append(dot, m2);
+    row.onclick = (e) => { e.stopPropagation(); closeShare(); shareCard("theme", t); };
+    pop.appendChild(row);
+  });
+}
+
+/* Adds the share button + menu if the page doesn't have them yet, so an older
+   app.html (or a cached one) still gets the feature from this file alone. */
+function ensureShareUi() {
+  if (!$("ycShareBtn")) {
+    const anchor = $("ycPictureBtn") || $("ycInput");
+    if (anchor && anchor.parentNode) {
+      const b = document.createElement("button");
+      b.className = "yc-attach";
+      b.id = "ycShareBtn";
+      b.title = "Share a song or theme";
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
+      b.onclick = (e) => toggleShare(e);
+      if (anchor.id === "ycPictureBtn") anchor.after(b);
+      else anchor.parentNode.insertBefore(b, anchor);
+    }
+  }
+  if (!$("ycSharePop")) {
+    const pop = mk("div", "yc-share-pop");
+    pop.id = "ycSharePop";
+    const emoji = $("ycEmojiPop"), comp = $("ycComposer");
+    if (emoji && emoji.parentNode) emoji.after(pop);
+    else if (comp && comp.parentNode) comp.before(pop);
+  }
+}
+
+function toggleShare() {
+  const pop = $("ycSharePop");
+  if (!pop) return;
+  if (pop.classList.contains("open")) { closeShare(); return; }
+  closeEmoji();
+  paintSharePop(pop);
+  pop.classList.add("open");
+}
+
+(function injectCardStyles() {
+  if (document.getElementById("ycCardStyles")) return;
+  const s = document.createElement("style");
+  s.id = "ycCardStyles";
+  s.textContent = `
+.yc-msg-bubble.yc-sharecard, .yc-msg.mine .yc-msg-bubble.yc-sharecard {
+  padding: 8px; width: min(290px, 100%); box-sizing: border-box;
+  background: var(--bg-card, rgba(255,255,255,0.06)); color: var(--text-primary);
+  border: 1px solid var(--border); font-weight: 400; white-space: normal;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.20);
+}
+.yc-card { display: flex; gap: 10px; align-items: center; }
+.yc-card-art, .yc-theme-prev {
+  width: 54px; height: 54px; border-radius: 10px; flex-shrink: 0; position: relative; overflow: hidden;
+  background: rgba(255,255,255,0.07); display: grid; place-items: center; font-size: 22px;
+  border: 1px solid rgba(255,255,255,0.12); box-sizing: border-box;
+}
+.yc-card-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yc-theme-prev { display: block; }
+.yc-theme-prev i { position: absolute; display: block; border-radius: 999px; }
+.yc-theme-prev .s1 { top: 8px; left: 8px; width: 26px; height: 6px; }
+.yc-theme-prev .s2 { top: 19px; left: 8px; width: 36px; height: 9px; border-radius: 4px; }
+.yc-theme-prev .s3 { bottom: 7px; left: 8px; width: 15px; height: 15px; }
+.yc-theme-prev .s4 { bottom: 7px; left: 27px; width: 15px; height: 15px; }
+.yc-card-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.yc-card-kind { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.yc-card-title { font-size: 14px; font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-card-sub { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-card-btn {
+  margin-top: 6px; align-self: flex-start; border: none; border-radius: 999px; padding: 5px 13px;
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-grad-2, var(--accent-secondary)) 100%);
+  color: var(--accent-ink, #0a0a0f); transition: transform .15s ease, opacity .2s ease;
+}
+.yc-card-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.yc-card-btn:disabled { opacity: .55; cursor: default; }
+.yc-card-note { margin-top: 5px; font-size: 11.5px; color: var(--text-muted); }
+.yc-share-pop {
+  display: none; position: absolute; z-index: 40; left: 12px; right: 12px; bottom: 76px;
+  background: var(--bg-secondary); border: 1px solid var(--border-hover, var(--border));
+  border-radius: 16px; box-shadow: 0 16px 40px rgba(0,0,0,0.55); padding: 6px;
+  max-height: 300px; overflow-y: auto;
+}
+.yc-share-pop.open { display: block; }
+.yc-share-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; background: transparent; border: none;
+  color: var(--text-primary); font: inherit; font-size: 13.5px; text-align: left;
+  padding: 8px 10px; border-radius: 10px; cursor: pointer;
+}
+.yc-share-item:hover:not(:disabled) { background: rgba(255,255,255,0.07); }
+.yc-share-item:disabled { opacity: .5; cursor: default; }
+.yc-share-item .ico, .yc-share-dot {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center;
+  background: rgba(255,255,255,0.07); font-size: 15px; border: 1px solid rgba(255,255,255,0.12); box-sizing: border-box;
+}
+.yc-share-item .meta { min-width: 0; flex: 1; }
+.yc-share-item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-share-item .s { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-share-label { padding: 8px 10px 4px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+.yc-share-empty { padding: 6px 10px 8px; font-size: 12.5px; color: var(--text-muted); }
+`;
+  document.head.appendChild(s);
+})();
+
 /* ---------- message helpers ---------- */
 const LEGACY_IMG_TAG = "[ThisIsAnImage]";
 
@@ -9804,6 +10449,7 @@ function buildMessageRow(m, ctx) {
     if (m.key) wrap.dataset.key = m.key;
 
     const src = isSystem ? null : imageSrcOf(m);
+    const card = (isSystem || src) ? null : cardOf(m);
 
     if (!isSystem) {
       // avatar column (only drawn on the first message of a group)
@@ -9839,7 +10485,7 @@ function buildMessageRow(m, ctx) {
     }
 
     const bub = document.createElement("div");
-    bub.className = "yc-msg-bubble" + (src ? " img" : "") +
+    bub.className = "yc-msg-bubble" + (src ? " img" : "") + (card ? " yc-sharecard" : "") +
       (!src && !isSystem && isEmojiOnly(m.text) ? " jumbo" : "");
 
     if (!isSystem && m.replyTo && m.replyTo.key) {
@@ -9885,6 +10531,8 @@ function buildMessageRow(m, ctx) {
         cap.textContent = m.caption;
         bub.appendChild(cap);
       }
+    } else if (card) {
+      renderCard(bub, card);
     } else {
       const link = isSystem ? null : embeddableUrl(m.text);
       const bare = link && String(m.text || "").trim() === link.raw;
@@ -9974,7 +10622,7 @@ function buildMessageRow(m, ctx) {
       reply.onclick = (e) => { e.stopPropagation(); startReply(m); };
       acts.appendChild(reply);
 
-      if (mine && !src) {
+      if (mine && !src && !card) {
         const edit = document.createElement("button");
         edit.title = "Edit";
         edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
@@ -10873,6 +11521,7 @@ function setUploading(on, text) {
   const t = $("ycUploadingText");
   if (t && text) t.textContent = text;
   const b = $("ycPictureBtn"); if (b) b.disabled = !!on;
+  const shb2 = $("ycShareBtn"); if (shb2) shb2.disabled = !!on;
   const s = $("ycSendBtn");    if (s) s.disabled = !!on;
 }
 
@@ -10959,7 +11608,7 @@ function excerptOf(m) {
   if (!m) return "";
   if (m.gif) return "GIF";
   if (imageSrcOf(m)) return "Picture";
-  return String(m.text || "").replace(/\s+/g, " ").slice(0, 90);
+  return previewText(String(m.text || "")).replace(/\s+/g, " ").slice(0, 90);
 }
 
 function paintComposeChip() {
@@ -10983,6 +11632,7 @@ function startReply(m) {
 function startEdit(m) {
   if (!m || m.uid !== state.uid) return;
   if (imageSrcOf(m)) { say("Pictures can't be edited — delete and resend."); return; }
+  if (cardOf(m)) { say("Cards can't be edited — delete and resend."); return; }
   compose.mode = "edit";
   compose.target = m;
   paintComposeChip();
@@ -11558,24 +12208,29 @@ function pickMention(i) {
 }
 
 /* ---------- sending text ---------- */
-async function send() {
+async function send(override) {
   const inp = $("ycInput");
   if (!inp) return;
-  const text = shortcodeToEmoji(inp.value.trim());
+  const isCard = typeof override === "string";   // share cards skip the composer box entirely
+  const text = isCard ? override : shortcodeToEmoji(inp.value.trim());
   if (!text || !state.ready || !state.name) return;
   if (!sessionStarted) { say("You need to log in to chat."); return; }
   if (state.kicked) { say("You've been removed from the chat."); return; }
   if (state.muted)  { say("You're muted in chat."); return; }
 
-  inp.value = "";
-  autoGrow();
-  closeMentionPop();
-  stopTyping();
+  if (isCard && compose.mode === "edit") { say("Finish or cancel your edit first."); return; }
+
+  if (!isCard) {
+    inp.value = "";
+    autoGrow();
+    closeMentionPop();
+    stopTyping();
+  }
 
   if (compose.mode === "edit") { await saveEdit(text); return; }
 
   const { ref, push, update } = dbfns;
-  const mentions = findMentions(text);
+  const mentions = isCard ? [] : findMentions(text);
   const payload = { uid: state.uid, name: state.name, text, ts: Date.now() };
   if (mentions.length) payload.mentions = mentions;
   if (compose.mode === "reply" && compose.target) {
@@ -11594,7 +12249,7 @@ async function send() {
       const tid = threadId(state.uid, other);
       const pushed = await push(ref(db, `${msgsPath(tid)}`), payload);
       bumpThreadMeta(tid, pushed && pushed.key);   // tells other clients their cache is stale
-      const preview = text.slice(0, 60);
+      const preview = previewText(text).slice(0, 60);
       if (isGroupId(other)) {
         await touchGroup(other, preview, payload.ts);
       } else {
@@ -11612,8 +12267,10 @@ async function send() {
     if (wasReply) cancelCompose();
   } catch (err) {
     console.error("[chat] send failed", err);
-    inp.value = text;   // don't eat the message
-    autoGrow();
+    if (!isCard) {
+      inp.value = text;   // don't eat the message
+      autoGrow();
+    }
     say("Message didn't send — check your Firebase rules.");
   }
 }
@@ -12476,6 +13133,7 @@ window.YoutifyChat = {
   sendPicture,
   cancelCompose,
   toggleEmoji, closeEmoji,
+  toggleShare, closeShare,
   get emojiState() { return emojiState; },
   toggleReaction,
   startReply,
@@ -12540,7 +13198,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // up-arrow on an empty box edits your last message, like most chat apps
       if (e.key === "ArrowUp" && !inp.value && !compose.mode) {
         const list = state.view === "thread" ? lastThreadMsgs : lastRoomMsgs;
-        const own = (list || []).filter((m) => m.uid === state.uid && !m.system && !imageSrcOf(m));
+        const own = (list || []).filter((m) => m.uid === state.uid && !m.system && !imageSrcOf(m) && !cardOf(m));
         if (own.length) { e.preventDefault(); startEdit(own[own.length - 1]); e.stopPropagation(); return; }
       }
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -12641,6 +13299,7 @@ document.addEventListener("DOMContentLoaded", () => {
     panel.addEventListener("click", (e) => {
       if (!e.target.closest || !e.target.closest(".yc-react-picker, .yc-msg-actions")) closeReactPicker();
       if (!e.target.closest || !e.target.closest(".yc-emoji-pop, #ycEmojiBtn")) closeEmoji();
+      if (!e.target.closest || !e.target.closest(".yc-share-pop, #ycShareBtn")) closeShare();
     });
     panel.addEventListener("dragover", (e) => { e.preventDefault(); });
     panel.addEventListener("drop", (e) => {
@@ -12655,7 +13314,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", (e) => {
     // Ctrl/Cmd + Shift + C toggles the chat
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyC") { e.preventDefault(); toggle(); }
-    if (e.key === "Escape") { closeReactPicker(); closeEmoji(); }
+    if (e.key === "Escape") { closeReactPicker(); closeEmoji(); closeShare(); }
     if (e.key === "Escape" && $("ycLightbox") && $("ycLightbox").classList.contains("show")) {
       e.preventDefault();
       e.stopPropagation();
@@ -12663,6 +13322,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, true);
 
+  ensureShareUi();
   refreshOwnAvatars();
   startTypingTicker();
   setLoading(true, "connecting…");
