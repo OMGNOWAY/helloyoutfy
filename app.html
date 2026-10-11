@@ -904,6 +904,8 @@
     <div class="yc-emoji-foot" id="ycEmojiFoot"></div>
   </div>
 
+  <div class="yc-share-pop" id="ycSharePop"></div>
+
   <div class="yc-mention-pop" id="ycMentionPop"></div>
 
   <div class="yc-typing" id="ycTyping">
@@ -935,6 +937,13 @@
           <rect x="3" y="3" width="18" height="18" rx="3"></rect>
           <circle cx="8.5" cy="8.5" r="1.6"></circle>
           <path d="M21 15l-5-5L5 21"></path>
+        </svg>
+      </button>
+      <button class="yc-attach" id="ycShareBtn" onclick="YoutifyChat.toggleShare(event)" title="Share a song or theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
         </svg>
       </button>
       <textarea id="ycInput" rows="1" placeholder="message the room…" maxlength="1000" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
