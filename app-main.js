@@ -13519,7 +13519,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => {
       let t = '';
       try { t = queue[currentTrackIndex].title || ''; } catch (e) {}
-      if (t && t !== lastSpooky && spooky.test(t)) { lastSpooky = t; swarm(); }
+      if (t && t !== lastSpooky && spooky.test(t)) { lastSpooky = t; treats(); }
     }, 400);
   }, true);
 
