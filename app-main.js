@@ -9,7 +9,8 @@ const CHANGELOG_DATA = {
     `Also updates should be able to popup after refresh now`,
     `Added playlists, so you can make playlists now or something...`,
     `Fixed a bug with playing a album (<(it would make the album your songs on the home page)>)`,
-    `Thats it for now i think (<halloween time!>)`,
+    `Thats it for now i think`,
+    `(<halloween time!>)`,
   ],
   "Release 1.4.4": [
     `Redid (<(kinda)>) the chat UI`,
@@ -1169,7 +1170,10 @@ let lyricsManager = null;
 let albumArtBackground = localStorage.getItem('youtifiy_aab') === 'on';
 let performanceModeEnabled = localStorage.getItem('youtify_performance_mode') === 'on';
 let sidebarBottom = localStorage.getItem('youtify_sidebar_bottom') === 'on';
-let halloweenEnabled = localStorage.getItem('youtify_halloween') !== 'off'; // on by default, toggle in Settings
+// Halloween: if they've flipped the Settings toggle that choice wins; otherwise it's on only while no theme is picked
+const _hwStored = localStorage.getItem('youtify_halloween');
+const _hwTheme = localStorage.getItem('theme');
+let halloweenEnabled = _hwStored ? _hwStored === 'on' : (!_hwTheme || _hwTheme === 'default');
 
 let playStats = { totalPlays: 0, totalTime: 0, trackStats: {} };
 let playHistory = [];
@@ -3357,6 +3361,7 @@ function toggleSidebarPosition() {
 // Halloween theme: pure CSS layer scoped under html.halloween (see style1.css)
 function applyHalloween() {
   document.documentElement.classList.toggle('halloween', halloweenEnabled);
+  document.documentElement.classList.toggle('halloween-off', !halloweenEnabled);
   const btn = document.getElementById('halloweenBtn');
   if (btn) btn.setAttribute('aria-checked', halloweenEnabled ? 'true' : 'false');
   try { ThemeManager.applyAccentInk(); } catch (e) {}
@@ -3367,6 +3372,14 @@ function toggleHalloween() {
   localStorage.setItem('youtify_halloween', halloweenEnabled ? 'on' : 'off');
   applyHalloween();
 }
+
+// No explicit choice yet? Halloween follows whether a theme is picked (default/no theme = Halloween on).
+new MutationObserver(() => {
+  if (localStorage.getItem('youtify_halloween')) return;
+  const t = document.documentElement.getAttribute('data-theme');
+  const want = !t || t === 'default';
+  if (want !== halloweenEnabled) { halloweenEnabled = want; applyHalloween(); }
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 // Adds the toggle row to Settings (right under Performance Mode) if the HTML doesn't already have one.
 function ensureHalloweenToggle() {
@@ -7041,6 +7054,7 @@ loadFavoriteTracks();
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme && savedTheme !== 'default') document.documentElement.setAttribute('data-theme', savedTheme);
 document.documentElement.classList.toggle('halloween', halloweenEnabled);
+document.documentElement.classList.toggle('halloween-off', !halloweenEnabled);
 ThemeManager.loadCustom();
 ThemeManager.applyAccentInk();
 
@@ -13413,6 +13427,7 @@ document.addEventListener("DOMContentLoaded", () => {
 //   click the app name 3x fast ..... thunderstorm
 //   play a spooky-titled song ...... bat swarm
 //   open the app on Oct 31 ......... pumpkin rain (once per session)
+//   log in ......................... ghost jumpscare (once per tab session)
 //   console ........................ boo()  treats()  storm()  swarm()
 // ============================================================
 (function () {
@@ -13529,6 +13544,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (d.getMonth() === 9 && d.getDate() === 31 && !sessionStorage.getItem('hw_oct31')) {
       sessionStorage.setItem('hw_oct31', '1');
       setTimeout(() => rain(['🎃', '👻', '🦇', '🕷️'], 60), 1800);
+    }
+  } catch (e) {}
+
+  // jumpscare as soon as the app loads after login (once per tab session so refreshes don't spam it)
+  try {
+    if (!sessionStorage.getItem('hw_boo')) {
+      sessionStorage.setItem('hw_boo', '1');
+      setTimeout(boo, 900);
     }
   } catch (e) {}
 
