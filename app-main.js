@@ -9,7 +9,7 @@ const CHANGELOG_DATA = {
     `Also updates should be able to popup after refresh now`,
     `Added playlists, so you can make playlists now or something...`,
     `Fixed a bug with playing a album (<(it would make the album your songs on the home page)>)`,
-    `Thats it for now i think`,
+    `Thats it for now i think (<halloween time!>)`,
   ],
   "Release 1.4.4": [
     `Redid (<(kinda)>) the chat UI`,
@@ -1169,6 +1169,7 @@ let lyricsManager = null;
 let albumArtBackground = localStorage.getItem('youtifiy_aab') === 'on';
 let performanceModeEnabled = localStorage.getItem('youtify_performance_mode') === 'on';
 let sidebarBottom = localStorage.getItem('youtify_sidebar_bottom') === 'on';
+let halloweenEnabled = localStorage.getItem('youtify_halloween') !== 'off'; // on by default, toggle in Settings
 
 let playStats = { totalPlays: 0, totalTime: 0, trackStats: {} };
 let playHistory = [];
@@ -3353,6 +3354,36 @@ function toggleSidebarPosition() {
   document.body.classList.toggle('sidebar-bottom', sidebarBottom);
 }
 
+// Halloween theme: pure CSS layer scoped under html.halloween (see style1.css)
+function applyHalloween() {
+  document.documentElement.classList.toggle('halloween', halloweenEnabled);
+  const btn = document.getElementById('halloweenBtn');
+  if (btn) btn.setAttribute('aria-checked', halloweenEnabled ? 'true' : 'false');
+  try { ThemeManager.applyAccentInk(); } catch (e) {}
+}
+
+function toggleHalloween() {
+  halloweenEnabled = !halloweenEnabled;
+  localStorage.setItem('youtify_halloween', halloweenEnabled ? 'on' : 'off');
+  applyHalloween();
+}
+
+// Adds the toggle row to Settings (right under Performance Mode) if the HTML doesn't already have one.
+function ensureHalloweenToggle() {
+  if (document.getElementById('halloweenBtn')) return;
+  const perf = document.getElementById('performanceModeBtn');
+  const row = perf ? perf.closest('.setting-toggle-row') : null;
+  const holder = row || (perf && perf.parentElement);
+  if (!holder || !holder.parentElement) return;
+  const el = document.createElement('div');
+  el.className = 'setting-toggle-row';
+  el.innerHTML =
+    '<span class="setting-toggle-label">\uD83C\uDF83 Halloween Theme</span>' +
+    '<button class="toggle-slider" id="halloweenBtn" type="button" role="switch" aria-checked="' + (halloweenEnabled ? 'true' : 'false') + '" onclick="toggleHalloween()">' +
+    '<span class="slider-thumb"></span></button>';
+  holder.insertAdjacentElement('afterend', el);
+}
+
 // ============================================================================
 // MINI PLAYER
 // ============================================================================
@@ -5196,6 +5227,7 @@ function resetStats() {
 class SettingsManager {
   static open() {
     document.getElementById('settingsModal').classList.add('active');
+    ensureHalloweenToggle();
     document.getElementById('apiKeyInput').value    = apiKey;
     document.getElementById('FileURLinput').value    = svgfile;
     document.getElementById('appTitleInput').value  = document.title;
@@ -7008,6 +7040,7 @@ loadFavoriteTracks();
 
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme && savedTheme !== 'default') document.documentElement.setAttribute('data-theme', savedTheme);
+document.documentElement.classList.toggle('halloween', halloweenEnabled);
 ThemeManager.loadCustom();
 ThemeManager.applyAccentInk();
 
@@ -7292,6 +7325,8 @@ if (performanceModeButton) performanceModeButton.setAttribute('aria-checked', pe
 if (sidebarPosButton) sidebarPosButton.setAttribute('aria-checked', sidebarBottom ? 'true' : 'false');  
 document.body.classList.toggle('sidebar-bottom', sidebarBottom);                                          
 document.body.classList.toggle('performance-mode', performanceModeEnabled);
+ensureHalloweenToggle();
+applyHalloween();
 
 // Miscellaneous helpers (called from HTML)
 function timeAgo(s) { return Utils.timeAgo(s); }
