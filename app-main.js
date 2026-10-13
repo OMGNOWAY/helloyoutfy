@@ -13405,3 +13405,134 @@ document.addEventListener("DOMContentLoaded", () => {
   sync();
   setInterval(sync, 800); // safety net: re-check now and then
 })();
+
+// ============================================================
+// 🎃 Halloween easter eggs (only live while the Halloween theme is on)
+//   click the logo 5x fast ......... ghost jumpscare
+//   shift + click the logo ......... candy rain
+//   click the app name 3x fast ..... thunderstorm
+//   play a spooky-titled song ...... bat swarm
+//   open the app on Oct 31 ......... pumpkin rain (once per session)
+//   console ........................ boo()  treats()  storm()  swarm()
+// ============================================================
+(function () {
+  const on      = () => document.documentElement.classList.contains('halloween');
+  const calm    = () => document.body.classList.contains('performance-mode');
+  const reduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const ok      = () => on() && !calm() && !reduced();
+  const rand    = (a, b) => a + Math.random() * (b - a);
+
+  const st = document.createElement('style');
+  st.textContent = `
+    .hw-fx{position:fixed;pointer-events:none;z-index:9999;user-select:none}
+    .hw-fall{top:-60px;animation:hwFall linear forwards}
+    @keyframes hwFall{to{transform:translateY(115vh) rotate(540deg)}}
+    .hw-ghost{left:50%;top:50%;font-size:40px;filter:drop-shadow(0 0 30px rgba(157,77,255,.9));animation:hwGhost 1.8s ease-out forwards}
+    @keyframes hwGhost{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}15%{opacity:1}55%{transform:translate(-50%,-50%) scale(9) rotate(-6deg);opacity:1}100%{transform:translate(-50%,-50%) scale(12) rotate(6deg);opacity:0}}
+    .hw-boo{left:50%;top:68%;transform:translateX(-50%);font-family:var(--font-spooky,sans-serif);font-size:80px;color:#ff7a18;text-shadow:0 0 26px #ff7a18;opacity:0;animation:hwBoo 1.8s ease-out forwards}
+    @keyframes hwBoo{0%,30%{opacity:0}45%{opacity:1}100%{opacity:0}}
+    .hw-bat{left:-60px;animation:hwBat linear forwards;filter:drop-shadow(0 0 8px rgba(157,77,255,.8))}
+    @keyframes hwBat{from{transform:translate(0,0) rotate(0)}to{transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}}
+    .hw-flash{inset:0;background:#e8d6ff;opacity:0;animation:hwFlash 1s steps(1) forwards}
+    @keyframes hwFlash{0%{opacity:0}5%{opacity:.85}12%{opacity:0}20%{opacity:.7}30%{opacity:0}45%{opacity:.4}60%,100%{opacity:0}}
+  `;
+  document.head.appendChild(st);
+
+  function fx(cls, text, style, ms) {
+    const el = document.createElement('div');
+    el.className = 'hw-fx ' + cls;
+    if (text) el.textContent = text;
+    if (style) Object.assign(el.style, style);
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), ms);
+    return el;
+  }
+
+  function rain(emojis, n) {
+    if (!ok()) return;
+    for (let i = 0; i < (n || 45); i++) {
+      const dur = rand(2.5, 5);
+      const delay = rand(0, 1.6);
+      fx('hw-fall', emojis[Math.floor(Math.random() * emojis.length)], {
+        left: rand(0, 98) + 'vw',
+        fontSize: rand(20, 42) + 'px',
+        animationDuration: dur + 's',
+        animationDelay: delay + 's'
+      }, (dur + delay) * 1000 + 300);
+    }
+  }
+
+  function boo() {
+    if (!ok()) return;
+    fx('hw-ghost', '👻', null, 2000);
+    fx('hw-boo', 'BOO!', null, 2000);
+  }
+
+  function storm() {
+    if (!ok()) return;
+    fx('hw-flash', '', null, 1100);
+    setTimeout(() => fx('hw-flash', '', null, 1100), 1300);
+  }
+
+  function swarm() {
+    if (!ok()) return;
+    for (let i = 0; i < 16; i++) {
+      const dur = rand(3, 6.5);
+      const delay = rand(0, 1.8);
+      fx('hw-bat', '🦇', {
+        top: rand(4, 85) + '%',
+        fontSize: rand(22, 40) + 'px',
+        animationDuration: dur + 's',
+        animationDelay: delay + 's',
+        '--dx': '120vw',
+        '--dy': rand(-220, 220) + 'px',
+        '--rot': rand(-25, 25) + 'deg'
+      }, (dur + delay) * 1000 + 300);
+    }
+  }
+
+  const treats = () => rain(['🍬', '🍭', '🍫', '🍪', '🎃'], 50);
+
+  // click eggs (logo x5 = ghost, shift+logo = candy, app name x3 = storm)
+  let logoClicks = [], nameClicks = [];
+  const burst = (arr, n, ms) => {
+    const now = Date.now();
+    arr.push(now);
+    while (arr.length && now - arr[0] > ms) arr.shift();
+    if (arr.length >= n) { arr.length = 0; return true; }
+    return false;
+  };
+  document.addEventListener('click', (e) => {
+    if (!on()) return;
+    if (e.target.closest('.logo')) {
+      if (e.shiftKey) { treats(); return; }
+      if (burst(logoClicks, 5, 2000)) boo();
+    } else if (e.target.closest('.brand-title')) {
+      if (burst(nameClicks, 3, 1200)) storm();
+    }
+  });
+
+  // spooky song titles summon bats (media events don't bubble, so listen in the capture phase)
+  const spooky = /thriller|monster|ghost|spooky|halloween|witch|haunt|zombie|skelet|vampire|werewolf|scary|devil|demon|nightmare|graveyard|creep|boo\b|bones|dead|death|reaper|phantom/i;
+  let lastSpooky = '';
+  document.addEventListener('play', () => {
+    setTimeout(() => {
+      let t = '';
+      try { t = queue[currentTrackIndex].title || ''; } catch (e) {}
+      if (t && t !== lastSpooky && spooky.test(t)) { lastSpooky = t; swarm(); }
+    }, 400);
+  }, true);
+
+  // Oct 31: pumpkins on first open of the session
+  try {
+    const d = new Date();
+    if (d.getMonth() === 9 && d.getDate() === 31 && !sessionStorage.getItem('hw_oct31')) {
+      sessionStorage.setItem('hw_oct31', '1');
+      setTimeout(() => rain(['🎃', '👻', '🦇', '🕷️'], 60), 1800);
+    }
+  } catch (e) {}
+
+  // console cheats
+  window.boo = boo; window.treats = treats; window.storm = storm; window.swarm = swarm;
+  if (on()) console.log('%c🎃 psst... try boo()  treats()  storm()  swarm()', 'color:#ff7a18;font-size:14px;font-weight:bold');
+})();
