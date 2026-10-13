@@ -7547,11 +7547,12 @@ body.performance-mode .yc-gate .yc-handle-wrap input {
 
 /* ==========================================================================
    🎃 HALLOWEEN THEME — appended last so it wins over every other theme.
-   Everything is scoped under html.halloween, which the Settings toggle adds/removes.
+   Applies automatically when no theme is picked (no data-theme / default), or when html has
+   the .halloween class. Add .halloween-off to html to force it off.
    Delete from here down to remove the theme entirely.
    ========================================================================== */
 
-html.halloween {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) {
   --bg-primary: #0a0610;
   --bg-secondary: #140a1c;
   --bg-tertiary: #1d1029;
@@ -7574,8 +7575,8 @@ html.halloween {
   --font-spooky: "Creepster", "Margarine", system-ui, sans-serif;
 }
 
-html.halloween,
-html.halloween body {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)),
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body {
   background:
     radial-gradient(circle at 12% 8%, rgba(255,122,24,0.30), transparent 32%),
     radial-gradient(circle at 90% 14%, rgba(157,77,255,0.28), transparent 30%),
@@ -7584,151 +7585,151 @@ html.halloween body {
 }
 
 /* spooky headlines — one place the theme gets loud */
-html.halloween .brand-title,
-html.halloween .hero-title,
-html.halloween .hero-now-title,
-html.halloween .queue-title,
-html.halloween .modal-title,
-html.halloween .search-panel > h2,
-html.halloween .full-lyrics-title,
-html.halloween .track-info-details h3,
-html.halloween .empty-title {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .brand-title,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-title,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-now-title,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .queue-title,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .modal-title,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .search-panel > h2,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .full-lyrics-title,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .track-info-details h3,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .empty-title {
   font-family: var(--font-spooky) !important;
   font-weight: 400 !important;
   letter-spacing: 1px !important;
 }
-html.halloween .brand-title {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .brand-title {
   color: var(--accent);
   background: none;
   -webkit-text-fill-color: var(--accent);
   text-shadow: 0 0 14px rgba(255,122,24,0.55);
 }
-html.halloween .hero-title { text-shadow: 0 0 28px rgba(255,122,24,0.45); }
-html.halloween .hero-eyebrow,
-html.halloween .hero-kicker { color: var(--accent-hover); }
-html.halloween .hero-kicker::before { background: var(--halloween-green); box-shadow: 0 0 14px rgba(140,255,58,0.8); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-title { text-shadow: 0 0 28px rgba(255,122,24,0.45); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-eyebrow,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-kicker { color: var(--accent-hover); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-kicker::before { background: var(--halloween-green); box-shadow: 0 0 14px rgba(140,255,58,0.8); }
 
 /* glowy pumpkin logo */
-html.halloween .logo {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .logo {
   background:
     radial-gradient(circle at 30% 18%, rgba(255,255,255,0.55), transparent 24%),
     linear-gradient(145deg, #ff7a18, #ff4d00 60%, #9d4dff) !important;
   box-shadow: 0 0 26px rgba(255,122,24,0.60), inset 0 1px 0 rgba(255,255,255,0.4) !important;
 }
-html.halloween .brand:hover .logo {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .brand:hover .logo {
   box-shadow: 0 0 40px rgba(255,122,24,0.85), inset 0 1px 0 rgba(255,255,255,0.45) !important;
 }
 
 /* glass surfaces get a purple-black tint with ember borders */
-html.halloween .sidebar,
-html.halloween .player,
-html.halloween .modal,
-html.halloween .lyrics-panel,
-html.halloween .effects-panel,
-html.halloween .toast,
-html.halloween .yc-panel {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .sidebar,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .player,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .modal,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .lyrics-panel,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .effects-panel,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .toast,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-panel {
   background:
     linear-gradient(150deg, rgba(255,122,24,0.16), rgba(157,77,255,0.10) 60%, rgba(10,6,16,0.55)) !important;
 }
-html.halloween .main,
-html.halloween .queue-container,
-html.halloween .search-panel,
-html.halloween .hero-copy,
-html.halloween .hero-now,
-html.halloween .stats-card,
-html.halloween .album-card,
-html.halloween .settings-section,
-html.halloween .track-info-stats,
-html.halloween .album-tracklist {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .main,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .queue-container,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .search-panel,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-copy,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .hero-now,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .stats-card,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .album-card,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .settings-section,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .track-info-stats,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .album-tracklist {
   background: linear-gradient(150deg, rgba(255,122,24,0.09), rgba(157,77,255,0.06)) !important;
 }
 
 /* play button + progress: pumpkin → witch purple */
-html.halloween .btn.primary,
-html.halloween .player-btn.play-pause {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .btn.primary,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .player-btn.play-pause {
   background:
     radial-gradient(circle at 30% 20%, rgba(255,255,255,0.45), transparent 26%),
     linear-gradient(145deg, #ff7a18, #ff4d00 55%, #9d4dff) !important;
   color: #fff !important;
   box-shadow: 0 0 24px rgba(255,122,24,0.50), inset 0 1px 0 rgba(255,255,255,0.38) !important;
 }
-html.halloween .progress-fill,
-html.halloween .volume-fill {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .progress-fill,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .volume-fill {
   background: linear-gradient(90deg, #ff7a18, #ff4d00 55%, #9d4dff) !important;
   box-shadow: 0 0 10px rgba(255,122,24,0.55);
 }
 
 /* currently playing + lyrics glow like a jack-o-lantern */
-html.halloween .queue-item.playing,
-html.halloween .tracklist-row.playing,
-html.halloween .track-select-item.selected {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .queue-item.playing,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .tracklist-row.playing,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .track-select-item.selected {
   background: rgba(255,122,24,0.26) !important;
   border-color: rgba(255,150,60,0.75) !important;
   box-shadow: 0 0 18px rgba(255,122,24,0.30) !important;
 }
-html.halloween .lyrics-line.active {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .lyrics-line.active {
   color: #fff !important;
   text-shadow: 0 0 16px rgba(255,122,24,0.8);
 }
-html.halloween .full-lyrics-content .lyrics-line.active {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .full-lyrics-content .lyrics-line.active {
   text-shadow: 0 0 26px rgba(255,122,24,0.75), 0 0 6px rgba(255,200,120,0.5);
 }
-html.halloween .lyrics-title::before { background: var(--halloween-green); box-shadow: 0 0 18px rgba(140,255,58,0.8); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .lyrics-title::before { background: var(--halloween-green); box-shadow: 0 0 18px rgba(140,255,58,0.8); }
 
 /* slime-green "online" dots and live indicators */
-html.halloween .yc-dot,
-html.halloween .yc-dot.on,
-html.halloween .yc-av-wrap .yc-ring { background: var(--halloween-green); box-shadow: 0 0 8px rgba(140,255,58,0.7); }
-html.halloween .yc-dot.off,
-html.halloween .yc-av-wrap .yc-ring.off { background: var(--text-muted); box-shadow: none; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-dot,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-dot.on,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-av-wrap .yc-ring { background: var(--halloween-green); box-shadow: 0 0 8px rgba(140,255,58,0.7); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-dot.off,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-av-wrap .yc-ring.off { background: var(--text-muted); box-shadow: none; }
 
 /* chat bubbles */
-html.halloween .yc-msg.mine .yc-msg-bubble {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-msg.mine .yc-msg-bubble {
   background: linear-gradient(135deg, #ff7a18, #c43a00) !important;
   color: #fff !important;
 }
-html.halloween .yc-msg-bubble { background: rgba(157,77,255,0.12); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-msg-bubble { background: rgba(157,77,255,0.12); }
 
 /* emoji-only + image bubbles keep their no-box look (my gradient above would otherwise win) */
-html.halloween .yc-msg .yc-msg-bubble.jumbo,
-html.halloween .yc-msg.mine .yc-msg-bubble.jumbo {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-msg .yc-msg-bubble.jumbo,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-msg.mine .yc-msg-bubble.jumbo {
   background: none !important;
   border: none !important;
   box-shadow: none !important;
 }
-html.halloween .yc-msg .yc-msg-bubble.img,
-html.halloween .yc-msg.mine .yc-msg-bubble.img {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-msg .yc-msg-bubble.img,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .yc-msg.mine .yc-msg-bubble.img {
   background: rgba(255,255,255,0.07) !important;
   border: 1px solid var(--border) !important;
   box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
 }
 
 /* focus rings + selection + scrollbars */
-html.halloween .search-input:focus,
-html.halloween .search-panel-input:focus,
-html.halloween .form-input:focus,
-html.halloween input[type="range"]:focus-visible,
-html.halloween button:focus-visible,
-html.halloween .nav-item:focus-visible {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .search-input:focus,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .search-panel-input:focus,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .form-input:focus,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) input[type="range"]:focus-visible,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) button:focus-visible,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .nav-item:focus-visible {
   box-shadow: 0 0 0 4px rgba(255,122,24,0.35), inset 0 1px 0 rgba(255,255,255,0.25) !important;
 }
-html.halloween ::selection { background: rgba(255,122,24,0.45); color: #fff; }
-html.halloween ::-webkit-scrollbar-track { background: #0a0610; }
-html.halloween ::-webkit-scrollbar-thumb { background: rgba(255,122,24,0.35); border: 2px solid #0a0610; }
-html.halloween ::-webkit-scrollbar-thumb:hover { background: rgba(255,122,24,0.6); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) ::selection { background: rgba(255,122,24,0.45); color: #fff; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) ::-webkit-scrollbar-track { background: #0a0610; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) ::-webkit-scrollbar-thumb { background: rgba(255,122,24,0.35); border: 2px solid #0a0610; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) ::-webkit-scrollbar-thumb:hover { background: rgba(255,122,24,0.6); }
 
 /* login gate */
-html.halloween #gate { background: radial-gradient(circle at 50% 0%, rgba(255,122,24,0.28), #0a0610 60%); }
-html.halloween .g-card { background: #140a1c; border-color: rgba(255,150,60,0.35); box-shadow: 0 0 60px rgba(255,122,24,0.18), 0 20px 60px rgba(0,0,0,.6); }
-html.halloween .g-logo { color: var(--accent); }
-html.halloween .g-form h2 { font-family: var(--font-spooky); font-weight: 400; letter-spacing: 1px; font-size: 28px; color: var(--accent); }
-html.halloween .g-form input:focus { border-color: var(--accent); }
-html.halloween .g-form button { background: linear-gradient(135deg, #ff7a18, #ff4d00); color: #fff; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) #gate { background: radial-gradient(circle at 50% 0%, rgba(255,122,24,0.28), #0a0610 60%); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .g-card { background: #140a1c; border-color: rgba(255,150,60,0.35); box-shadow: 0 0 60px rgba(255,122,24,0.18), 0 20px 60px rgba(0,0,0,.6); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .g-logo { color: var(--accent); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .g-form h2 { font-family: var(--font-spooky); font-weight: 400; letter-spacing: 1px; font-size: 28px; color: var(--accent); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .g-form input:focus { border-color: var(--accent); }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .g-form button { background: linear-gradient(135deg, #ff7a18, #ff4d00); color: #fff; }
 
 /* ---------- decorations (all pointer-events:none, hidden in perf mode) ---------- */
 
 /* cobwebs in the top corners */
-html.halloween body::after {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body::after {
   content: '';
   position: fixed;
   inset: 0;
@@ -7742,7 +7743,7 @@ html.halloween body::after {
 }
 
 /* a little pumpkin flickering by the corner of the player */
-html.halloween .player::after {
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .player::after {
   content: '🎃';
   position: absolute;
   right: 14px;
@@ -7759,20 +7760,20 @@ html.halloween .player::after {
 }
 
 /* empty states get ghosts instead of whatever was there */
-html.halloween .empty-icon { filter: drop-shadow(0 0 12px rgba(157,77,255,0.6)); opacity: 0.85; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .empty-icon { filter: drop-shadow(0 0 12px rgba(157,77,255,0.6)); opacity: 0.85; }
 
 /* ---------- respect performance mode + reduced motion ---------- */
-html.halloween body.performance-mode::after,
-html.halloween body.performance-mode .player::after { display: none !important; }
-html.halloween body.performance-mode { --bg-primary: #0a0610; }
-html.halloween body.performance-mode .progress-fill,
-html.halloween body.performance-mode .volume-fill,
-html.halloween body.performance-mode .player-btn.play-pause { background: var(--accent) !important; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body.performance-mode::after,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body.performance-mode .player::after { display: none !important; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body.performance-mode { --bg-primary: #0a0610; }
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body.performance-mode .progress-fill,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body.performance-mode .volume-fill,
+html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body.performance-mode .player-btn.play-pause { background: var(--accent) !important; }
 
 @media (max-width: 860px) {
-  html.halloween body::after { opacity: 0.35; }
-  html.halloween .player::after { display: none; }
+  html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) body::after { opacity: 0.35; }
+  html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .player::after { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html.halloween .player::after { animation: none !important; }
+  html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .player::after { animation: none !important; }
 }
