@@ -7741,36 +7741,6 @@ html.halloween body::after {
   display: block !important;
 }
 
-/* bats drifting across the top */
-html.halloween::before,
-html.halloween::after {
-  position: fixed;
-  top: 12%;
-  left: -80px;
-  z-index: 61;
-  pointer-events: none;
-  font-size: 34px;
-  filter: drop-shadow(0 0 8px rgba(157,77,255,0.8));
-}
-html.halloween::before { content: '🦇'; animation: batFly1 26s linear infinite; }
-html.halloween::after { content: '🦇'; top: 28%; font-size: 24px; animation: batFly2 34s linear 8s infinite; }
-
-@keyframes batFly1 {
-  0%   { transform: translate(0, 0) rotate(8deg); opacity: 0; }
-  5%   { opacity: .9; }
-  25%  { transform: translate(28vw, 40px) rotate(-8deg); }
-  50%  { transform: translate(58vw, -20px) rotate(8deg); }
-  75%  { transform: translate(86vw, 50px) rotate(-8deg); opacity: .9; }
-  100% { transform: translate(115vw, 0) rotate(8deg); opacity: 0; }
-}
-@keyframes batFly2 {
-  0%   { transform: translate(0, 0) scaleX(-1); opacity: 0; left: 105vw; }
-  5%   { opacity: .8; }
-  50%  { transform: translate(-60vw, 60px) scaleX(-1); }
-  95%  { opacity: .8; }
-  100% { transform: translate(-120vw, -20px) scaleX(-1); opacity: 0; left: 105vw; }
-}
-
 /* a little pumpkin flickering by the corner of the player */
 html.halloween .player::after {
   content: '🎃';
@@ -7800,12 +7770,9 @@ html.halloween body.performance-mode .volume-fill,
 html.halloween body.performance-mode .player-btn.play-pause { background: var(--accent) !important; }
 
 @media (max-width: 860px) {
-  html.halloween::after { display: none; }
   html.halloween body::after { opacity: 0.35; }
   html.halloween .player::after { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html.halloween::before, html.halloween::after, html.halloween .player::after { animation: none !important; }
-  html.halloween::before { left: 6vw !important; top: 14% !important; opacity: .9 !important; transform: rotate(8deg) !important; }
-  html.halloween::after  { left: 88vw !important; top: 26% !important; opacity: .9 !important; transform: scaleX(-1) !important; }
+  html.halloween .player::after { animation: none !important; }
 }
