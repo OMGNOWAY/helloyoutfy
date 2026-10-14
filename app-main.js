@@ -1,6 +1,9 @@
 /* ===================== changelog.js ===================== */
-var version = "1.4.5";
+var version = "1.4.6";
 const CHANGELOG_DATA = {
+  "Release 1.4.6": [
+    `Added discord text formating. (<(so like **hi** and stuff)>)`,
+  ],
   "Release 1.4.5": [
     `Added Group chats`,
     `You can share songs and themes in chat now (<(click the music note next to the picture button)>)`,
@@ -10459,6 +10462,233 @@ function linkify(host, text) {
   return host;
 }
 
+/* ---------- discord-style formatting ----------
+   **bold** *italic* _italic_ __underline__ ~~strike~~ ||spoiler|| `code`
+   ```code block```  -# subtext  # / ## / ### headers  > quote  >>> quote
+   - lists. Same rule as linkify: everything is built from DOM nodes and
+   textContent, so a message can never inject markup. */
+const spokenSpoilers = new Set();   // revealed spoilers, so a re-render doesn't re-hide them
+
+function fmtIsWs(c) { return c === undefined || /\s/.test(c); }
+function fmtIsWord(c) { return c !== undefined && /\w/.test(c); }
+
+/* A `code span` starting at i. Closing run has to be the same length. */
+function fmtCodeSpan(str, i) {
+  let n = 0; while (str[i + n] === "`") n++;
+  let j = i + n, k;
+  while ((k = str.indexOf("`", j)) !== -1) {
+    let m = 0; while (str[k + m] === "`") m++;
+    if (m === n) return { inner: str.slice(i + n, k), end: k + m };
+    j = k + m;
+  }
+  return null;
+}
+
+/* length of an @mention at i, so names with _ or * in them don't get formatted */
+function fmtMentionLen(str, i) {
+  const rest = str.slice(i + 1).toLowerCase();
+  const names = mentionCandidates().map((c) => c.name).concat(["everyone", "here"]);
+  for (const n of names) {
+    const low = n.toLowerCase();
+    if (rest.startsWith(low) && !fmtIsWord(str[i + 1 + n.length])) return n.length + 1;
+  }
+  return 0;
+}
+
+/* Finds the closing delimiter for an opener whose content starts at `from`. */
+function fmtFindClose(str, from, d) {
+  const ch = d[0], len = d.length;
+  for (let j = from; j < str.length; j++) {
+    const c = str[j];
+    if (c === "\\") { j++; continue; }
+    if (c === "`") {
+      const cs = fmtCodeSpan(str, j);
+      if (cs) j = cs.end - 1; else while (str[j + 1] === "`") j++;
+      continue;
+    }
+    if (c !== ch || !str.startsWith(d, j) || j === from) continue;
+    if (d === "||") return j;
+    if (fmtIsWs(str[j - 1])) continue;                      // no space before the closer
+    if (ch === "*" && len === 1 && (str[j - 1] === "*" || str[j + 1] === "*")) continue;
+    if (ch === "_") {
+      if (len === 1 && (str[j - 1] === "_" || str[j + 1] === "_")) continue;
+      if (fmtIsWord(str[j + len])) continue;                // snake_case stays snake_case
+    }
+    return j;
+  }
+  return -1;
+}
+
+/* text -> tree: {t:"text",v} | {t:"code",v} | {t:"b|i|u|s|spoiler", c:[...]} */
+function fmtParse(str) {
+  const out = [];
+  let buf = "";
+  const flush = () => { if (buf) { out.push({ t: "text", v: buf }); buf = ""; } };
+  const URL_AT = /https?:\/\/[^\s<>"']+/iy;
+  let i = 0;
+  while (i < str.length) {
+    const c = str[i];
+
+    // \* \_ \| etc. print the character as-is
+    if (c === "\\" && i + 1 < str.length && "\\*_~|`>#-".includes(str[i + 1])) { buf += str[i + 1]; i += 2; continue; }
+
+    // urls are left alone (underscores and stars inside them are theirs)
+    if ((c === "h" || c === "H") && /^https?:\/\//i.test(str.slice(i, i + 8))) {
+      URL_AT.lastIndex = i;
+      const m = URL_AT.exec(str);
+      if (m) {
+        let url = m[0];
+        const cut = url.search(/\|\||\*\*|~~|`/);           // closers right after a link aren't part of it
+        if (cut > 0) url = url.slice(0, cut);
+        buf += url; flush(); i += url.length; continue;
+      }
+    }
+
+    if (c === "@") {
+      const n = fmtMentionLen(str, i);
+      if (n) { buf += str.substr(i, n); i += n; continue; }
+    }
+
+    if (c === "`") {
+      const cs = fmtCodeSpan(str, i);
+      if (cs) { flush(); out.push({ t: "code", v: cs.inner }); i = cs.end; continue; }
+      let n = 0; while (str[i + n] === "`") n++;
+      buf += str.slice(i, i + n); i += n; continue;
+    }
+
+    if (c === "|" && str[i + 1] === "|") {
+      const j = fmtFindClose(str, i + 2, "||");
+      if (j > i + 2) { flush(); out.push({ t: "spoiler", c: fmtParse(str.slice(i + 2, j)) }); i = j + 2; continue; }
+      buf += "||"; i += 2; continue;
+    }
+
+    if (c === "~" && str[i + 1] === "~") {
+      const j = fmtFindClose(str, i + 2, "~~");
+      if (j > i + 2 && !fmtIsWs(str[i + 2])) { flush(); out.push({ t: "s", c: fmtParse(str.slice(i + 2, j)) }); i = j + 2; continue; }
+      buf += "~~"; i += 2; continue;
+    }
+
+    if (c === "*" || c === "_") {
+      let run = 0; while (str[i + run] === c) run++;
+      const okOpen = c === "*" || (!fmtIsWord(str[i - 1]) && str[i - 1] !== "_");
+      let hit = false;
+      if (okOpen) {
+        for (const L of [3, 2, 1]) {
+          if (L > run) continue;
+          const d = c.repeat(L), from = i + L;
+          if (fmtIsWs(str[from])) continue;                  // "2 * 3 * 4" isn't italic
+          const j = fmtFindClose(str, from, d);
+          if (j < 0) continue;
+          let node = { t: "", c: fmtParse(str.slice(from, j)) };
+          if (L === 1) node.t = "i";
+          else if (L === 2) node.t = c === "*" ? "b" : "u";
+          else node = { t: c === "*" ? "b" : "u", c: [{ t: "i", c: node.c }] };
+          flush(); out.push(node); i = j + L; hit = true; break;
+        }
+      }
+      if (!hit) { buf += str.slice(i, i + run); i += run; }
+      continue;
+    }
+
+    buf += c; i++;
+  }
+  flush();
+  return out;
+}
+
+function fmtRender(host, nodes, st) {
+  nodes.forEach((n) => {
+    if (n.t === "text") { linkify(host, n.v); return; }
+    if (n.t === "code") {
+      const el = document.createElement("code");
+      el.className = "yc-icode"; el.textContent = n.v;
+      host.appendChild(el); return;
+    }
+    const el = document.createElement({ b: "strong", i: "em", s: "s" }[n.t] || "span");
+    if (n.t === "u") el.className = "yc-u";
+    if (n.t === "spoiler") {
+      const id = st.seed + ":" + (st.n++);
+      el.className = "yc-spoiler" + (spokenSpoilers.has(id) ? " on" : "");
+      el.onclick = (e) => {
+        e.stopPropagation();
+        if (el.classList.contains("on")) return;
+        el.classList.add("on"); spokenSpoilers.add(id);
+      };
+    }
+    fmtRender(el, n.c, st);
+    host.appendChild(el);
+  });
+}
+
+/* line-level stuff: subtext, headers, quotes, lists */
+function fmtBlocks(host, text, st) {
+  const lines = String(text).split("\n");
+  let needNL = false;   // an inline line was just written, so the next one needs a break first
+  const inline = (s) => {
+    if (needNL) host.appendChild(document.createTextNode("\n"));
+    fmtRender(host, fmtParse(s), st);
+    needNL = true;
+  };
+  const block = (cls) => {
+    const el = document.createElement("div");
+    el.className = cls; host.appendChild(el); needNL = false;
+    return el;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    let m;
+    if ((m = /^-# (.+)$/.exec(ln))) { fmtRender(block("yc-sub"), fmtParse(m[1]), st); continue; }
+    if ((m = /^(#{1,3}) (.+)$/.exec(ln))) { fmtRender(block("yc-h yc-h" + m[1].length), fmtParse(m[2]), st); continue; }
+    if (/^>>> ?/.test(ln)) {
+      const rest = [ln.replace(/^>>> ?/, "")].concat(lines.slice(i + 1)).join("\n");
+      fmtBlocks(block("yc-bq"), rest, st);
+      break;
+    }
+    if (/^> /.test(ln)) {
+      const q = [];
+      let j = i;
+      while (j < lines.length && /^> /.test(lines[j])) { q.push(lines[j].slice(2)); j++; }
+      fmtBlocks(block("yc-bq"), q.join("\n"), st);
+      i = j - 1; continue;
+    }
+    if ((m = /^(\s*)([-*]|\d{1,3}\.) (.+)$/.exec(ln))) {
+      const el = block("yc-li lv" + Math.min(2, Math.floor(m[1].length / 2)));
+      const mark = document.createElement("span");
+      mark.className = "yc-li-m"; mark.textContent = /\d/.test(m[2]) ? m[2] : "•";
+      const body = document.createElement("span");
+      body.className = "yc-li-t";
+      fmtRender(body, fmtParse(m[3]), st);
+      el.appendChild(mark); el.appendChild(body);
+      continue;
+    }
+    inline(ln);
+  }
+}
+
+/* drop-in replacement for linkify() on message text */
+function richText(host, text, seed) {
+  const src = String(text || "");
+  if (!/[*_~|`>#\\-]|\d\./.test(src)) return linkify(host, src);   // nothing to format
+  const st = { seed: seed || ("t" + src.length), n: 0 };
+  const fenceRe = /```(?:[\w+#.-]*\n)?([\s\S]+?)```/g;
+  let last = 0, m;
+  while ((m = fenceRe.exec(src)) !== null) {
+    const before = src.slice(last, m.index).replace(/\n$/, "");
+    if (before) fmtBlocks(host, before, st);
+    const pre = document.createElement("pre");
+    pre.className = "yc-code";
+    const code = document.createElement("code");
+    code.textContent = m[1].replace(/^\n|\n$/g, "");
+    pre.appendChild(code);
+    host.appendChild(pre);
+    last = m.index + m[0].length;
+    if (src[last] === "\n") last++;
+  }
+  if (last === 0) fmtBlocks(host, src, st);
+  else if (last < src.length) fmtBlocks(host, src.slice(last), st);
+  return host;
+}
+
 function openLightbox(src) {
   const box = $("ycLightbox"), img = $("ycLightboxImg"), dl = $("ycLightboxDl");
   if (!box || !img) return;
@@ -10586,7 +10816,7 @@ function buildMessageRow(m, ctx) {
       const link = isSystem ? null : embeddableUrl(m.text);
       const bare = link && String(m.text || "").trim() === link.raw;
 
-      if (!bare) linkify(bub, m.text || "");
+      if (!bare) richText(bub, m.text || "", m.key);
 
       if (link) {
         // Optimistic: try to show it, quietly fall back to a plain link if the
