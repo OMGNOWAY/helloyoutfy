@@ -2,7 +2,7 @@
 var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
-    `Added discord text formating. (<(so like **hi** and stuff)>)`,
+    `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -9415,7 +9415,7 @@ function maybeNotify(m, kind, threadUid) {
     if (canSee("room")) return;
     notify(
       (m.name || nameFor(m.uid)) + " mentioned you",
-      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : previewText(m.text),
+      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : plainFmt(previewText(m.text)),
       "room:" + m.key,
       () => showView("room")
     );
@@ -9424,7 +9424,7 @@ function maybeNotify(m, kind, threadUid) {
     if (looking) return;
     notify(
       m.name || nameFor(m.uid),
-      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : previewText(m.text),
+      imageSrcOf(m) ? (m.gif ? "Sent a GIF" : "Sent a picture") : plainFmt(previewText(m.text)),
       "dm:" + m.key,
       () => openThread(threadUid, nameFor(threadUid))
     );
@@ -10520,7 +10520,7 @@ function fmtFindClose(str, from, d) {
 }
 
 /* text -> tree: {t:"text",v} | {t:"code",v} | {t:"b|i|u|s|spoiler", c:[...]} */
-function fmtParse(str) {
+function fmtParse(str, pv) {
   const out = [];
   let buf = "";
   const flush = () => { if (buf) { out.push({ t: "text", v: buf }); buf = ""; } };
@@ -10558,13 +10558,15 @@ function fmtParse(str) {
 
     if (c === "|" && str[i + 1] === "|") {
       const j = fmtFindClose(str, i + 2, "||");
-      if (j > i + 2) { flush(); out.push({ t: "spoiler", c: fmtParse(str.slice(i + 2, j)) }); i = j + 2; continue; }
+      if (j > i + 2) { flush(); out.push({ t: "spoiler", c: fmtParse(str.slice(i + 2, j), pv) }); i = j + 2; continue; }
+      // previews are cut short, so an unclosed || would leak the secret: hide the rest
+      if (pv && j < 0 && str.slice(i + 2).trim()) { flush(); out.push({ t: "spoiler", c: fmtParse(str.slice(i + 2), pv) }); i = str.length; continue; }
       buf += "||"; i += 2; continue;
     }
 
     if (c === "~" && str[i + 1] === "~") {
       const j = fmtFindClose(str, i + 2, "~~");
-      if (j > i + 2 && !fmtIsWs(str[i + 2])) { flush(); out.push({ t: "s", c: fmtParse(str.slice(i + 2, j)) }); i = j + 2; continue; }
+      if (j > i + 2 && !fmtIsWs(str[i + 2])) { flush(); out.push({ t: "s", c: fmtParse(str.slice(i + 2, j), pv) }); i = j + 2; continue; }
       buf += "~~"; i += 2; continue;
     }
 
@@ -10579,7 +10581,7 @@ function fmtParse(str) {
           if (fmtIsWs(str[from])) continue;                  // "2 * 3 * 4" isn't italic
           const j = fmtFindClose(str, from, d);
           if (j < 0) continue;
-          let node = { t: "", c: fmtParse(str.slice(from, j)) };
+          let node = { t: "", c: fmtParse(str.slice(from, j), pv) };
           if (L === 1) node.t = "i";
           else if (L === 2) node.t = c === "*" ? "b" : "u";
           else node = { t: c === "*" ? "b" : "u", c: [{ t: "i", c: node.c }] };
@@ -10598,7 +10600,7 @@ function fmtParse(str) {
 
 function fmtRender(host, nodes, st) {
   nodes.forEach((n) => {
-    if (n.t === "text") { linkify(host, n.v); return; }
+    if (n.t === "text") { if (st.pv) appendWithEmoji(host, n.v); else linkify(host, n.v); return; }
     if (n.t === "code") {
       const el = document.createElement("code");
       el.className = "yc-icode"; el.textContent = n.v;
@@ -10606,7 +10608,8 @@ function fmtRender(host, nodes, st) {
     }
     const el = document.createElement({ b: "strong", i: "em", s: "s" }[n.t] || "span");
     if (n.t === "u") el.className = "yc-u";
-    if (n.t === "spoiler") {
+    if (n.t === "spoiler" && st.pv) el.className = "yc-spoiler pv";
+    else if (n.t === "spoiler") {
       const id = st.seed + ":" + (st.n++);
       el.className = "yc-spoiler" + (spokenSpoilers.has(id) ? " on" : "");
       el.onclick = (e) => {
@@ -10663,6 +10666,29 @@ function fmtBlocks(host, text, st) {
     }
     inline(ln);
   }
+}
+
+/* One-line version for places with no room for blocks (reply quotes, the DM
+   list, the reply chip): inline formatting still shows, block markers are
+   dropped, spoilers stay hidden and can't be clicked, nothing is a link. */
+function fmtFlatten(text) {
+  return String(text || "")
+    .replace(/```(?:[\w+#.-]*\n)?([\s\S]+?)```/g, (_, c) => "`" + c.replace(/`/g, "'").trim() + "`")
+    .split("\n")
+    .map((l) => l.replace(/^(-# |#{1,3} |>>> ?|> |\s*[-*] |\s*\d{1,3}\. )/, ""))
+    .join(" ").replace(/\s+/g, " ").trim();
+}
+function richPreview(host, text) {
+  host.textContent = "";
+  fmtRender(host, fmtParse(fmtFlatten(text), true), { seed: "pv", n: 0, pv: true });
+  return host;
+}
+
+/* plain string for notifications: markers gone, spoilers blanked */
+function plainFmt(text) {
+  const walk = (nodes) => nodes.map((n) =>
+    n.t === "text" || n.t === "code" ? n.v : n.t === "spoiler" ? "▮▮▮" : walk(n.c)).join("");
+  return walk(fmtParse(fmtFlatten(text), true));
 }
 
 /* drop-in replacement for linkify() on message text */
@@ -10778,7 +10804,7 @@ function buildMessageRow(m, ctx) {
       const who = document.createElement("span"); who.className = "who";
       who.textContent = m.replyTo.uid === state.uid ? "you" : (m.replyTo.name || "someone");
       const txt = document.createElement("span"); txt.className = "txt";
-      txt.textContent = m.replyTo.text || "";
+      richPreview(txt, m.replyTo.text || "");
       body.append(who, txt);
       q.append(bar, body);
       // sits ABOVE the bubble, so the bubble only ever sizes to its own content
@@ -11187,7 +11213,8 @@ function renderThreads() {
     const sub = document.createElement("div");
     sub.className = "yc-row-sub";
     const who = t.lastFrom === state.uid ? "you: " : (isGroup && t.lastName ? t.lastName + ": " : "");
-    sub.textContent = who + (t.lastText || "");
+    richPreview(sub, t.lastText || "");
+    if (who) sub.insertBefore(document.createTextNode(who), sub.firstChild);
     main.append(nm, sub);
 
     const when = document.createElement("span");
@@ -11898,7 +11925,7 @@ function paintComposeChip() {
   $("ycChipLabel").textContent = compose.mode === "edit"
     ? "Editing your message"
     : "Replying to " + (compose.target.name || nameFor(compose.target.uid));
-  $("ycChipText").textContent = excerptOf(compose.target);
+  richPreview($("ycChipText"), excerptOf(compose.target));
 }
 
 function startReply(m) {
