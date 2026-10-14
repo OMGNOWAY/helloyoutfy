@@ -7837,3 +7837,7 @@ pre.yc-code code { font: inherit; background: none; padding: 0; }
 .yc-li.lv2 { margin-left: 34px; }
 .yc-li-m { flex: none; opacity: .8; min-width: .9em; text-align: right; }
 .yc-li-t { min-width: 0; white-space: pre-line; }
+
+/* formatting inside one-line previews (reply quotes, DM list, reply chip) */
+.yc-quote .yc-icode, .yc-compose-chip .yc-icode, .yc-row-sub .yc-icode { white-space: nowrap; }
+.yc-spoiler.pv { cursor: inherit; }
