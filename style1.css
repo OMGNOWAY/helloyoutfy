@@ -7777,3 +7777,63 @@ html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.hal
 @media (prefers-reduced-motion: reduce) {
   html:is(.halloween, :not([data-theme], .halloween-off), [data-theme=""]:not(.halloween-off)) .player::after { animation: none !important; }
 }
+
+/* ---------- chat formatting (discord-style) ---------- */
+.yc-msg-bubble strong { font-weight: 800; }
+.yc-msg-bubble em { font-style: italic; }
+.yc-msg-bubble s { text-decoration: line-through; opacity: .85; }
+.yc-msg-bubble .yc-u { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ||spoilers|| */
+.yc-spoiler {
+  background: rgba(0,0,0,.72); color: transparent;
+  border-radius: 4px; padding: 0 3px;
+  cursor: pointer; user-select: none;
+  transition: background .15s, color .15s;
+}
+.yc-spoiler > * { opacity: 0; pointer-events: none; }
+.yc-spoiler:hover { background: rgba(0,0,0,.6); }
+.yc-spoiler.on {
+  background: rgba(255,255,255,.14); color: inherit;
+  cursor: auto; user-select: text;
+}
+.yc-spoiler.on > * { opacity: 1; pointer-events: auto; }
+.yc-msg.mine .yc-spoiler.on { background: rgba(0,0,0,.14); }
+
+/* `code` and ```blocks``` */
+.yc-icode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .92em; background: rgba(0,0,0,.28);
+  padding: 1px 5px; border-radius: 5px; white-space: pre-wrap;
+}
+.yc-msg.mine .yc-icode { background: rgba(0,0,0,.16); }
+pre.yc-code {
+  display: block; margin: 4px 0 2px; padding: 8px 10px;
+  background: rgba(0,0,0,.32); border: 1px solid var(--border); border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.4;
+  white-space: pre-wrap; overflow-x: auto; font-weight: 400;
+}
+.yc-msg.mine pre.yc-code { background: rgba(0,0,0,.2); border-color: rgba(0,0,0,.2); }
+pre.yc-code code { font: inherit; background: none; padding: 0; }
+
+/* -# subtext, # headers */
+.yc-sub { display: block; font-size: 11.5px; line-height: 1.35; opacity: .62; margin: 1px 0; }
+.yc-h { display: block; font-weight: 800; line-height: 1.25; margin: 2px 0 1px; }
+.yc-h1 { font-size: 1.5em; }
+.yc-h2 { font-size: 1.25em; }
+.yc-h3 { font-size: 1.08em; }
+
+/* > quotes */
+.yc-bq {
+  display: block; margin: 3px 0; padding: 1px 0 1px 10px;
+  border-left: 3px solid rgba(255,255,255,.35);
+}
+.yc-msg.mine .yc-bq { border-left-color: rgba(0,0,0,.3); }
+
+/* - lists */
+.yc-li { display: flex; gap: 6px; margin-left: 2px; }
+.yc-li.lv1 { margin-left: 18px; }
+.yc-li.lv2 { margin-left: 34px; }
+.yc-li-m { flex: none; opacity: .8; min-width: .9em; text-align: right; }
+.yc-li-t { min-width: 0; white-space: pre-line; }
