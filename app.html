@@ -714,6 +714,7 @@
   <div class="yc-head">
     <div class="yc-tabs">
       <button class="yc-tab" data-tab="room" onclick="YoutifyChat.tab('room')">Room <span class="yc-badge" id="ycRoomBadge"></span></button>
+      <button class="yc-tab" data-tab="announce" onclick="YoutifyChat.tab('announce')">News <span class="yc-badge" id="ycNewsBadge"></span></button>
       <button class="yc-tab" data-tab="dms" onclick="YoutifyChat.tab('dms')">DMs <span class="yc-badge" id="ycDmBadge"></span></button>
       <button class="yc-tab" data-tab="people" onclick="YoutifyChat.tab('people')">People <span class="yc-count" id="ycOnlineCount"></span></button>
     </div>
@@ -837,6 +838,12 @@
     <!-- public room -->
     <div class="yc-view" id="ycViewRoom" style="display:none">
       <div class="yc-scroll" id="ycRoomScroll"></div>
+    </div>
+
+    <!-- announcement channel (read-only, posted from the control panel) -->
+    <div class="yc-view" id="ycViewNews" style="display:none">
+      <div class="yc-news-intro">📢 <b>Announcements</b><span>only the Youtify team can post here</span></div>
+      <div class="yc-scroll" id="ycNewsScroll"></div>
     </div>
 
     <!-- dm list -->
