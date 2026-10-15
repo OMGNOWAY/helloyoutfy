@@ -6628,6 +6628,34 @@ body.effects-open .player-right .effects-toggle-btn {
   color: var(--text-primary);
 }
 
+/* ---------- announcement channel ---------- */
+.yc-news-intro {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 9px 14px; font-size: 12px; color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+.yc-news-intro b { color: var(--text-primary); font-weight: 700; }
+.yc-news-intro span { margin-left: auto; font-size: 11px; opacity: .8; }
+#ycNewsScroll .yc-msg.system { align-self: stretch; max-width: 100%; }
+#ycNewsScroll .yc-msg.system .yc-msg-col { width: 100%; min-width: 0; }
+#ycNewsScroll .yc-msg.system .yc-msg-bubble,
+#ycNewsScroll .yc-msg.system.announce .yc-msg-bubble {
+  text-align: left; font-size: 13.5px; line-height: 1.5;
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.045);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 12px; padding: 10px 13px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.yc-news-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-muted); font-weight: 600;
+  margin: 2px 2px 5px;
+}
+.yc-news-meta b { color: var(--accent); font-weight: 800; }
+.yc-news-meta .when { margin-left: auto; font-weight: 500; }
+
 .yc-empty {
   margin: auto; text-align: center; color: var(--text-muted);
   font-size: 13px; line-height: 1.7; padding: 26px;
