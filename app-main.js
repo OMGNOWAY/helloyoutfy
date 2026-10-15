@@ -8238,6 +8238,7 @@ const state = {
   kicked: false,
   unread: 0,
   unreadRoom: 0,
+  unreadNews: 0,
   unreadDms: 0,
   sending: false,
   version: version
@@ -8669,7 +8670,7 @@ function endSessionLocal() {
   state.people = {}; state.profiles = {}; state.threads = {};
   state.stats = {}; state.lastSeen = {}; state.typing = {};
   state.people = {}; state.threads = {}; state.groups = {};
-  lastRoomMsgs = null; lastThreadMsgs = null;
+  lastRoomMsgs = null; lastThreadMsgs = null; lastNewsMsgs = null;
 }
 
 function startSession() {
@@ -8762,6 +8763,7 @@ function startSession() {
   trackSession(listenPresence());
   trackSession(listenLastSeen());
   trackSession(listenRoom());
+  trackSession(listenNews());
   trackSession(listenThreads());
   trackSession(listenGroups());
   trackSession(listenStats());
@@ -8890,11 +8892,12 @@ function repaint() {
   else if (state.view === "dms") renderThreads();
   else if (state.view === "thread") { refreshThreadHead(); if (lastThreadMsgs) renderMessages($("ycThreadScroll"), lastThreadMsgs, "No messages yet — say hi."); }
   else if (state.view === "room" && lastRoomMsgs) renderMessages($("ycRoomScroll"), lastRoomMsgs, "No messages yet. Say something 👀");
+  else if (state.view === "announce" && lastNewsMsgs) renderMessages($("ycNewsScroll"), lastNewsMsgs, "No announcements yet.");
   if (state.view === "profile" && state.openProfile) renderProfile(state.openProfile);
 }
 
 /* ---------- public room ---------- */
-let lastRoomMsgs = null, lastThreadMsgs = null;
+let lastRoomMsgs = null, lastThreadMsgs = null, lastNewsMsgs = null;
 
 /* coalesce bursts of updates into one paint per frame */
 const _sched = {};
@@ -8940,6 +8943,41 @@ function listenRoom() {
   return () => { clearTimeout(t); offs.forEach((f) => { try { f(); } catch (e) {} }); };
 }
 
+/* ---------- announcement channel ----------
+   Read-only for everyone in the app. Posts are written by the control panel to
+   <ROOT>/news, so the database rules should only let the admin write there. */
+const NEWS_LIMIT = 100;
+const NEWS_UNREAD_WINDOW = 7 * 24 * 60 * 60 * 1000;   // don't badge a new account with ancient history
+
+function listenNews() {
+  const { ref, query, limitToLast, onChildAdded, onChildChanged, onChildRemoved } = dbfns;
+  const q = query(ref(db, `${ROOT}/news`), limitToLast(NEWS_LIMIT));
+  const map = new Map();
+
+  const rebuild = () => {
+    lastNewsMsgs = [...map.values()].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    renderMessages($("ycNewsScroll"), lastNewsMsgs, "No announcements yet.");
+    if (canSee("announce")) markNewsRead(); else recountUnread();
+  };
+  const kick = () => schedule("news", rebuild);
+
+  const put = (snap) => {
+    const m = { key: snap.key, ...snap.val(), system: true, kind: "announce" };
+    map.set(snap.key, m);
+    maybeNotify(m, "announce");
+    kick();
+  };
+
+  const offs = [
+    onChildAdded(q, put),
+    onChildChanged(q, put),
+    onChildRemoved(q, (s) => { map.delete(s.key); kick(); })
+  ];
+  const t = setTimeout(kick, 1200);   // an empty channel never fires a child event
+
+  return () => { clearTimeout(t); offs.forEach((f) => { try { f(); } catch (e) {} }); };
+}
+
 /* ---------- DM threads ---------- */
 function listenThreads() {
   const { ref, onValue } = dbfns;
@@ -8965,6 +9003,7 @@ function listenThreads() {
 
 function readKey(other) { return `yc_read_${threadId(state.uid, other)}`; }
 const ROOM_READ_KEY = "yc_read_room";
+const NEWS_READ_KEY = "yc_read_news";
 
 function readStamp(key) { return Number(localStorage.getItem(key) || 0); }
 /* Only ever move a read marker forwards, so an out-of-order update can't
@@ -9384,7 +9423,7 @@ function notify(title, body, tag, onClick) {
 /* Decides whether a message deserves an alert. Deliberately quiet: nothing if
    you can already see it, nothing for your own messages, nothing for old ones. */
 function maybeNotify(m, kind, threadUid) {
-  if (!m || m.system || m.uid === state.uid) return;
+  if (!m || (m.system && kind !== "announce") || m.uid === state.uid) return;
   if (!sessionStarted || state.kicked) return;
 
   /* Mark it handled before any of the suppression checks. Otherwise a message
@@ -9410,7 +9449,15 @@ function maybeNotify(m, kind, threadUid) {
     } catch (e) {}
   }
 
-  if (kind === "room") {
+  if (kind === "announce") {
+    if (canSee("announce")) return;
+    notify(
+      "📢 Announcement",
+      plainFmt(previewText(m.text)),
+      "announce:" + m.key,
+      () => showView("announce")
+    );
+  } else if (kind === "room") {
     if (!mentionsMe(m)) return;                         // room only alerts on @you
     if (canSee("room")) return;
     notify(
@@ -9595,6 +9642,11 @@ function markRoomRead() {
   bumpRead(ROOM_READ_KEY, lastRoomMsgs[lastRoomMsgs.length - 1].ts || 0);
   recountUnread();
 }
+function markNewsRead() {
+  if (!lastNewsMsgs || !lastNewsMsgs.length) return;
+  bumpRead(NEWS_READ_KEY, lastNewsMsgs[lastNewsMsgs.length - 1].ts || 0);
+  recountUnread();
+}
 function markThreadRead(uid, ts) {
   if (!uid) return;
   const t = allThreads()[uid];
@@ -9612,6 +9664,7 @@ function markThreadRead(uid, ts) {
    the tab was in the background". */
 function markVisibleRead() {
   if (canSee("room")) markRoomRead();
+  else if (canSee("announce")) markNewsRead();
   else if (canSee("thread") && state.openThread) markThreadRead(state.openThread.uid);
   else recountUnread();
 }
@@ -9632,12 +9685,21 @@ function recountUnread() {
     ).length;
   }
 
+  let news = 0;
+  if (lastNewsMsgs && lastNewsMsgs.length) {
+    const read = readStamp(NEWS_READ_KEY);
+    const since = Date.now() - NEWS_UNREAD_WINDOW;
+    news = lastNewsMsgs.filter((m) => (m.ts || 0) > read && (m.ts || 0) > since).length;
+  }
+
   state.unreadDms = dms;
   state.unreadRoom = room;
-  state.unread = dms + room;
+  state.unreadNews = news;
+  state.unread = dms + room + news;
 
   const b = $("ycDmBadge");    if (b) b.textContent = dms  ? String(dms)  : "";
   const r = $("ycRoomBadge");  if (r) r.textContent = room ? (room > 99 ? "99+" : String(room)) : "";
+  const nw = $("ycNewsBadge"); if (nw) nw.textContent = news ? (news > 99 ? "99+" : String(news)) : "";
   const pip = $("ycNavPip");   if (pip) pip.textContent = state.unread ? String(state.unread) : "";
 
   const base = (function () {
@@ -10770,6 +10832,18 @@ function buildMessageRow(m, ctx) {
     const col = document.createElement("div");
     col.className = "yc-msg-col";
 
+    if (isSystem && box && box.id === "ycNewsScroll") {
+      const nm = document.createElement("div");
+      nm.className = "yc-news-meta";
+      const who = document.createElement("b");
+      who.textContent = m.name || "Youtify";
+      const when = document.createElement("span");
+      when.className = "when";
+      when.textContent = shortTime(m.ts);
+      nm.append(who, when);
+      col.appendChild(nm);
+    }
+
     if (!isSystem && !grouped) {
       const meta = document.createElement("div");
       meta.className = "yc-msg-meta";
@@ -11639,7 +11713,7 @@ function showView(v) {
   if (v !== "me" && v !== "profile") state.lastView = v;
   state.view = v;
   const map = {
-    gate: "ycViewGate", room: "ycViewRoom", dms: "ycViewDms",
+    gate: "ycViewGate", room: "ycViewRoom", announce: "ycViewNews", dms: "ycViewDms",
     thread: "ycViewThread", people: "ycViewPeople", me: "ycViewMe",
     profile: "ycViewProfile", group: "ycViewGroup", newgroup: "ycViewNewGroup"
   };
@@ -11659,6 +11733,7 @@ function showView(v) {
   if (state.openThread?.name === "System") {inp.disabled = true; comp.style.display = "none";} else {inp.disabled = false; comp.style.display = (v === "room" || v === "thread") ? "flex" : "none";}
 
   if (v === "room")   { markRoomRead(); scrollToBottom($("ycRoomScroll")); }
+  if (v === "announce") { markNewsRead(); scrollToBottom($("ycNewsScroll")); }
   // typing is scoped to whichever conversation you're looking at
   if (v === "room" || v === "thread") {
     const scope = v === "room" ? "room" : (state.openThread && threadId(state.uid, state.openThread.uid));
