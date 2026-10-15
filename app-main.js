@@ -8947,6 +8947,44 @@ function listenRoom() {
    Read-only for everyone in the app. Posts are written by the control panel to
    <ROOT>/news, so the database rules should only let the admin write there. */
 const NEWS_LIMIT = 100;
+
+/* Styled from here (ID selectors) so the channel looks right no matter which
+   stylesheet build the page ends up loading. */
+(function injectNewsStyle() {
+  if (document.getElementById("ycNewsStyle")) return;
+  const st = document.createElement("style");
+  st.id = "ycNewsStyle";
+  st.textContent = `
+#ycViewNews .yc-news-intro {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 11px 16px; font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+#ycViewNews .yc-news-intro b { font-size: 14px; font-weight: 700; }
+#ycViewNews .yc-news-intro span { margin-left: auto; font-size: 11px; opacity: .55; }
+#ycNewsScroll { gap: 10px; padding: 14px; }
+#ycNewsScroll .yc-msg.system { align-self: stretch; width: 100%; max-width: 100%; }
+#ycNewsScroll .yc-msg.system .yc-msg-col { width: 100%; align-items: stretch; gap: 0; }
+#ycNewsScroll .yc-news-meta {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 2px 6px; font-size: 12px;
+}
+#ycNewsScroll .yc-news-meta b { color: var(--accent, #1db954); font-weight: 700; }
+#ycNewsScroll .yc-news-meta .when { margin-left: auto; opacity: .5; font-size: 11px; }
+#ycNewsScroll .yc-msg.system .yc-msg-bubble,
+#ycNewsScroll .yc-msg.system.announce .yc-msg-bubble {
+  box-sizing: border-box; width: 100%;
+  text-align: left; font-size: 14px; line-height: 1.5;
+  color: var(--text-primary, #fff);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 3px solid var(--accent, #1db954);
+  border-radius: 12px; padding: 11px 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}`;
+  st.textContent += "\n";
+  document.head.appendChild(st);
+})();
 const NEWS_UNREAD_WINDOW = 7 * 24 * 60 * 60 * 1000;   // don't badge a new account with ancient history
 
 function listenNews() {
