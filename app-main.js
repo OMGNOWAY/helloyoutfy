@@ -13065,7 +13065,7 @@ function initAdmin() {
         h("div", { id: "ycAdmMods" }),
 
         h("h3", null, "Broadcast"),
-        h("div", { class: "card" },
+        h("div", { class: "dng" },
           h("label", { for: "ycAdmTarget", text: "Send to" }), sel,
           h("div", { id: "ycAdmBanner" }),
           h("label", { for: "ycAdmText", text: "Announcement" }),
