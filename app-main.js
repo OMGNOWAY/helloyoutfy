@@ -8629,6 +8629,7 @@ function listenModeration() {
   const { ref, onValue } = dbfns;
   return onValue(ref(db, `${ROOT}/moderation/${state.uid}`), (snap) => {
     const m = snap.val() || {};
+    if (isAdmin()) { applyBanned(false); applyMuted(false); return; }
     applyBanned(!!m.banned);
     applyMuted(!!m.muted);
   });
@@ -8758,6 +8759,7 @@ function startSession() {
   });
 
   trackSession(listenModeration());
+  trackSession(initAdmin());
   trackSession(listenJams());
   startJamLoop();
   trackSession(listenPresence());
@@ -11771,7 +11773,7 @@ function showView(v) {
   if (state.openThread?.name === "System") {inp.disabled = true; comp.style.display = "none";} else {inp.disabled = false; comp.style.display = (v === "room" || v === "thread") ? "flex" : "none";}
 
   if (v === "room")   { markRoomRead(); scrollToBottom($("ycRoomScroll")); }
-  if (v === "announce") { markNewsRead(); scrollToBottom($("ycNewsScroll")); }
+  if (v === "announce") { markNewsRead(); scrollToBottom($("ycNewsScroll"));  }
   // typing is scoped to whichever conversation you're looking at
   if (v === "room" || v === "thread") {
     const scope = v === "room" ? "room" : (state.openThread && threadId(state.uid, state.openThread.uid));
@@ -12725,6 +12727,535 @@ function dismissAnnouncement() {
   }
 }
 
+/* ==========================================================================
+   ADMIN — in-app control panel
+   Anyone whose chat uid is in ADMIN_UIDS gets a floating "Admin" button that
+   opens everything the standalone control panel can do: roster, mute/ban,
+   banners, toasts, announcements, system DMs, remote commands, update nudges,
+   and deleting room/announcement messages.
+
+   NOTE: this only gates the UI. What actually lets a write through is your
+   Firebase Realtime Database rules (same as the standalone panel).
+   ========================================================================== */
+const ADMIN_UIDS = ["uu9n8ldd2"];
+function isAdmin() { return !!state.uid && ADMIN_UIDS.includes(state.uid); }
+
+function initAdmin() {
+  if (!isAdmin() || !db || !dbfns) return null;
+  if (document.getElementById("ycAdmBtn")) return null;
+
+  const { ref, onValue, push, set: dbSet, update, remove, get, query, limitToLast } = dbfns;
+  const SYS_UID = "system", SYS_NAME = "Youtify";
+
+  let open = false;
+  let people = {}, profiles = {}, moderation = {}, roomMsgs = {}, newsMsgs = {}, banner = null;
+  const unsubs = [];
+
+  /* ---------- tiny dom helper ---------- */
+  function h(tag, props, ...kids) {
+    const e = document.createElement(tag);
+    if (props) Object.entries(props).forEach(([k, v]) => {
+      if (k === "class") e.className = v;
+      else if (k === "text") e.textContent = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+    });
+    kids.flat().forEach((c) => { if (c != null) e.append(c.nodeType ? c : document.createTextNode(String(c))); });
+    return e;
+  }
+  const $a = (id) => document.getElementById(id);
+  const fmtTime = (ts) => ts ? new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  function ago(ts) {
+    if (!ts) return "";
+    const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (s < 60) return s + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m";
+    return Math.floor(s / 3600) + "h";
+  }
+  const errMsg = (e) => (e && e.message ? e.message : String(e));
+
+  /* ---------- versions (segment-wise, so 1.1.10 > 1.2.0 can't happen) ---------- */
+  function parseVer(v) {
+    return String(v || "").trim().replace(/^v/i, "").split(/[.\-+]/).map((n) => parseInt(n, 10)).filter((n) => !isNaN(n));
+  }
+  function cmpVer(a, b) {
+    const x = parseVer(a), y = parseVer(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (x[i] || 0) - (y[i] || 0);
+      if (d) return d < 0 ? -1 : 1;
+    }
+    return 0;
+  }
+  function latestVer() {
+    const v = (localStorage.getItem("yc_panel_latest") || "").trim();
+    return parseVer(v).length ? v : String(state.version || version || "0");
+  }
+  function verState(p) {
+    if (!p || !p.version) return "unknown";
+    const c = cmpVer(p.version, latestVer());
+    return c < 0 ? "stale" : c > 0 ? "ahead" : "ok";
+  }
+  const isOutdated = (p) => { const s = verState(p); return s === "stale" || s === "unknown"; };
+
+  /* ---------- moderation helpers ---------- */
+  const modOf = (u) => moderation[u] || {};
+  const isMuted = (u) => !!modOf(u).muted;
+  const isBanned = (u) => !!modOf(u).banned;
+  const isAdm = (u) => ADMIN_UIDS.includes(u);
+  const nameOf = (u) => (people[u] && people[u].name) || (profiles[u] && profiles[u].name) || modOf(u).name || u;
+
+  /* ---------- log ---------- */
+  function logLine(text) {
+    const box = $a("ycAdmLog"); if (!box) return;
+    const e = box.querySelector(".empty"); if (e) e.remove();
+    box.prepend(h("div", { class: "ycAdmLogRow" }, h("span", { class: "t", text: fmtTime(Date.now()) }), h("span", { text })));
+  }
+
+  /* ---------- commands ---------- */
+  function target() { const s = $a("ycAdmTarget"); return (s && s.value) || "all"; }
+  function targetLabel() { const t = target(); return t === "all" ? "everyone" : nameOf(t); }
+
+  async function pushCmd(type, payload, overrideTarget) {
+    await push(ref(db, `${ROOT}/commands`), {
+      type, payload: payload ?? null, target: overrideTarget || target(), ts: Date.now(), from: state.uid
+    });
+    try {   // keep the list from growing forever
+      const snap = await get(query(ref(db, `${ROOT}/commands`), limitToLast(200)));
+      const all = snap.val() || {};
+      const cutoff = Date.now() - 60 * 60 * 1000;
+      Object.entries(all).forEach(([k, v]) => { if ((v.ts || 0) < cutoff) remove(ref(db, `${ROOT}/commands/${k}`)); });
+    } catch (e) {}
+  }
+
+  async function guarded(label, fn) {
+    try { await fn(); }
+    catch (e) {
+      console.error("[admin]", label, e);
+      logLine(label + " failed: " + errMsg(e));
+      alert(label + " failed.\n\n" + errMsg(e) + "\n\nIf this says permission denied, your Realtime Database rules are blocking it.");
+    }
+  }
+
+  async function setModeration(uid, patch, alsoCommand) {
+    if (!uid) return;
+    const known = (people[uid] && people[uid].name) || (profiles[uid] && profiles[uid].name) || modOf(uid).name;
+    await update(ref(db, `${ROOT}/moderation/${uid}`), { uid, ...(known ? { name: known } : {}), ...patch, ts: Date.now() });
+    if (alsoCommand) { try { await pushCmd(alsoCommand, null, uid); } catch (e) {} }
+  }
+  const toggleMute = (uid) => guarded("Mute", async () => {
+    if (isAdm(uid)) { logLine("Can't restrict an admin."); return; }
+    const on = !isMuted(uid);
+    await setModeration(uid, { muted: on }, on ? "mute" : "unmute");
+    logLine(`${on ? "Muted" : "Unmuted"} ${nameOf(uid)}`);
+  });
+  const toggleBan = (uid) => guarded("Ban", async () => {
+    if (isAdm(uid)) { logLine("Can't restrict an admin."); return; }
+    const on = !isBanned(uid);
+    if (on && !confirm(`Ban ${nameOf(uid)}? They stay banned until you undo it.`)) return;
+    await setModeration(uid, { banned: on }, on ? "kick" : null);
+    logLine(`${on ? "Banned" : "Unbanned"} ${nameOf(uid)}`);
+  });
+
+  /* nudge people on old builds once per version */
+  const NUDGE_KEY = "yc_panel_nudged";
+  let nudged = new Set();
+  try { nudged = new Set(JSON.parse(localStorage.getItem(NUDGE_KEY) || "[]")); } catch (e) {}
+  function rememberNudge(k) {
+    nudged.add(k);
+    try { localStorage.setItem(NUDGE_KEY, JSON.stringify([...nudged].slice(-300))); } catch (e) {}
+  }
+  async function nudgeUpdate(p, manual) {
+    if (!p || !p.uid) return false;
+    const key = p.uid + "@" + (p.version || "unknown");
+    if (!manual && nudged.has(key)) return false;
+    rememberNudge(key);
+    await pushCmd("announce", `Update Available! ${p.version || "unknown"} -> ${latestVer()}`, p.uid);
+    return true;
+  }
+  const outdatedPeople = () => Object.values(people).filter((p) => p && p.uid && p.uid !== state.uid && isOutdated(p));
+  async function autoNotifyPass() {
+    if (localStorage.getItem("yc_panel_autonotify") !== "1") return;
+    for (const p of outdatedPeople()) {
+      try { if (await nudgeUpdate(p, false)) logLine(`Auto-notified ${p.name || p.uid} (v${p.version || "unknown"} -> ${latestVer()})`); } catch (e) {}
+    }
+  }
+
+  /* ---------- broadcast ---------- */
+  const text = () => ($a("ycAdmText").value || "").trim();
+  const clearText = () => { $a("ycAdmText").value = ""; };
+
+  const sendBanner = () => guarded("Banner", async () => {
+    const t = text(); if (!t) return;
+    const id = Date.now();
+    if (target() === "all") await dbSet(ref(db, `${ROOT}/announcement`), { text: t, id, ts: id });  // persistent
+    await pushCmd("announce", t);
+    logLine(`Banner → ${targetLabel()}: ${t}`);
+    clearText();
+  });
+  const takeBannerDown = () => guarded("Take down", async () => {
+    await remove(ref(db, `${ROOT}/announcement`));
+    await pushCmd("clearAnnounce", null, "all");
+    logLine("Took the banner down");
+  });
+  const sendToast = () => guarded("Toast", async () => {
+    const t = text(); if (!t) return;
+    await pushCmd("toast", t);
+    logLine(`Toast → ${targetLabel()}: ${t}`);
+    clearText();
+  });
+  const postToNews = () => guarded("Post", async () => {
+    const t = text(); if (!t) return;
+    await push(ref(db, `${ROOT}/news`), { uid: SYS_UID, name: SYS_NAME, text: t, ts: Date.now(), system: true, kind: "announce" });
+    logLine(`Posted to announcements: ${t}`);
+    clearText();
+  });
+  const sendDM = (puid) => guarded("DM", async () => {
+    const t = text(); if (!t) return;
+    if (!puid || puid === "all") { alert("Pick a person in the target dropdown first."); return; }
+    const payload = { uid: SYS_UID, name: SYS_NAME, text: t, ts: Date.now() };
+    const tid = threadId(SYS_UID, puid);
+    const preview = t.slice(0, 60);
+    const theirName = nameOf(puid);
+    await push(ref(db, `${ROOT}/dm/${tid}`), payload);
+    // both sides of the index, otherwise it never shows in their DM list
+    await update(ref(db, `${ROOT}/dmIndex/${puid}/${SYS_UID}`), { name: SYS_NAME, lastText: preview, lastTs: payload.ts, lastFrom: SYS_UID });
+    await update(ref(db, `${ROOT}/dmIndex/${SYS_UID}/${puid}`), { name: theirName, lastText: preview, lastTs: payload.ts, lastFrom: SYS_UID });
+    try { await update(ref(db, `${ROOT}/profiles/${SYS_UID}`), { uid: SYS_UID, name: SYS_NAME, bio: "Messages from the Youtify admin.", ts: Date.now() }); } catch (e) {}
+    logLine(`DM → ${theirName}: ${t}`);
+    clearText();
+  });
+  const mainSend = () => { const t = target(); return t === "all" ? postToNews() : sendDM(t); };
+
+  const remote = (type, payload, overrideTarget) => guarded(type, async () => {
+    const who = overrideTarget ? nameOf(overrideTarget) : targetLabel();
+    if ((type === "kick" || type === "reload") && !confirm(`${type} — ${who}?`)) return;
+    await pushCmd(type, payload, overrideTarget);
+    logLine(`${type}${payload ? " (" + payload + ")" : ""} → ${who}`);
+  });
+
+  /* ---------- delete / clear ---------- */
+  const delRoom = (key, who) => guarded("Delete", async () => {
+    await remove(ref(db, `${ROOT}/room/${key}`)); logLine(`Deleted a message from ${who || "someone"}`);
+  });
+  const delNews = (key) => guarded("Delete", async () => {
+    await remove(ref(db, `${ROOT}/news/${key}`)); logLine("Deleted an announcement");
+  });
+  const clearRoom = () => guarded("Clear room", async () => {
+    if (!confirm("Delete every message in the room?")) return;
+    await remove(ref(db, `${ROOT}/room`)); logLine("Cleared the room");
+  });
+  const clearNews = () => guarded("Clear announcements", async () => {
+    if (!confirm("Delete every announcement?")) return;
+    await remove(ref(db, `${ROOT}/news`)); logLine("Cleared the announcements");
+  });
+
+  /* ---------- styles ---------- */
+  if (!$a("ycAdmStyle")) {
+    const st = document.createElement("style");
+    st.id = "ycAdmStyle";
+    st.textContent = `
+#ycAdmBtn{position:fixed;left:14px;bottom:14px;z-index:99990;padding:9px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.18);
+  background:rgba(20,20,24,.92);color:#fff;font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+#ycAdmBtn:hover{border-color:var(--accent,#1db954)}
+#ycAdmBtn .n{display:none;margin-left:6px;background:#ef4444;border-radius:9px;padding:1px 6px;font-size:11px}
+#ycAdmBtn.alert .n{display:inline}
+#ycAdmOverlay{position:fixed;inset:0;z-index:99991;display:none;background:rgba(0,0,0,.6);align-items:flex-start;justify-content:center;overflow-y:auto;padding:18px 10px}
+#ycAdmOverlay.show{display:flex}
+#ycAdm{width:100%;max-width:760px;background:#141418;color:#eee;border:1px solid rgba(255,255,255,.1);border-radius:16px;font:14px system-ui,sans-serif;overflow:hidden}
+#ycAdm *{box-sizing:border-box}
+#ycAdm .top{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;background:#141418;z-index:2}
+#ycAdm .top b{font-size:15px}
+#ycAdm .top .sp{flex:1}
+#ycAdm .body{padding:6px 16px 18px}
+#ycAdm h3{margin:20px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;display:flex;align-items:center;gap:8px}
+#ycAdm h3 .sp{flex:1}
+#ycAdm button{font:600 12.5px system-ui,sans-serif;padding:7px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#eee;cursor:pointer}
+#ycAdm button:hover{border-color:rgba(255,255,255,.35)}
+#ycAdm button.pri{background:var(--accent,#1db954);border-color:transparent;color:#000}
+#ycAdm button.dng:hover{color:#f87171;border-color:#f87171}
+#ycAdm button:disabled{opacity:.5;cursor:default}
+#ycAdm input[type=text],#ycAdm textarea,#ycAdm select{width:100%;background:rgba(255,255,255,.05);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px 10px;font:14px system-ui,sans-serif}
+#ycAdm textarea{min-height:70px;resize:vertical}
+#ycAdm label{display:block;font-size:12px;opacity:.65;margin:10px 0 4px}
+#ycAdm .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+#ycAdm .card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px}
+#ycAdm .empty{opacity:.5;padding:12px;text-align:center;font-size:13px}
+#ycAdm .person{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin-bottom:8px}
+#ycAdm .person.stale{border-color:rgba(251,191,36,.4)}
+#ycAdm .person.restricted{border-color:rgba(239,68,68,.45)}
+#ycAdm .person .mid{flex:1;min-width:0}
+#ycAdm .person .nm{font-weight:700}
+#ycAdm .person .id{opacity:.45;font:11px ui-monospace,monospace;margin-left:6px}
+#ycAdm .person .tr{font-size:12.5px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ycAdm .person .meta{font-size:11.5px;opacity:.55;margin-top:2px}
+#ycAdm .person .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+#ycAdm .tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:6px;font-size:10.5px;background:rgba(255,255,255,.1)}
+#ycAdm .tag.stale,#ycAdm .tag.unknown{background:rgba(251,191,36,.2);color:#fbbf24}
+#ycAdm .tag.ok{background:rgba(34,197,94,.18);color:#4ade80}
+#ycAdm .tag.m{background:rgba(239,68,68,.2);color:#f87171}
+#ycAdm .feed{max-height:230px;overflow-y:auto}
+#ycAdm .msg{display:flex;gap:8px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
+#ycAdm .msg:last-child{border:none}
+#ycAdm .msg .c{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+#ycAdm .msg .c .hd{font-size:11.5px;opacity:.55;margin-bottom:2px}
+#ycAdm .msg .c img{display:block;max-width:140px;max-height:100px;border-radius:8px;margin-top:4px}
+#ycAdm .banner{border:1px solid var(--accent,#1db954);border-radius:10px;padding:10px;margin-top:10px;font-size:13px}
+#ycAdm .ycAdmLogRow{font-size:12.5px;padding:3px 2px;display:flex;gap:8px}
+#ycAdm .ycAdmLogRow .t{opacity:.45;flex-shrink:0}
+#ycAdm .updbar{display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:10px;border-radius:10px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.07);font-size:13px}
+#ycAdm .updbar .txt{flex:1}
+#ycAdm .ver{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
+#ycAdm .ver input[type=text]{width:90px}
+#ycAdm .ver label{display:flex;gap:6px;align-items:center;margin:0;opacity:.8}
+`;
+    document.head.appendChild(st);
+  }
+
+  /* ---------- skeleton ---------- */
+  const btn = h("button", { id: "ycAdmBtn", type: "button", onclick: () => toggle(true) }, "🛠 Admin", h("span", { class: "n", id: "ycAdmN" }));
+  const overlay = h("div", { id: "ycAdmOverlay", onclick: (e) => { if (e.target === overlay) toggle(false); } });
+  const panel = h("div", { id: "ycAdm" });
+  overlay.appendChild(panel);
+  document.body.append(btn, overlay);
+
+  function onKey(e) { if (e.key === "Escape" && open) toggle(false); }
+  document.addEventListener("keydown", onKey);
+
+  function toggle(on) {
+    open = on;
+    overlay.classList.toggle("show", on);
+    if (on) { build(); }
+  }
+
+  /* The skeleton (inputs) is built once so typing isn't wiped by live updates;
+     only the data-driven lists below it get re-rendered. */
+  let built = false;
+  function build() {
+    if (built) { renderAll(); return; }
+    built = true;
+    const sel = h("select", { id: "ycAdmTarget", onchange: () => { updateMainBtn(); } }, h("option", { value: "all", text: "Everyone" }));
+    const ver = h("input", { type: "text", id: "ycAdmLatest", spellcheck: "false", value: latestVer() });
+    ver.addEventListener("change", () => {
+      const v = ver.value.trim();
+      if (!parseVer(v).length) { ver.value = latestVer(); return; }   // typo guard
+      localStorage.setItem("yc_panel_latest", v);
+      logLine(`Latest version set to ${v}`);
+      renderAll(); autoNotifyPass();
+    });
+    const auto = h("input", { type: "checkbox", id: "ycAdmAuto" });
+    auto.checked = localStorage.getItem("yc_panel_autonotify") === "1";
+    auto.addEventListener("change", () => {
+      localStorage.setItem("yc_panel_autonotify", auto.checked ? "1" : "0");
+      logLine(auto.checked ? "Auto-notify on" : "Auto-notify off");
+      autoNotifyPass();
+    });
+    const themeIn = h("input", { type: "text", id: "ycAdmTheme", placeholder: "theme name" });
+    const renameIn = h("input", { type: "text", id: "ycAdmRename", placeholder: "new chat name (pick a person)" });
+
+    panel.append(
+      h("div", { class: "top" }, h("b", { text: "Youtify Control" }), h("span", { id: "ycAdmPulse", style: "opacity:.6;font-size:12px" }), h("span", { class: "sp" }),
+        h("button", { type: "button", onclick: () => toggle(false) }, "Close")),
+      h("div", { class: "body" },
+        h("h3", null, "Who's connected"),
+        h("div", { class: "ver" }, h("span", { text: "Latest version" }), ver, h("label", null, auto, "Auto-notify people on old versions")),
+        h("div", { id: "ycAdmUpd" }),
+        h("div", { id: "ycAdmRoster" }),
+
+        h("h3", null, "Restrictions", h("span", { class: "sp" }), h("span", { style: "text-transform:none;letter-spacing:0", text: "persists across refreshes" })),
+        h("div", { id: "ycAdmMods" }),
+
+        h("h3", null, "Broadcast"),
+        h("div", { class: "card" },
+          h("label", { for: "ycAdmTarget", text: "Send to" }), sel,
+          h("div", { id: "ycAdmBanner" }),
+          h("label", { for: "ycAdmText", text: "Announcement" }),
+          h("textarea", { id: "ycAdmText", placeholder: "Announce an update or smth :\\" }),
+          h("div", { class: "row" },
+            h("button", { class: "pri", type: "button", onclick: sendBanner }, "Show banner"),
+            h("button", { type: "button", onclick: sendToast }, "Send as toast"),
+            h("button", { type: "button", id: "ycAdmMain", onclick: mainSend }, "Post to announcements"))),
+
+        h("h3", null, "Remote control", h("span", { class: "sp" }), h("span", { style: "text-transform:none;letter-spacing:0", text: "applies to the person selected above" })),
+        h("div", { class: "card" },
+          h("div", { class: "row", style: "margin-top:0" },
+            h("button", { type: "button", onclick: () => remote("play") }, "▶ Play"),
+            h("button", { type: "button", onclick: () => remote("pause") }, "⏸ Pause"),
+            h("button", { type: "button", onclick: () => remote("prev") }, "⏮ Prev"),
+            h("button", { type: "button", onclick: () => remote("next") }, "⏭ Next"),
+            h("button", { type: "button", onclick: () => remote("changelog") }, "Changelog"),
+            h("button", { class: "dng", type: "button", onclick: () => remote("reload") }, "Reload")),
+          h("div", { class: "row" }, themeIn, h("button", { type: "button", style: "flex-shrink:0", onclick: () => { const v = themeIn.value.trim(); if (v) remote("theme", v); } }, "Set theme")),
+          h("div", { class: "row" }, renameIn, h("button", { type: "button", style: "flex-shrink:0", onclick: () => {
+            const v = renameIn.value.trim();
+            if (!v) return;
+            if (target() === "all") { alert("Pick a person in the target dropdown first."); return; }
+            remote("rename", v);
+          } }, "Rename"))),
+
+        h("h3", null, "Announcements", h("span", { class: "sp" }), h("button", { class: "dng", type: "button", onclick: clearNews }, "Clear all")),
+        h("div", { class: "card" }, h("div", { class: "feed", id: "ycAdmNews" })),
+
+        h("h3", null, "Room chat", h("span", { class: "sp" }), h("button", { class: "dng", type: "button", onclick: clearRoom }, "Clear all messages")),
+        h("div", { class: "card" }, h("div", { class: "feed", id: "ycAdmRoom" })),
+
+        h("h3", null, "Log"),
+        h("div", { class: "card" }, h("div", { class: "feed", id: "ycAdmLog", style: "max-height:180px" }, h("div", { class: "empty", text: "Nothing sent yet." })))
+      )
+    );
+    renderAll();
+  }
+
+  function updateMainBtn() {
+    const b = $a("ycAdmMain");
+    if (b) b.textContent = target() === "all" ? "Post to announcements" : "Send DM";
+  }
+
+  /* ---------- renderers ---------- */
+  function mkBtn(label, fn, danger) {
+    return h("button", { type: "button", class: danger ? "dng" : "", onclick: fn }, label);
+  }
+
+  function renderTargets() {
+    const sel = $a("ycAdmTarget"); if (!sel) return;
+    const keep = sel.value;
+    sel.innerHTML = "";
+    sel.appendChild(h("option", { value: "all", text: "Everyone" }));
+    Object.values(people).filter(Boolean).forEach((p) => sel.appendChild(h("option", { value: p.uid, text: p.name || p.uid })));
+    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "all";   // person may have gone offline
+    updateMainBtn();
+  }
+
+  function renderRoster() {
+    const box = $a("ycAdmRoster"); if (!box) return;
+    const list = Object.values(people).filter(Boolean);
+    const pulse = $a("ycAdmPulse"); if (pulse) pulse.textContent = list.length + " online";
+    box.innerHTML = "";
+    if (!list.length) { box.appendChild(h("div", { class: "empty", text: "Nobody has Youtify open right now." })); return; }
+    list.sort((a, b) => (a.joined || 0) - (b.joined || 0)).forEach((p) => {
+      const vs = verState(p);
+      const mine = p.uid === state.uid;
+      const row = h("div", { class: "person" + (isMuted(p.uid) || isBanned(p.uid) ? " restricted" : (isOutdated(p) ? " stale" : "")) });
+      const meta = h("div", { class: "meta" }, `joined ${fmtTime(p.joined)} · seen ${ago(p.lastSeen)} ago · v${p.version || "unknown"}`,
+        h("span", { class: "tag " + vs, text: vs === "ok" ? "up to date" : vs === "stale" ? "outdated" : vs === "ahead" ? "ahead" : "unknown" }));
+      if (isMuted(p.uid)) meta.appendChild(h("span", { class: "tag m", text: "muted" }));
+      if (isBanned(p.uid)) meta.appendChild(h("span", { class: "tag m", text: "banned" }));
+      if (isAdm(p.uid)) meta.appendChild(h("span", { class: "tag", text: "admin" }));
+      const acts = h("div", { class: "acts" });
+      if (!isAdm(p.uid)) {
+        acts.append(mkBtn(isMuted(p.uid) ? "Unmute" : "Mute", () => toggleMute(p.uid)));
+        acts.append(mkBtn(isBanned(p.uid) ? "Unban" : "Ban", () => toggleBan(p.uid), !isBanned(p.uid)));
+      }
+      if (!mine && isOutdated(p)) acts.append(mkBtn("Update", () => guarded("Update nudge", async () => { await nudgeUpdate(p, true); logLine(`Nudged ${p.name || p.uid}`); })));
+      row.append(
+        h("div", { class: "mid" },
+          h("div", null, h("span", { class: "nm", text: p.name || "unnamed" }), h("span", { class: "id", text: p.uid })),
+          h("div", { class: "tr", text: p.track || "nothing playing" }), meta),
+        acts);
+      box.appendChild(row);
+    });
+  }
+
+  function renderUpdBar() {
+    const box = $a("ycAdmUpd"); if (!box) return;
+    const list = outdatedPeople();
+    box.innerHTML = "";
+    if (!list.length) return;
+    box.appendChild(h("div", { class: "updbar" },
+      h("div", { class: "txt" }, h("b", { text: list.length === 1 ? "1 person" : `${list.length} people` }), " on an older version",
+        h("div", { style: "opacity:.6;font-size:12px", text: list.map((p) => `${p.name || p.uid} (v${p.version || "unknown"})`).join(", ") })),
+      mkBtn("Notify all", () => guarded("Notify all", async () => {
+        const l = outdatedPeople();
+        for (const p of l) await nudgeUpdate(p, true);
+        logLine(`Nudged ${l.length} outdated ${l.length === 1 ? "person" : "people"}`);
+      }))));
+  }
+
+  function renderMods() {
+    const box = $a("ycAdmMods"); if (!box) return;
+    const rows = Object.keys(moderation).filter((u) => isMuted(u) || isBanned(u));
+    box.innerHTML = "";
+    if (!rows.length) { box.appendChild(h("div", { class: "empty", text: "Nobody is muted or banned." })); return; }
+    rows.sort((a, b) => nameOf(a).localeCompare(nameOf(b))).forEach((uid) => {
+      const bits = [];
+      if (isMuted(uid)) bits.push("muted");
+      if (isBanned(uid)) bits.push("banned");
+      const row = h("div", { class: "person restricted", style: "align-items:center" },
+        h("div", { class: "mid" }, h("div", { class: "nm", text: nameOf(uid) }),
+          h("div", { class: "meta", text: bits.join(" + ") + (people[uid] ? " · online" : " · offline") })),
+        h("div", { class: "acts" },
+          isMuted(uid) ? mkBtn("Unmute", () => toggleMute(uid)) : null,
+          isBanned(uid) ? mkBtn("Unban", () => toggleBan(uid)) : null));
+      box.appendChild(row);
+    });
+  }
+
+  function renderBanner() {
+    const box = $a("ycAdmBanner"); if (!box) return;
+    box.innerHTML = "";
+    if (!banner || !banner.text) return;
+    box.appendChild(h("div", { class: "banner" },
+      h("div", { style: "opacity:.6;font-size:11px;margin-bottom:4px", text: "Banner currently showing" }),
+      h("div", { text: banner.text }),
+      h("div", { style: "margin-top:8px" }, mkBtn("Take it down", takeBannerDown, true))));
+  }
+
+  function feedList(boxId, val, emptyText, onDelete, who) {
+    const box = $a(boxId); if (!box) return;
+    const msgs = Object.entries(val || {}).map(([k, v]) => ({ key: k, ...v })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    box.innerHTML = "";
+    if (!msgs.length) { box.appendChild(h("div", { class: "empty", text: emptyText })); return; }
+    msgs.forEach((m) => {
+      const raw = typeof m.text === "string" ? m.text : "";
+      let img = m.image || (m.kind === "image" && m.src) || null;
+      if (!img && raw.includes("[ThisIsAnImage]")) {
+        const cand = raw.split("[ThisIsAnImage]").join("").trim();
+        if (cand.startsWith("data:") || /^https?:/i.test(cand)) img = cand;
+      }
+      const c = h("div", { class: "c" },
+        h("div", { class: "hd" }, h("b", { text: m.system ? "system" : (m.name || who || "someone") }), ` · ${fmtTime(m.ts)}`));
+      if (img) {
+        c.append(m.caption || "picture");
+        const im = h("img", { src: img, alt: "picture", style: "cursor:pointer" });
+        im.addEventListener("click", () => window.open(img, "_blank"));
+        c.append(im);
+      } else c.append(raw);
+      box.appendChild(h("div", { class: "msg" }, c, h("button", { type: "button", class: "dng", title: "Delete", onclick: () => onDelete(m) }, "✕")));
+    });
+  }
+
+  function renderAll() {
+    if (!open || !built) return;
+    renderTargets(); renderRoster(); renderUpdBar(); renderMods(); renderBanner();
+    feedList("ycAdmNews", newsMsgs, "Nothing posted yet.", (m) => delNews(m.key), "Youtify");
+    feedList("ycAdmRoom", roomMsgs, "No messages yet.", (m) => delRoom(m.key, m.name), "someone");
+  }
+
+  /* little red dot on the button when people are outdated */
+  function refreshBadge() {
+    const n = outdatedPeople().length;
+    btn.classList.toggle("alert", n > 0);
+    const s = $a("ycAdmN"); if (s) s.textContent = String(n);
+  }
+
+  /* ---------- live data ---------- */
+  unsubs.push(onValue(ref(db, `${ROOT}/presence`), (s) => { people = s.val() || {}; refreshBadge(); renderAll(); autoNotifyPass(); }));
+  unsubs.push(onValue(ref(db, `${ROOT}/profiles`), (s) => { profiles = s.val() || {}; renderAll(); }));
+  unsubs.push(onValue(ref(db, `${ROOT}/moderation`), (s) => { moderation = s.val() || {}; renderAll(); }));
+  unsubs.push(onValue(query(ref(db, `${ROOT}/room`), limitToLast(80)), (s) => { roomMsgs = s.val() || {}; renderAll(); }));
+  unsubs.push(onValue(query(ref(db, `${ROOT}/news`), limitToLast(80)), (s) => { newsMsgs = s.val() || {}; renderAll(); }));
+  unsubs.push(onValue(ref(db, `${ROOT}/announcement`), (s) => { banner = s.val(); renderBanner(); }));
+  const tick = setInterval(() => { if (open) renderRoster(); }, 10000);   // keep "seen Xs ago" honest
+
+  /* teardown (called on logout) */
+  return function teardownAdmin() {
+    clearInterval(tick);
+    document.removeEventListener("keydown", onKey);
+    unsubs.forEach((u) => { try { if (typeof u === "function") u(); } catch (e) {} });
+    btn.remove(); overlay.remove();
+    const st = $a("ycAdmStyle"); if (st) st.remove();
+  };
+}
+
 /* ---------- COMMAND RECEIVER ---------- */
 function listenCommands() {
   const { ref, query, limitToLast, onChildAdded } = dbfns;
@@ -12798,6 +13329,7 @@ function runCommand(cmd) {
 
     // kept for older panels; the /moderation node is what actually persists
     case "mute":
+      if (isAdmin()) break;
       applyMuted(true);
       break;
 
@@ -12806,6 +13338,7 @@ function runCommand(cmd) {
       break;
 
     case "kick":
+      if (isAdmin()) break;
       applyBanned(true);
       break;
 
