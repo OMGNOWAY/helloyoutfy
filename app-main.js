@@ -12905,7 +12905,7 @@ function initAdmin() {
   });
   const postToNews = () => guarded("Post", async () => {
     const t = text(); if (!t) return;
-    await push(ref(db, `${ROOT}/news`), { uid: SYS_UID, name: SYS_NAME, text: t, ts: Date.now(), system: true, kind: "announce" });
+    await push(ref(db, `${ROOT}/news`), { uid: SYS_UID, name: "Daniel", text: t, ts: Date.now(), system: true, kind: "announce" });
     logLine(`Posted to announcements: ${t}`);
     clearText();
   });
@@ -12920,7 +12920,7 @@ function initAdmin() {
     // both sides of the index, otherwise it never shows in their DM list
     await update(ref(db, `${ROOT}/dmIndex/${puid}/${SYS_UID}`), { name: SYS_NAME, lastText: preview, lastTs: payload.ts, lastFrom: SYS_UID });
     await update(ref(db, `${ROOT}/dmIndex/${SYS_UID}/${puid}`), { name: theirName, lastText: preview, lastTs: payload.ts, lastFrom: SYS_UID });
-    try { await update(ref(db, `${ROOT}/profiles/${SYS_UID}`), { uid: SYS_UID, name: SYS_NAME, bio: "Messages from the Youtify admin.", ts: Date.now() }); } catch (e) {}
+    try { await update(ref(db, `${ROOT}/profiles/${SYS_UID}`), { uid: SYS_UID, name: SYS_NAME, bio: "Messages from Youtify.", ts: Date.now() }); } catch (e) {}
     logLine(`DM → ${theirName}: ${t}`);
     clearText();
   });
@@ -13076,7 +13076,7 @@ function initAdmin() {
             h("button", { type: "button", id: "ycAdmMain", onclick: mainSend }, "Post to announcements"))),
 
         h("h3", null, "Remote control", h("span", { class: "sp" }), h("span", { style: "text-transform:none;letter-spacing:0", text: "applies to the person selected above" })),
-        h("div", { class: "card" },
+        h("div", { class: "dng" },
           h("div", { class: "row", style: "margin-top:0" },
             h("button", { type: "button", onclick: () => remote("play") }, "▶ Play"),
             h("button", { type: "button", onclick: () => remote("pause") }, "⏸ Pause"),
@@ -13093,13 +13093,13 @@ function initAdmin() {
           } }, "Rename"))),
 
         h("h3", null, "Announcements", h("span", { class: "sp" }), h("button", { class: "dng", type: "button", onclick: clearNews }, "Clear all")),
-        h("div", { class: "card" }, h("div", { class: "feed", id: "ycAdmNews" })),
+        h("div", { class: "dng" }, h("div", { class: "feed", id: "ycAdmNews" })),
 
         h("h3", null, "Room chat", h("span", { class: "sp" }), h("button", { class: "dng", type: "button", onclick: clearRoom }, "Clear all messages")),
-        h("div", { class: "card" }, h("div", { class: "feed", id: "ycAdmRoom" })),
+        h("div", { class: "dng" }, h("div", { class: "feed", id: "ycAdmRoom" })),
 
         h("h3", null, "Log"),
-        h("div", { class: "card" }, h("div", { class: "feed", id: "ycAdmLog", style: "max-height:180px" }, h("div", { class: "empty", text: "Nothing sent yet." })))
+        h("div", { class: "dng" }, h("div", { class: "feed", id: "ycAdmLog", style: "max-height:180px" }, h("div", { class: "empty", text: "Nothing sent yet." })))
       )
     );
     renderAll();
