@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `test 3`,
+    `Added am-lyrics (<(there will be bugs)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6777,9 +6777,14 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const spacing = fullScreen ? '18px' : '10px';
         const style = this.amEl.style;
         this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
-        style.setProperty('--am-lyrics-highlight-color', 'var(--accent, #ffffff)');
+        // Keep lyric text tied to the readable theme text colour. Using the
+        // accent for progressive-word text made some dark/custom themes render
+        // only the active-line background with no readable words.
+        style.setProperty('--am-lyrics-highlight-color', 'var(--text-primary, #ffffff)');
         style.setProperty('--lyplus-text-primary', 'var(--text-primary, #ffffff)');
-        style.setProperty('--lyplus-text-secondary', 'var(--text-secondary, #a0a0a0)');
+        style.setProperty('--lyplus-text-secondary', 'var(--text-primary, #ffffff)');
+        style.setProperty('--word-inactive-color', 'var(--text-primary, #ffffff)');
+        style.setProperty('--word-wipe-color', 'var(--text-primary, #ffffff)');
         style.setProperty('--lyplus-font-size-base', size);
         style.setProperty('--am-lyrics-compact-font-size', size);
         style.setProperty('--am-lyrics-wide-font-size', size);
