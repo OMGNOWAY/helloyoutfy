@@ -3,6 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
+    `test 2`,
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6075,13 +6076,24 @@ class UnifiedLyricsManager {
         this.parsedLines = [];
         this.updateFetchButtonVisibility();
 
-        const deadline = Date.now() + 18000;
+        // The component starts a fetch when it connects. Trigger it once more
+        // after all track metadata has been applied so it never searches with
+        // the empty values from its initial render.
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        if (token !== this.amLyricsToken) return true;
+        lyrics.fetchLyrics();
+
+        let sawLoading = false;
+        const deadline = Date.now() + 30000;
         while (token === this.amLyricsToken && Date.now() < deadline) {
             if (Array.isArray(lyrics.lyrics) && lyrics.lyrics.length > 0) {
                 console.log('✅ Using AM Lyrics');
                 return true;
             }
-            if (!lyrics.isLoading && Date.now() > deadline - 14000) break;
+            sawLoading ||= lyrics.isLoading;
+            // Only hand off after AM Lyrics has completed a real lookup. The
+            // earlier version checked too soon and skipped AM Lyrics entirely.
+            if (sawLoading && !lyrics.isLoading) break;
             await new Promise(resolve => setTimeout(resolve, 250));
         }
 
