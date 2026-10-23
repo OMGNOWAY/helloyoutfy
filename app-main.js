@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `Added am-lyrics (<(there will be bugs)>) (<(fix 5)>)`
+    `Added am-lyrics (<(there will be bugs)>) (<(fix 6)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6750,7 +6750,13 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const style = document.createElement('style');
         style.id = 'youtifiy-am-lyrics-overrides';
         style.textContent = `
-          .lyrics-header, .lyrics-footer { display: none !important; }
+          .lyrics-header { display: none !important; }
+          /* NOT display:none: am-lyrics measures the footer's offsetTop to work out how far it can
+             scroll, display:none makes that 0 so it can never scroll and every line change snaps to the top */
+          .lyrics-footer {
+            visibility: hidden !important; height: 0 !important; min-height: 0 !important;
+            margin: 0 !important; padding: 0 !important; overflow: hidden !important; pointer-events: none !important;
+          }
           .lyrics-container {
             padding-top: 8px !important;
             padding-bottom: 20px !important;
@@ -6871,21 +6877,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         setTimeout(snap, 400);
     }
     styleAmForHost(host) {
-        // the hosts are overflow:auto + smooth-scroll + padded in css, so they scroll on their own
-        // around am-lyrics' internal scroller and fight it. make the host a plain fixed box and
-        // let am-lyrics fill it, so only am-lyrics scrolls
-        if (this._amStyledHost && this._amStyledHost !== host) this.resetAmHost(this._amStyledHost);
-        this._amStyledHost = host;
-        host.style.setProperty('position', 'relative');
-        host.style.setProperty('overflow', 'hidden');
-        host.style.setProperty('padding', '0');
-        host.style.setProperty('scroll-behavior', 'auto');
-        host.style.setProperty('min-height', '300px');
-        this.amEl.style.setProperty('position', 'absolute');
-        this.amEl.style.setProperty('inset', '0');
-        this.amEl.style.setProperty('width', '100%');
-        this.amEl.style.setProperty('height', '100%');
-        this.amEl.style.setProperty('min-height', '0');
         const fullScreen = host.id === 'fullLyricsContent';
         const embedded = host.id === 'playerEmbedLyricsContent';
         const size = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
@@ -6906,16 +6897,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-compact-line-spacing', spacing);
         style.setProperty('--am-lyrics-wide-line-spacing', spacing);
         style.setProperty('--am-lyrics-inline-padding', fullScreen ? '18px' : '4px');
-        style.setProperty('--lyrics-scroll-padding-top', fullScreen ? '18%' : '28%');
+        style.setProperty('--lyrics-scroll-padding-top', fullScreen ? '18%' : '8px');
         style.setProperty('--am-lyrics-highlight-radius', '7px');
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
-    resetAmHost(host) {
-        if (!host) return;
-        ['position', 'overflow', 'padding', 'scroll-behavior', 'min-height'].forEach(k => host.style.removeProperty(k));
-    }
     exitAm() {
-        if (this._amStyledHost) { this.resetAmHost(this._amStyledHost); this._amStyledHost = null; }
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
         this.amActive = false;
         this.amTrackKey = null;
