@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `Added am-lyrics (<(there will be bugs)>) (<(fix 6)>)`
+    `Added am-lyrics (<(there will be bugs)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6098,6 +6098,33 @@ class UnifiedLyricsManager {
             req.onerror = () => reject(req.error);
         });
     }
+    // wipes every lyrics cache (memory, saved lyrics db, am-lyrics fetch cache) and re-looks-up the
+    // current track from scratch, so am-lyrics gets a fresh shot at songs that were saved by the old sources
+    async refreshAllLyrics() {
+        try {
+            this.cache.clear();
+            if (this.db) {
+                await new Promise(resolve => {
+                    const req = this.db.transaction(['lyrics'], 'readwrite').objectStore('lyrics').clear();
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => resolve();
+                });
+            }
+            try { await window.clearLyricsFetchCache?.(); } catch (e) {}
+            toast('All lyrics cleared, rechecking with am-lyrics...');
+            const track = queue?.[currentTrackIndex];
+            if (this.isOpen && track) {
+                this.isFetching = false;
+                this.exitAm();
+                this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
+                this.updateFetchButtonVisibility();
+                await this.fetchLyrics(track);
+            }
+        } catch (e) {
+            console.error('Lyrics refresh failed:', e);
+            toast('Lyrics refresh failed');
+        }
+    }
     init() {
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((m) => {
@@ -7045,6 +7072,7 @@ function addLyricsSettings() {
         <button class="btn secondary" onclick="testLyricsKey()">Test</button>
         <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.clearCache()">Clear Memory Cache</button>
         <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.clearLyricsDB()">Clear Saved Lyrics</button>
+        <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.refreshAllLyrics()">Refresh All Lyrics</button>
       </div>
     </div>
     <div style="margin-top:12px;"><button class="btn secondary" onclick="if(lyricsManager)lyricsManager.toggle()" style="width:100%">${lyricsManager?.isOpen ? 'Close' : 'Open'} Lyrics Panel (L)</button></div>`;
