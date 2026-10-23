@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `Added am-lyrics (<(there will be bugs)>)`
+    `Added am-lyrics (<(there will be bugs)>) (<(fix 1)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6698,6 +6698,15 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         el.interpolate = true;
         el.noBlur = true;
         el.fontFamily = getComputedStyle(document.body).fontFamily || 'inherit';
+        const chromeStyle = document.createElement('style');
+        chromeStyle.textContent = `
+          .lyrics-header, .lyrics-footer { display: none !important; }
+          .lyrics-container {
+            padding-top: 8px !important;
+            padding-bottom: 20px !important;
+          }
+        `;
+        el.shadowRoot?.appendChild(chromeStyle);
         const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
         el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
         el.addEventListener('line-click', e => { audio.currentTime = e.detail.timestamp / 1000; });
@@ -6777,13 +6786,12 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const spacing = fullScreen ? '18px' : '10px';
         const style = this.amEl.style;
         this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
-        // Keep lyric text tied to the readable theme text colour. Using the
-        // accent for progressive-word text made some dark/custom themes render
-        // only the active-line background with no readable words.
+        // Keep the word-wipe contrast explicit: pending words use muted text,
+        // while the sung portion uses the readable primary text colour.
         style.setProperty('--am-lyrics-highlight-color', 'var(--text-primary, #ffffff)');
         style.setProperty('--lyplus-text-primary', 'var(--text-primary, #ffffff)');
-        style.setProperty('--lyplus-text-secondary', 'var(--text-primary, #ffffff)');
-        style.setProperty('--word-inactive-color', 'var(--text-primary, #ffffff)');
+        style.setProperty('--lyplus-text-secondary', 'var(--text-secondary, #a0a0a0)');
+        style.setProperty('--word-inactive-color', 'var(--text-secondary, #a0a0a0)');
         style.setProperty('--word-wipe-color', 'var(--text-primary, #ffffff)');
         style.setProperty('--lyplus-font-size-base', size);
         style.setProperty('--am-lyrics-compact-font-size', size);
@@ -6792,6 +6800,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-compact-line-spacing', spacing);
         style.setProperty('--am-lyrics-wide-line-spacing', spacing);
         style.setProperty('--am-lyrics-inline-padding', fullScreen ? '18px' : '4px');
+        style.setProperty('--lyrics-scroll-padding-top', fullScreen ? '18%' : '8px');
         style.setProperty('--am-lyrics-highlight-radius', '7px');
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
