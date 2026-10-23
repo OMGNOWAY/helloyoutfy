@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `Added am-lyrics (<(there will be bugs)>) (<(fix 3)>)`
+    `Added am-lyrics (<(there will be bugs)>) (<(fix 4)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6891,7 +6891,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-compact-line-spacing', spacing);
         style.setProperty('--am-lyrics-wide-line-spacing', spacing);
         style.setProperty('--am-lyrics-inline-padding', fullScreen ? '18px' : '4px');
-        style.setProperty('--lyrics-scroll-padding-top', fullScreen ? '18%' : '8px');
+        style.setProperty('--lyrics-scroll-padding-top', fullScreen ? '18%' : '28%');
         style.setProperty('--am-lyrics-highlight-radius', '7px');
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
