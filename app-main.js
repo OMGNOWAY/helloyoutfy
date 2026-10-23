@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `Added am-lyrics (<(there will be bugs)>) (<(fix 2)>)`
+    `Added am-lyrics (<(there will be bugs)>) (<(fix 3)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6700,7 +6700,18 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         el.fontFamily = getComputedStyle(document.body).fontFamily || 'inherit';
         const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
         el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
-        el.addEventListener('line-click', e => { audio.currentTime = e.detail.timestamp / 1000; });
+        el.addEventListener('line-click', event => {
+            const clickedLine = event.composedPath?.().find(node =>
+                node instanceof HTMLElement && node.classList.contains('lyrics-line')
+            );
+            const timestampMs = Number(event.detail?.timestamp ?? clickedLine?.dataset?.startTime);
+            if (!Number.isFinite(timestampMs) || timestampMs < 0) return;
+            const duration = Number(audio.duration);
+            const seconds = timestampMs / 1000;
+            audio.currentTime = Number.isFinite(duration) && duration > 0
+                ? Math.min(seconds, duration)
+                : seconds;
+        });
         this.amEl = el;
         return el;
     }
