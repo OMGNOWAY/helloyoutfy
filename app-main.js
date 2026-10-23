@@ -3,7 +3,6 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `test 2`,
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -5898,6 +5897,70 @@ const closeChangelog      = () => ChangelogManager.close();
 // LYRICS MANAGER
 // ============================================================================
 
+// ---- am-lyrics: loader + IndexedDB fetch cache ----------------------------
+const AM_LYRICS_URL = 'https://cdn.jsdelivr.net/npm/@uimaxbai/am-lyrics@1.8.7/dist/src/am-lyrics.min.js';
+
+// Caches GET responses from the lyric providers am-lyrics talks to (7 days).
+// Only those hosts are touched, so the rest of the app's fetches are unaffected.
+(function installLyricsFetchCache() {
+  if (window.__lyricsFetchCacheInstalled) return;
+  window.__lyricsFetchCacheInstalled = true;
+  const DB = 'youtifiy-lyrics-fetch-cache', STORE = 'responses', MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+  const HOSTS = ['lrc.red', 'lrclib.net', 'binimum.org', 'lyricsplus.prjktla.workers.dev',
+    'lyricsplus-seven.vercel.app', 'lyrics-plus-backend.vercel.app', 'unison.boidu.dev',
+    'fetch-genius.samidy.workers.dev'];
+  const cacheable = url => { try { const h = new URL(url).hostname; return HOSTS.some(x => h === x || h.endsWith('.' + x)); } catch { return false; } };
+  const openDb = () => new Promise((res, rej) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  const dbGet = async key => { const db = await openDb(); return new Promise((res, rej) => { const q = db.transaction(STORE).objectStore(STORE).get(key); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); };
+  const dbPut = async (key, val) => { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(val, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); };
+  window.clearLyricsFetchCache = async () => {
+    try { const db = await openDb(); await new Promise(res => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).clear(); tx.oncomplete = res; tx.onerror = res; }); console.log('[lyrics cache] cleared'); } catch (e) {}
+  };
+
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    let url = '', method = 'GET';
+    try {
+      url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
+      method = String(init?.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+    } catch (e) { return realFetch(input, init); }
+    if (method !== 'GET' || !cacheable(url)) return realFetch(input, init);
+    try {
+      const hit = await dbGet(url);
+      if (hit && Date.now() - hit.ts < MAX_AGE) {
+        return new Response(hit.body, { status: hit.status, headers: { 'content-type': hit.type } });
+      }
+    } catch (e) {}
+    const res = await realFetch(input, init);
+    if (res.ok) {
+      const type = res.headers.get('content-type') || '';
+      if (/json|text|xml/i.test(type)) {
+        res.clone().text().then(body => {
+          const t = body.trim();
+          if (!t || t === '[]' || t === '{}' || t === 'null') return; // never cache "nothing found"
+          return dbPut(url, { body, status: res.status, type, ts: Date.now() });
+        }).catch(() => {});
+      }
+    }
+    return res;
+  };
+})();
+
+let _amLyricsLoad = null;
+function loadAmLyrics() {
+  if (!_amLyricsLoad) {
+    _amLyricsLoad = import(AM_LYRICS_URL)
+      .then(() => customElements.whenDefined('am-lyrics'))
+      .catch(e => { _amLyricsLoad = null; throw e; });
+  }
+  return _amLyricsLoad;
+}
+
 function initLyrics() {
   lyricsManager = new UnifiedLyricsManager();
   console.log('✅ Lyrics manager initialized');
@@ -5920,10 +5983,15 @@ class UnifiedLyricsManager {
         this.currentSource = null;
         this.db = null;
         this.isFetching = false;
-        this.amLyricsElement = null;
-        this.amLyricsToken = 0;
-        this.amLyricsModule = null;
         this.handleTimeUpdate = this.handleTimeUpdate.bind(this);
+        // am-lyrics state
+        this.amEl = null;            // the single shared <am-lyrics> element
+        this.amActive = false;       // true while am-lyrics is the thing on screen
+        this.amToken = 0;            // bumped to cancel in-flight am-lyrics waits
+        this.amErr = null;
+        this.amTrackKey = null;
+        this.fetchingKey = null;
+        this.pendingTrackChange = false;
         this.initDB().then(() => this.init());
     }
     async initDB() {
@@ -6025,83 +6093,9 @@ class UnifiedLyricsManager {
         if (!this.db) return;
         return new Promise((resolve, reject) => {
             const req = this.db.transaction(['lyrics'], 'readwrite').objectStore('lyrics').clear();
-            req.onsuccess = () => { console.log('🗑️ Lyrics DB cleared'); toast('Saved lyrics cleared'); resolve(); };
+            req.onsuccess = () => { console.log('🗑️ Lyrics DB cleared'); window.clearLyricsFetchCache?.(); toast('Saved lyrics cleared'); resolve(); };
             req.onerror = () => reject(req.error);
         });
-    }
-    async loadAmLyrics() {
-        if (!this.amLyricsModule) {
-            this.amLyricsModule = import('https://cdn.jsdelivr.net/npm/@uimaxbai/am-lyrics@1.8.7/dist/src/am-lyrics.min.js')
-                .then(() => customElements.whenDefined('am-lyrics'))
-                .then(() => true)
-                .catch((error) => {
-                    console.warn('AM Lyrics could not be loaded:', error);
-                    return false;
-                });
-        }
-        return this.amLyricsModule;
-    }
-    async tryAmLyrics(track) {
-        const container = document.getElementById('lyricsContent');
-        if (!container || !(await this.loadAmLyrics())) return false;
-
-        const token = ++this.amLyricsToken;
-        const lyrics = document.createElement('am-lyrics');
-        const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ffffff';
-        const durationMs = Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : 0;
-
-        lyrics.setAttribute('highlight-color', accent);
-        lyrics.setAttribute('font-family', 'inherit');
-        lyrics.setAttribute('autoscroll', '');
-        lyrics.setAttribute('interpolate', '');
-        lyrics.style.cssText = 'display:block;width:100%;min-height:280px;height:100%;color:var(--text-primary, inherit);';
-        lyrics.songTitle = String(track.title || '');
-        lyrics.songArtist = String(track.artist || '');
-        lyrics.songAlbum = String(track.album || '');
-        lyrics.songDurationMs = durationMs;
-        lyrics.duration = durationMs;
-        lyrics.query = track.artist ? `${track.title} - ${track.artist}` : String(track.title || '');
-        lyrics.currentTime = (audio.currentTime || 0) * 1000;
-        lyrics.addEventListener('line-click', (event) => {
-            const timestamp = Number(event.detail?.timestamp);
-            if (!Number.isFinite(timestamp)) return;
-            audio.currentTime = timestamp / 1000;
-            audio.play().catch(() => {});
-        });
-
-        container.replaceChildren(lyrics);
-        this.amLyricsElement = lyrics;
-        this.currentSource = 'am-lyrics';
-        this.currentLyrics = null;
-        this.parsedLines = [];
-        this.updateFetchButtonVisibility();
-
-        // The component starts a fetch when it connects. Trigger it once more
-        // after all track metadata has been applied so it never searches with
-        // the empty values from its initial render.
-        await new Promise(resolve => requestAnimationFrame(resolve));
-        if (token !== this.amLyricsToken) return true;
-        lyrics.fetchLyrics();
-
-        let sawLoading = false;
-        const deadline = Date.now() + 30000;
-        while (token === this.amLyricsToken && Date.now() < deadline) {
-            if (Array.isArray(lyrics.lyrics) && lyrics.lyrics.length > 0) {
-                console.log('✅ Using AM Lyrics');
-                return true;
-            }
-            sawLoading ||= lyrics.isLoading;
-            // Only hand off after AM Lyrics has completed a real lookup. The
-            // earlier version checked too soon and skipped AM Lyrics entirely.
-            if (sawLoading && !lyrics.isLoading) break;
-            await new Promise(resolve => setTimeout(resolve, 250));
-        }
-
-        if (token !== this.amLyricsToken) return true;
-        lyrics.remove();
-        this.amLyricsElement = null;
-        this.currentSource = null;
-        return false;
     }
     init() {
         const observer = new MutationObserver((mutations) => {
@@ -6118,6 +6112,8 @@ class UnifiedLyricsManager {
         const playerTitle = document.getElementById('playerTitle');
         if (playerTitle) observer.observe(playerTitle, { childList: true });
         this.startLyricsSync();
+        // keep the single <am-lyrics> in whichever lyrics view is actually visible
+        setInterval(() => { if (this.amActive && this.isOpen) this.placeAm(); }, 400);
         audio.addEventListener('loadedmetadata', () => {
             this.songDuration = audio.duration || 0;
             if (this.currentSource === 'genius' && this.currentLyrics) { this.parseGeniusLyrics(this.currentLyrics); this.renderLyrics(); }
@@ -6135,7 +6131,20 @@ class UnifiedLyricsManager {
             document.body.classList.add('lyrics-open'); if (app) app.classList.add('lyrics-open');
             const track = queue[currentTrackIndex];
             if (track) {
-                await this.fetchLyrics(track);
+                const cacheKey = `${track.title}-${track.artist}`;
+                if (this.amActive && this.amEl && this.amTrackKey === cacheKey) { this.placeAm(); return; }
+                if (this.cache.has(cacheKey)) {
+                    this.exitAm();
+                    const cached = this.cache.get(cacheKey);
+                    this.currentLyrics = cached.lyrics; this.currentSource = cached.source; this.parsedLines = cached.parsedLines || [];
+                    this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
+                } else {
+                    const dbData = await this.getLyricsFromDB(track);
+                    if (dbData) {
+                        this.currentLyrics = dbData.lyrics; this.currentSource = dbData.source; this.parsedLines = dbData.parsedLines || []; this.songDuration = dbData.duration || 0;
+                        this.cache.set(cacheKey, dbData); this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
+                    } else { await this.fetchLyrics(track); }
+                }
             } else { this.showEmpty(); }
         } else {
             panel.classList.remove('open'); btn.classList.remove('active');
@@ -6143,26 +6152,61 @@ class UnifiedLyricsManager {
         }
     }
     async onTrackChange() {
-        if (this.isFetching) return;
+        if (this.isFetching) {
+            const t = queue[currentTrackIndex];
+            if (t && `${t.title}-${t.artist}` !== this.fetchingKey) { this.pendingTrackChange = true; this.amToken++; }
+            return;
+        }
         const track = queue[currentTrackIndex];
-        if (!track) { this.showEmpty(); return; }
+        if (!track) { this.exitAm(); this.showEmpty(); return; }
+        if (this.amActive && this.amEl && this.amTrackKey === `${track.title}-${track.artist}`) { this.placeAm(); return; }
+        this.exitAm();
         this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
         this.updateFetchButtonVisibility();
-        this.amLyricsToken += 1;
-        this.amLyricsElement = null;
+        const cacheKey = `${track.title}-${track.artist}`;
+        if (this.cache.has(cacheKey)) {
+            const cached = this.cache.get(cacheKey);
+            this.currentLyrics = cached.lyrics; this.currentSource = cached.source; this.parsedLines = cached.parsedLines || [];
+            this.updateFetchButtonVisibility();
+            if (this.isOpen) this.renderLyrics(); return;
+        }
+        const dbData = await this.getLyricsFromDB(track);
+        if (dbData) {
+            this.currentLyrics = dbData.lyrics; this.currentSource = dbData.source; this.parsedLines = dbData.parsedLines || []; this.songDuration = dbData.duration || 0;
+            this.cache.set(cacheKey, dbData); this.updateFetchButtonVisibility();
+            if (this.isOpen) this.renderLyrics(); return;
+        }
         if (this.isOpen) {
-            await this.fetchLyrics(track);
+            this.fetchLyrics(track);
         }
     }
     async fetchLyrics(track) {
         if (this.isFetching) return;
         this.isFetching = true;
+        this.fetchingKey = `${track.title}-${track.artist}`;
         try {
-            this.showLoading('Loading lyrics with AM Lyrics...');
-            if (await this.tryAmLyrics(track)) return;
-            if (!this.apiKey) { this.showError('No API Key', 'Please set your RapidAPI key in settings'); return; }
             this.isLoading = true;
-            this.showLoading('AM Lyrics had no result. Searching Musix for synced lyrics...');
+            this.exitAm();
+            this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
+            // 1) am-lyrics first (no API key needed)
+            this.showLoading('Loading lyrics...');
+            const amLines = await this.tryAm(track);
+            if (amLines === null) { this.isLoading = false; return; } // superseded by a newer track
+            if (amLines) {
+                console.log('✅ Using am-lyrics');
+                this.currentSource = 'amlyrics';
+                this.parsedLines = this.amLinesToParsed(amLines);
+                this.currentLyrics = this.parsedLines;
+                this.amTrackKey = this.fetchingKey;
+                this.isLoading = false;
+                this.updateFetchButtonVisibility();
+                return;
+            }
+            // 2) fallback: RapidAPI chain
+            console.log('⚠️ am-lyrics found nothing, falling back to API', this.amErr || '');
+            this.exitAm();
+            if (!this.apiKey) { this.isLoading = false; this.showError('No lyrics found', 'am-lyrics had nothing for this one. Add a RapidAPI key in settings to enable the Spotify / Musix / Genius fallback'); return; }
+            this.showLoading('am-lyrics found nothing, searching Musix...');
             try {
                 const musixResult = await this.tryMusix(track);
                 if (musixResult) { console.log('✅ Using Musix lyrics'); this.currentSource = 'musix'; this.currentLyrics = musixResult; this.parsedLines = musixResult; await this.cacheAndRender(musixResult, 'musix', track); return; }
@@ -6179,7 +6223,10 @@ class UnifiedLyricsManager {
                 else if (error.message.includes('429')) this.showError('Rate Limited', 'Too many requests. Please wait');
                 else this.showError('Failed to load lyrics', error.message);
             } finally { this.isLoading = false; }
-        } finally { this.isFetching = false; }
+        } finally {
+            this.isFetching = false;
+            if (this.pendingTrackChange) { this.pendingTrackChange = false; setTimeout(() => this.onTrackChange(), 0); }
+        }
     }
     async trySpotify(track) {
         try {
@@ -6639,13 +6686,101 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
   }
 
-    handleTimeUpdate() {
-        if (!this.isOpen) return;
-        if (this.currentSource === 'am-lyrics' && this.amLyricsElement) {
-            this.amLyricsElement.currentTime = (audio.currentTime || 0) * 1000;
-            return;
+    // ---------------- am-lyrics integration ----------------
+    async ensureAm() {
+        await loadAmLyrics();
+        if (this.amEl) return this.amEl;
+        const el = document.createElement('am-lyrics');
+        el.id = 'amLyricsEl';
+        el.style.cssText = 'display:block;width:100%;height:100%;min-height:300px;';
+        el.autoScroll = true;
+        el.interpolate = true;
+        const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
+        el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
+        el.addEventListener('line-click', e => { audio.currentTime = e.detail.timestamp / 1000; });
+        this.amEl = el;
+        return el;
+    }
+    // resolves to: lines[] (success) | false (nothing found / failed) | null (superseded)
+    async tryAm(track) {
+        this.amErr = null;
+        let el;
+        try { el = await this.ensureAm(); }
+        catch (e) { this.amErr = e?.message || 'am-lyrics failed to load'; console.log('❌ am-lyrics load error:', e); return false; }
+        const token = ++this.amToken;
+        const title = String(track.title || '').trim();
+        const artist = String(track.artist || '').split(/\s*[,;]\s*/)[0].trim();
+        const dur = Number.isFinite(audio?.duration) && audio.duration > 0 ? audio.duration : (this.songDuration || 0);
+        el.ttml = undefined;
+        el.musicId = '';
+        el.isrc = '';
+        el.spotifyId = '';
+        el.currentTime = 0;
+        el.songTitle = title;
+        el.songArtist = artist;
+        el.songAlbum = track.album || '';
+        el.songDurationMs = dur > 0 ? Math.round(dur * 1000) : undefined;
+        el.query = artist ? `${title} - ${artist}` : title;
+        this.amActive = true;
+        this.placeAm();
+        try { await el.updateComplete; } catch (e) {}
+        const t0 = Date.now();
+        let sawLoading = false;
+        while (Date.now() - t0 < 20000) {
+            if (token !== this.amToken) return null;
+            if (el.isLoading) sawLoading = true;
+            else if (sawLoading || Date.now() - t0 > 1500) break;
+            await new Promise(r => setTimeout(r, 100));
         }
-        if (!this.parsedLines?.length) return;
+        if (token !== this.amToken) return null;
+        const lines = el.lyrics;
+        if (el.isLoading || !Array.isArray(lines) || !lines.length) { this.amErr = this.amErr || 'no lyrics'; return false; }
+        return lines;
+    }
+    // am-lyrics lines -> the app's own {text,startMs,durMs} shape (used by PiP / seek / current line)
+    amLinesToParsed(lines) {
+        return lines.filter(l => l && !l.background).map(l => {
+            const text = (l.text || []).map(s => s.text).join('').replace(/\s+/g, ' ').trim();
+            if (!text) return null;
+            const startMs = Number(l.timestamp) || 0;
+            const endMs = Number(l.endtime) || (startMs + 3000);
+            return { text, startMs, durMs: Math.max(500, endMs - startMs) };
+        }).filter(Boolean).map((l, i) => ({ ...l, index: i }));
+    }
+    getAmHost() {
+        const vis = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+        const full = document.getElementById('fullLyricsContent');
+        const embed = document.getElementById('playerEmbedLyricsContent');
+        const panel = document.getElementById('lyricsContent');
+        let fullOpen = false;
+        try { fullOpen = FullLyricsPlayer.isOpen(); } catch (e) {}
+        if (fullOpen && vis(full)) return full;
+        if (vis(embed)) return embed;
+        if (vis(panel)) return panel;
+        return panel || embed || full;
+    }
+    placeAm() {
+        if (!this.amActive || !this.amEl) return;
+        const host = this.getAmHost();
+        if (!host || this.amEl.parentElement === host) return;
+        host.textContent = '';
+        host.appendChild(this.amEl);
+    }
+    exitAm() {
+        const wasConnected = !!(this.amEl && this.amEl.isConnected);
+        this.amActive = false;
+        this.amTrackKey = null;
+        this.amToken++;
+        if (wasConnected) {
+            const host = this.amEl.parentElement;
+            this.amEl.remove();
+            if (host) host.textContent = '';
+        }
+    }
+
+    handleTimeUpdate() {
+        if (this.amActive && this.amEl && this.amEl.isConnected) this.amEl.currentTime = audio.currentTime * 1000;
+        if (!this.isOpen || !this.parsedLines?.length) return;
         const ms = audio.currentTime * 1000;
         let newIndex = -1;
         for (let i = 0; i < this.parsedLines.length; i++) {
@@ -6669,6 +6804,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
 
     highlightLine(index) {
+        if (this.currentSource === 'amlyrics') { this.currentLineIndex = index; return; }
         if (this.currentSource !== 'spotify' && this.currentSource !== 'musix') return;
         const allLines = document.querySelectorAll('.lyrics-line');
         allLines.forEach(el => {
@@ -6715,7 +6851,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         // the current track (from cache, IndexedDB, or a completed API fetch);
         // show it whenever there's nothing to display yet so the user can
         // trigger a lookup.
-        const hasLyrics = !!(this.amLyricsElement || (this.parsedLines && this.parsedLines.length));
+        const hasLyrics = !!(this.parsedLines && this.parsedLines.length);
         document.querySelectorAll('.lyrics-fetch-btn').forEach(btn => {
             btn.style.display = hasLyrics ? 'none' : '';
         });
@@ -6738,7 +6874,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const limited = this.spotifyErr?.includes('429') && this.geniusErr?.includes('429');
         c.innerHTML = limited
             ? `<div class="lyrics-not-found"><div class="lyrics-empty-icon" style="color:#FF0000;">⚠</div><div>Rate Limited!</div><div style="font-size:12px;margin-top:8px;opacity:0.7;">You're being rate limited or you're out of requests for the month.</div></div>`
-            : `<div class="lyrics-not-found"><div class="lyrics-empty-icon">😕</div><div>${msg}</div><div style="font-size:12px;margin-top:8px;opacity:0.7;">AM Lyrics and the API fallback could not find a match</div></div>`;
+            : `<div class="lyrics-not-found"><div class="lyrics-empty-icon">😕</div><div>${msg}</div><div style="font-size:12px;margin-top:8px;opacity:0.7;">Tried am-lyrics, Spotify, Musix and Genius</div></div>`;
         this.updateFetchButtonVisibility();
     }
     showError(title, msg) {
@@ -6765,9 +6901,9 @@ function addLyricsSettings() {
   settings.id = 'lyricsSettingsSection';
   settings.className = 'settings-section';
   settings.innerHTML = `
-    <div class="settings-section-title">Lyrics (AM Lyrics + API fallback)</div>
+    <div class="settings-section-title">Lyrics (am-lyrics + API fallback)</div>
     <div class="form-group">
-      <label class="form-label">RapidAPI Key</label>
+      <label class="form-label">RapidAPI Key (only used as fallback)</label>
       <input type="text" class="form-input" id="lyricsApiKey" placeholder="Enter your RapidAPI key..." value="${lyricsManager ? lyricsManager.getApiKey() : ''}">
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn secondary" onclick="saveLyricsKey()">Save Key</button>
@@ -7478,6 +7614,7 @@ function mirrorLyrics() {
     const source = $('lyricsContent');
     const target = $('fullLyricsContent');
     if (!source || !target) return;
+    if (lyricsManager?.amActive) { lyricsManager.placeAm(); return; }
 
     target.innerHTML = source.innerHTML;
 
@@ -7639,7 +7776,7 @@ const PlayerEmbed = (function () {
 
   // --- Live lyrics mirroring -------------------------------------------
   if (embedLyrics && realLyrics) {
-    const mirrorLyrics = () => { embedLyrics.innerHTML = realLyrics.innerHTML; };
+    const mirrorLyrics = () => { if (lyricsManager?.amActive) { lyricsManager.placeAm(); return; } embedLyrics.innerHTML = realLyrics.innerHTML; };
     mirrorLyrics();
     new MutationObserver(mirrorLyrics).observe(realLyrics, {
       childList: true, subtree: true, characterData: true,
@@ -8099,7 +8236,7 @@ const LyricsPopout = (function () {
 
   function hasRealTiming() {
     return typeof lyricsManager !== 'undefined' && lyricsManager
-      && (lyricsManager.currentSource === 'spotify' || lyricsManager.currentSource === 'musix')
+      && (lyricsManager.currentSource === 'spotify' || lyricsManager.currentSource === 'musix' || lyricsManager.currentSource === 'amlyrics')
       && !!lyricsManager.parsedLines?.length;
   }
 
