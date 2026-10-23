@@ -6712,8 +6712,37 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 ? Math.min(seconds, duration)
                 : seconds;
         });
+        // am-lyrics refetches on every reconnect (connectedCallback). skip that when we're
+        // only moving the element between hosts, the lyrics are already loaded
+        const origFetch = el.fetchLyrics.bind(el);
+        el.fetchLyrics = (...args) => {
+            if (el.__amMoving) return Promise.resolve();
+            return origFetch(...args);
+        };
         this.amEl = el;
         return el;
+    }
+    // disconnectedCallback tears down the scroll listeners + viewport observer, put them back
+    restoreAmAfterMove() {
+        const el = this.amEl;
+        const root = el?.shadowRoot;
+        const container = root?.querySelector('.lyrics-container');
+        if (!container) return;
+        const h = el._boundHandleUserScroll;
+        if (h) {
+            container.removeEventListener('wheel', h);
+            container.removeEventListener('touchmove', h);
+            container.addEventListener('wheel', h, { passive: true });
+            container.addEventListener('touchmove', h, { passive: true });
+        }
+        try {
+            el.visibilityObserver?.disconnect();
+            const io = new IntersectionObserver(entries => {
+                entries.forEach(entry => entry.target.classList.toggle('far-line', !entry.isIntersecting));
+            }, { root: container, rootMargin: '200px', threshold: 0 });
+            root.querySelectorAll('.lyrics-line').forEach(l => io.observe(l));
+            el.visibilityObserver = io;
+        } catch (e) {}
     }
     hideAmChrome() {
         const root = this.amEl?.shadowRoot;
@@ -6794,7 +6823,52 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (!host || this.amEl.parentElement === host) return;
         this.styleAmForHost(host);
         host.textContent = '';
-        host.appendChild(this.amEl);
+        const el = this.amEl;
+        const moving = el.isConnected && !el.isLoading && Array.isArray(el.lyrics) && el.lyrics.length > 0;
+        if (moving) el.__amMoving = true;
+        try { host.appendChild(el); } finally { el.__amMoving = false; }
+        if (moving) { this.restoreAmAfterMove(); this.jumpAmToCurrentLine(); return; }
+        // moving <am-lyrics> reconnects it, which refetches + resets scroll to the top
+        // and it never re-centers on the current line, so do that ourselves
+        this.jumpAmToCurrentLine();
+    }
+    async jumpAmToCurrentLine() {
+        const el = this.amEl;
+        if (!el) return;
+        const token = this._amJumpToken = (this._amJumpToken || 0) + 1;
+        const stale = () => token !== this._amJumpToken || !this.amActive || this.amEl !== el || !el.isConnected;
+        // wait for the reconnect refetch to finish rendering
+        const t0 = Date.now();
+        while (Date.now() - t0 < 8000) {
+            if (stale()) return;
+            if (!el.isLoading && Array.isArray(el.lyrics) && el.lyrics.length && el.shadowRoot?.querySelector('.lyrics-line')) break;
+            await new Promise(r => setTimeout(r, 50));
+        }
+        if (stale()) return;
+        try { await el.updateComplete; } catch (e) {}
+        const snap = () => {
+            if (stale()) return;
+            const root = el.shadowRoot;
+            const container = root?.querySelector('.lyrics-container');
+            if (!container) return;
+            // user already started scrolling by hand, leave them alone
+            if (container.classList.contains('user-scrolling')) return;
+            let line = root.querySelector('.lyrics-line.active');
+            if (!line && Array.isArray(el.lyrics)) {
+                const ms = audio.currentTime * 1000;
+                let idx = -1;
+                for (let i = 0; i < el.lyrics.length; i++) { if ((Number(el.lyrics[i].timestamp) || 0) <= ms) idx = i; else break; }
+                if (idx >= 0) line = root.querySelector(`#lyrics-line-${idx}`);
+            }
+            if (!line) return;
+            const raw = (getComputedStyle(container).getPropertyValue('--lyrics-scroll-padding-top') || '').trim();
+            const pad = raw.includes('%') ? container.clientHeight * (parseFloat(raw) / 100) : (parseFloat(raw) || 0);
+            container.scrollTop = Math.max(0, line.offsetTop - pad);
+        };
+        // am-lyrics resets scrollTop itself right after load, so snap a few times
+        requestAnimationFrame(() => requestAnimationFrame(snap));
+        setTimeout(snap, 150);
+        setTimeout(snap, 400);
     }
     styleAmForHost(host) {
         const fullScreen = host.id === 'fullLyricsContent';
