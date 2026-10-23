@@ -3,7 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
-    `Added am-lyrics (<(there will be bugs)>) (<(fix 1)>)`
+    `Added am-lyrics (<(there will be bugs)>) (<(fix 2)>)`
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6698,20 +6698,25 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         el.interpolate = true;
         el.noBlur = true;
         el.fontFamily = getComputedStyle(document.body).fontFamily || 'inherit';
-        const chromeStyle = document.createElement('style');
-        chromeStyle.textContent = `
+        const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
+        el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
+        el.addEventListener('line-click', e => { audio.currentTime = e.detail.timestamp / 1000; });
+        this.amEl = el;
+        return el;
+    }
+    hideAmChrome() {
+        const root = this.amEl?.shadowRoot;
+        if (!root || root.querySelector('#youtifiy-am-lyrics-overrides')) return;
+        const style = document.createElement('style');
+        style.id = 'youtifiy-am-lyrics-overrides';
+        style.textContent = `
           .lyrics-header, .lyrics-footer { display: none !important; }
           .lyrics-container {
             padding-top: 8px !important;
             padding-bottom: 20px !important;
           }
         `;
-        el.shadowRoot?.appendChild(chromeStyle);
-        const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
-        el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
-        el.addEventListener('line-click', e => { audio.currentTime = e.detail.timestamp / 1000; });
-        this.amEl = el;
-        return el;
+        root.appendChild(style);
     }
     // resolves to: lines[] (success) | false (nothing found / failed) | null (superseded)
     async tryAm(track) {
@@ -6736,6 +6741,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this.amActive = true;
         this.placeAm();
         try { await el.updateComplete; } catch (e) {}
+        this.hideAmChrome();
         const t0 = Date.now();
         let sawLoading = false;
         while (Date.now() - t0 < 20000) {
