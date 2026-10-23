@@ -3,6 +3,7 @@ var version = "1.4.6";
 const CHANGELOG_DATA = {
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
+    `test 3`,
   ],
   "Release 1.4.5": [
     `Added Group chats`,
@@ -6692,9 +6693,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (this.amEl) return this.amEl;
         const el = document.createElement('am-lyrics');
         el.id = 'amLyricsEl';
-        el.style.cssText = 'display:block;width:100%;height:100%;min-height:300px;';
+        el.style.cssText = 'display:block;width:100%;height:100%;min-height:300px;background:transparent;';
         el.autoScroll = true;
         el.interpolate = true;
+        el.noBlur = true;
+        el.fontFamily = getComputedStyle(document.body).fontFamily || 'inherit';
         const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
         el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
         el.addEventListener('line-click', e => { audio.currentTime = e.detail.timestamp / 1000; });
@@ -6763,8 +6766,29 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (!this.amActive || !this.amEl) return;
         const host = this.getAmHost();
         if (!host || this.amEl.parentElement === host) return;
+        this.styleAmForHost(host);
         host.textContent = '';
         host.appendChild(this.amEl);
+    }
+    styleAmForHost(host) {
+        const fullScreen = host.id === 'fullLyricsContent';
+        const embedded = host.id === 'playerEmbedLyricsContent';
+        const size = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
+        const spacing = fullScreen ? '18px' : '10px';
+        const style = this.amEl.style;
+        this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
+        style.setProperty('--am-lyrics-highlight-color', 'var(--accent, #ffffff)');
+        style.setProperty('--lyplus-text-primary', 'var(--text-primary, #ffffff)');
+        style.setProperty('--lyplus-text-secondary', 'var(--text-secondary, #a0a0a0)');
+        style.setProperty('--lyplus-font-size-base', size);
+        style.setProperty('--am-lyrics-compact-font-size', size);
+        style.setProperty('--am-lyrics-wide-font-size', size);
+        style.setProperty('--am-lyrics-line-spacing', spacing);
+        style.setProperty('--am-lyrics-compact-line-spacing', spacing);
+        style.setProperty('--am-lyrics-wide-line-spacing', spacing);
+        style.setProperty('--am-lyrics-inline-padding', fullScreen ? '18px' : '4px');
+        style.setProperty('--am-lyrics-highlight-radius', '7px');
+        style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
     exitAm() {
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
