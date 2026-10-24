@@ -5991,6 +5991,14 @@ class UnifiedLyricsManager {
         this.amToken = 0;            // bumped to cancel in-flight am-lyrics waits
         this.amErr = null;
         this.amTrackKey = null;
+        this.amOffsetMs = 0;         // user sync nudge for the current track (+ = lyrics later)
+        this.amBar = null;           // floating toolbar (font size, offset, loop, focus, copy)
+        this.amJump = null;          // "jump to current line" pill
+        this.amLoop = null;          // {start,end,index} in lyric-time ms while line-looping
+        this.amBarTimer = null;
+        this.amFontScale = Math.max(0.7, Math.min(1.8, Number(localStorage.getItem('youtifiy_lyrics_fontscale')) || 1));
+        this.amFocus = localStorage.getItem('youtifiy_lyrics_focus') === '1';
+        this._lastAmT = null;        // last time value pushed into <am-lyrics>, skips redundant updates
         this.fetchingKey = null;
         this.pendingTrackChange = false;
         this.initDB().then(() => this.init());
@@ -6141,7 +6149,10 @@ class UnifiedLyricsManager {
         if (playerTitle) observer.observe(playerTitle, { childList: true });
         this.startLyricsSync();
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
-        setInterval(() => { if (this.amActive && this.isOpen) this.placeAm(); }, 400);
+        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); } }, 400);
+        // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
+        audio.addEventListener('seeked', () => this.handleTimeUpdate());
+        audio.addEventListener('play', () => this.handleTimeUpdate());
         audio.addEventListener('loadedmetadata', () => {
             this.songDuration = audio.duration || 0;
             if (this.currentSource === 'genius' && this.currentLyrics) { this.parseGeniusLyrics(this.currentLyrics); this.renderLyrics(); }
@@ -6700,7 +6711,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
       this.lyricsSyncRunning = true;
       const loop = () => {
         if (!this.lyricsSyncRunning) return;
-        this.handleTimeUpdate();
+        if (!audio.paused && !document.hidden) this.handleTimeUpdate();
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
@@ -6733,8 +6744,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             );
             const timestampMs = Number(event.detail?.timestamp ?? clickedLine?.dataset?.startTime);
             if (!Number.isFinite(timestampMs) || timestampMs < 0) return;
+            if (this.amLoop) this.setLoopToTs(timestampMs);
             const duration = Number(audio.duration);
-            const seconds = timestampMs / 1000;
+            const seconds = (timestampMs + (this.amOffsetMs || 0)) / 1000;
             audio.currentTime = Number.isFinite(duration) && duration > 0
                 ? Math.min(seconds, duration)
                 : seconds;
@@ -6747,6 +6759,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             return origFetch(...args);
         };
         this.amEl = el;
+        this.applyAmFocus();
         return el;
     }
     // disconnectedCallback tears down the scroll listeners + viewport observer, put them back
@@ -6788,46 +6801,315 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             padding-top: 8px !important;
             padding-bottom: 20px !important;
           }
+          /* focus mode (toolbar toggle): dim + soften everything except the line being sung */
+          :host([data-yl-focus]) .lyrics-line:not(.active) {
+            opacity: 0.3; filter: blur(1.2px);
+            transition: opacity .35s ease, filter .35s ease;
+          }
+          :host([data-yl-focus]) .lyrics-line:not(.active):hover { opacity: 0.75; filter: none; }
         `;
         root.appendChild(style);
     }
-    // resolves to: lines[] (success) | false (nothing found / failed) | null (superseded)
-    async tryAm(track) {
-        this.amErr = null;
-        let el;
-        try { el = await this.ensureAm(); }
-        catch (e) { this.amErr = e?.message || 'am-lyrics failed to load'; console.log('❌ am-lyrics load error:', e); return false; }
-        const token = ++this.amToken;
+    // ---- sync offset (per track, remembered) ----
+    getOffsetStore() {
+        try { return JSON.parse(localStorage.getItem('youtifiy_lyrics_offsets') || '{}') || {}; } catch (e) { return {}; }
+    }
+    loadAmOffset(track) {
+        this.amOffsetMs = Number(this.getOffsetStore()[this.getLyricsTrackId(track)]) || 0;
+        this._lastAmT = null;
+    }
+    // delta in ms, positive = lyrics show later, negative = earlier. 0 resets.
+    nudgeOffset(delta) {
+        const track = queue?.[currentTrackIndex];
+        if (!track || !this.amActive || this.currentSource !== 'amlyrics') { toast('Offset only works on am-lyrics'); return; }
+        this.amOffsetMs = delta === 0 ? 0 : Math.max(-10000, Math.min(10000, (this.amOffsetMs || 0) + delta));
+        const store = this.getOffsetStore();
+        const id = this.getLyricsTrackId(track);
+        delete store[id];
+        if (this.amOffsetMs !== 0) store[id] = this.amOffsetMs;
+        // keep the store small, objects keep insertion order so the oldest go first
+        const keys = Object.keys(store);
+        if (keys.length > 200) keys.slice(0, keys.length - 200).forEach(k => delete store[k]);
+        try { localStorage.setItem('youtifiy_lyrics_offsets', JSON.stringify(store)); } catch (e) {}
+        this._lastAmT = null;
+        this.handleTimeUpdate();
+        this.refreshAmBar();
+        this.flashAmBar();
+    }
+
+    // ---- title / artist cleanup so more songs actually match ----
+    amCleanTitle(title, artist) {
+        let t = String(title || '');
+        // (Official Video), [Lyrics], (Remastered 2011), (feat. x), (Live) etc
+        t = t.replace(/\s*[\(\[\{][^\)\]\}]*(official|video|audio|lyrics?|visuali[sz]er|remaster(?:ed)?|explicit|feat\.?|ft\.?|prod\.?|live|\bhd\b|\bhq\b|4k|m\/v|\bmv\b)[^\)\]\}]*[\)\]\}]/gi, '');
+        // " - Remastered 2011", " - Live at ...", " - Radio Edit", " - Single Version"
+        t = t.replace(/\s+[-–—]\s+(?:\d{4}\s+)?(?:remaster(?:ed)?|live|radio edit|single version|mono|stereo|bonus track|album version).*$/i, '');
+        // youtube style "Artist - Title"
+        const a = String(artist || '').toLowerCase();
+        const m = t.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+        if (m && a && (m[1].toLowerCase().includes(a) || a.includes(m[1].toLowerCase()))) t = m[2];
+        t = t.replace(/\s*[|｜].*$/, '').replace(/\s+/g, ' ').trim();
+        return t || String(title || '').trim();
+    }
+    amCleanArtist(artist) {
+        return String(artist || '')
+            .replace(/\s*[-–]\s*topic\s*$/i, '')
+            .replace(/\s*(?:vevo|official)\s*$/i, '')
+            .split(/\s*(?:,|;|\bfeat\.?\s|\bft\.?\s|\bfeaturing\b)\s*/i)[0]
+            .trim();
+    }
+    // lookups to try, best guess first (the original behaviour is always attempt #1)
+    amCandidates(track) {
         const title = String(track.title || '').trim();
         const artist = String(track.artist || '').split(/\s*[,;]\s*/)[0].trim();
+        const list = [{ title, artist }];
+        const cArtist = this.amCleanArtist(track.artist);
+        const cTitle = this.amCleanTitle(title, cArtist);
+        if (cTitle !== title || cArtist !== artist) list.push({ title: cTitle, artist: cArtist });
+        const seen = new Set();
+        return list.filter(c => { const k = `${c.title}|${c.artist}`.toLowerCase(); if (!c.title || seen.has(k)) return false; seen.add(k); return true; });
+    }
+    // runs one lookup on the shared element. lines[] | false (nothing) | null (superseded)
+    async amLookup(el, cand, track, token, timeoutMs) {
         const dur = Number.isFinite(audio?.duration) && audio.duration > 0 ? audio.duration : (this.songDuration || 0);
         el.ttml = undefined;
         el.musicId = '';
         el.isrc = '';
         el.spotifyId = '';
         el.currentTime = 0;
-        el.songTitle = title;
-        el.songArtist = artist;
+        this._lastAmT = null;
+        el.songTitle = cand.title;
+        el.songArtist = cand.artist;
         el.songAlbum = track.album || '';
         el.songDurationMs = dur > 0 ? Math.round(dur * 1000) : undefined;
-        el.query = artist ? `${title} - ${artist}` : title;
-        this.amActive = true;
-        this.placeAm();
+        el.query = cand.artist ? `${cand.title} - ${cand.artist}` : cand.title;
         try { await el.updateComplete; } catch (e) {}
         this.hideAmChrome();
         const t0 = Date.now();
         let sawLoading = false;
-        while (Date.now() - t0 < 20000) {
+        while (Date.now() - t0 < timeoutMs) {
             if (token !== this.amToken) return null;
             if (el.isLoading) sawLoading = true;
             else if (sawLoading || Date.now() - t0 > 1500) break;
-            await new Promise(r => setTimeout(r, 100));
+            await new Promise(r => setTimeout(r, 80));
         }
         if (token !== this.amToken) return null;
         const lines = el.lyrics;
-        if (el.isLoading || !Array.isArray(lines) || !lines.length) { this.amErr = this.amErr || 'no lyrics'; return false; }
+        if (el.isLoading || !Array.isArray(lines) || !lines.length) return false;
         return lines;
     }
+    // resolves to: lines[] (success) | false (nothing found / failed) | null (superseded)
+    async tryAm(track) {
+        this.amErr = null;
+        this.amLoop = null;
+        this.loadAmOffset(track);
+        let el;
+        try { el = await this.ensureAm(); }
+        catch (e) {
+            // cdn hiccup, give it one more shot before giving up
+            await new Promise(r => setTimeout(r, 800));
+            try { el = await this.ensureAm(); }
+            catch (e2) { this.amErr = e2?.message || 'am-lyrics failed to load'; console.log('❌ am-lyrics load error:', e2); return false; }
+        }
+        const token = ++this.amToken;
+        this.amActive = true;
+        this.placeAm();
+        const cands = this.amCandidates(track);
+        for (let i = 0; i < cands.length; i++) {
+            const res = await this.amLookup(el, cands[i], track, token, i === 0 ? 20000 : 12000);
+            if (res === null) return null;
+            if (res) { if (i > 0) console.log('✅ am-lyrics matched on cleaned title:', cands[i]); return res; }
+        }
+        this.amErr = this.amErr || 'no lyrics';
+        return false;
+    }
+    // ================= am-lyrics toolbar + extras =================
+    installAmBarStyles() {
+        if (document.getElementById('yl-bar-styles')) return;
+        const st = document.createElement('style');
+        st.id = 'yl-bar-styles';
+        st.textContent = `
+          .yl-host { position: relative; }
+          .yl-bar {
+            position: absolute; top: 8px; right: 8px; z-index: 6;
+            display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px;
+            background: rgba(18,18,18,.62); border: 1px solid rgba(255,255,255,.1);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 4px 18px rgba(0,0,0,.35);
+            opacity: 0; transform: translateY(-4px); pointer-events: none;
+            transition: opacity .22s ease, transform .22s ease;
+          }
+          .yl-host:hover > .yl-bar, .yl-bar:focus-within, .yl-bar.show { opacity: 1; transform: none; pointer-events: auto; }
+          @media (hover: none) { .yl-bar { opacity: .6; transform: none; pointer-events: auto; } }
+          .yl-bar button {
+            all: unset; box-sizing: border-box; cursor: pointer;
+            min-width: 28px; height: 28px; padding: 0 6px; border-radius: 999px;
+            display: inline-flex; align-items: center; justify-content: center;
+            color: var(--text-primary, #fff); font-size: 12px; font-weight: 600;
+            opacity: .8; transition: background .15s ease, opacity .15s ease;
+          }
+          .yl-bar button:hover { background: rgba(255,255,255,.14); opacity: 1; }
+          .yl-bar button:focus-visible { outline: 2px solid var(--accent, #fff); outline-offset: 1px; }
+          .yl-bar button.on { background: var(--accent, #ff3b3b); color: #fff; opacity: 1; }
+          .yl-bar .yl-val { min-width: 46px; font-variant-numeric: tabular-nums; }
+          .yl-bar .yl-sep { width: 1px; height: 14px; background: rgba(255,255,255,.14); margin: 0 3px; }
+          .yl-bar svg { width: 15px; height: 15px; }
+          .yl-jump {
+            position: absolute; left: 50%; bottom: 14px; z-index: 6;
+            transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+            padding: 8px 14px; border-radius: 999px; cursor: pointer;
+            background: rgba(18,18,18,.72); color: var(--text-primary, #fff);
+            border: 1px solid rgba(255,255,255,.12); font-size: 12px; font-weight: 600;
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 4px 18px rgba(0,0,0,.35);
+            transition: opacity .2s ease, transform .2s ease;
+          }
+          .yl-jump.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+        `;
+        document.head.appendChild(st);
+    }
+    ensureAmBar() {
+        if (this.amBar) return this.amBar;
+        const ico = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+        const bar = document.createElement('div');
+        bar.className = 'yl-bar';
+        bar.innerHTML = `
+          <button data-act="font-down" title="Smaller text">A&minus;</button>
+          <button data-act="font-up" title="Bigger text">A+</button>
+          <span class="yl-sep"></span>
+          <button data-act="off-down" title="Lyrics earlier ( [ )  -  shift for bigger steps">&minus;</button>
+          <button data-act="off-val" class="yl-val" title="Reset sync offset ( \\ )">0.0s</button>
+          <button data-act="off-up" title="Lyrics later ( ] )  -  shift for bigger steps">+</button>
+          <span class="yl-sep"></span>
+          <button data-act="loop" title="Loop the current line (click another line to move the loop)">${ico('<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>')}</button>
+          <button data-act="focus" title="Focus mode: dim every line but the current one">${ico('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>')}</button>
+          <button data-act="copy" title="Copy lyrics">${ico('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>')}</button>`;
+        bar.addEventListener('click', e => {
+            const b = e.target.closest('button[data-act]');
+            if (!b) return;
+            e.stopPropagation();
+            this.onAmBarAction(b.dataset.act, e);
+        });
+        const jump = document.createElement('button');
+        jump.className = 'yl-jump';
+        jump.type = 'button';
+        jump.textContent = '\u2193 Jump to current line';
+        jump.addEventListener('click', e => { e.stopPropagation(); this.jumpAmToCurrentLine(true); jump.classList.remove('show'); });
+        this.amBar = bar;
+        this.amJump = jump;
+        return bar;
+    }
+    mountAmBar(host) {
+        if (!host || !this.amEl) return;
+        this.installAmBarStyles();
+        const bar = this.ensureAmBar();
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        host.classList.add('yl-host');
+        host.appendChild(bar);
+        host.appendChild(this.amJump);
+        this.refreshAmBar();
+    }
+    onAmBarAction(act, e) {
+        const big = !!e?.shiftKey;
+        switch (act) {
+            case 'font-down': this.setFontScale((this.amFontScale || 1) - 0.1); break;
+            case 'font-up':   this.setFontScale((this.amFontScale || 1) + 0.1); break;
+            case 'off-down':  this.nudgeOffset(big ? -500 : -100); break;
+            case 'off-up':    this.nudgeOffset(big ? 500 : 100); break;
+            case 'off-val':   this.nudgeOffset(0); break;
+            case 'loop':      this.toggleLineLoop(); break;
+            case 'focus':     this.toggleFocus(); break;
+            case 'copy':      this.copyLyrics(); break;
+        }
+    }
+    refreshAmBar() {
+        const bar = this.amBar;
+        if (!bar) return;
+        const v = (this.amOffsetMs || 0) / 1000;
+        const val = bar.querySelector('[data-act="off-val"]');
+        if (val) val.textContent = `${v > 0 ? '+' : ''}${v.toFixed(1)}s`;
+        bar.querySelector('[data-act="loop"]')?.classList.toggle('on', !!this.amLoop);
+        bar.querySelector('[data-act="focus"]')?.classList.toggle('on', !!this.amFocus);
+    }
+    // pops the toolbar open for a moment (keyboard nudges, toggles) even when the mouse isn't over it
+    flashAmBar() {
+        const bar = this.amBar;
+        if (!bar) return;
+        bar.classList.add('show');
+        clearTimeout(this.amBarTimer);
+        this.amBarTimer = setTimeout(() => bar.classList.remove('show'), 2200);
+    }
+    // shows the "jump to current line" pill when the current line has scrolled out of view
+    updateAmJump() {
+        const el = this.amEl, jump = this.amJump;
+        if (!el || !jump || !el.isConnected) return;
+        const root = el.shadowRoot;
+        const c = root?.querySelector('.lyrics-container');
+        const line = root?.querySelector('.lyrics-line.active');
+        let show = false;
+        if (c && line) {
+            const cr = c.getBoundingClientRect(), lr = line.getBoundingClientRect();
+            show = cr.height > 0 && (lr.bottom < cr.top + 8 || lr.top > cr.bottom - 8);
+        }
+        jump.classList.toggle('show', show);
+    }
+    setFontScale(v) {
+        this.amFontScale = Math.max(0.7, Math.min(1.8, Math.round(v * 10) / 10));
+        try { localStorage.setItem('youtifiy_lyrics_fontscale', String(this.amFontScale)); } catch (e) {}
+        const host = this.amEl?.parentElement;
+        if (host) { this.styleAmForHost(host); this.jumpAmToCurrentLine(); }
+        this.refreshAmBar();
+        this.flashAmBar();
+    }
+    applyAmFocus() {
+        if (this.amEl) this.amEl.toggleAttribute('data-yl-focus', !!this.amFocus);
+    }
+    toggleFocus() {
+        this.amFocus = !this.amFocus;
+        try { localStorage.setItem('youtifiy_lyrics_focus', this.amFocus ? '1' : '0'); } catch (e) {}
+        this.applyAmFocus();
+        this.refreshAmBar();
+    }
+    // ---- line loop (practice / replay a favourite line) ----
+    setLoopToIndex(i) {
+        const l = this.parsedLines?.[i];
+        if (!l) return false;
+        const next = this.parsedLines[i + 1];
+        let end = next ? next.startMs : l.startMs + (l.durMs || 3000);
+        if (end - l.startMs < 500) end = l.startMs + Math.max(500, l.durMs || 3000);
+        this.amLoop = { start: l.startMs, end, index: i };
+        return true;
+    }
+    setLoopToTs(ts) {
+        const lines = this.parsedLines || [];
+        let idx = lines.findIndex(l => Math.abs(l.startMs - ts) < 5);
+        if (idx < 0) { for (let i = 0; i < lines.length; i++) { if (lines[i].startMs <= ts + 5) idx = i; else break; } }
+        if (idx >= 0) this.setLoopToIndex(idx);
+        this.refreshAmBar();
+    }
+    toggleLineLoop() {
+        if (this.amLoop) { this.amLoop = null; this.refreshAmBar(); toast('Line loop off'); return; }
+        const i = this.currentLineIndex;
+        if (!(i >= 0) || !this.setLoopToIndex(i)) { toast('Play a line first, then loop it'); return; }
+        this.refreshAmBar();
+        toast('Looping this line (click another line to move it)');
+    }
+    async copyLyrics() {
+        const track = queue?.[currentTrackIndex];
+        const body = (this.parsedLines || []).map(l => l.text).join('\n');
+        if (!body) { toast('No lyrics to copy'); return; }
+        const text = track ? `${track.title} - ${track.artist}\n\n${body}` : body;
+        try { await navigator.clipboard.writeText(text); toast('Lyrics copied'); }
+        catch (e) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+                document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+                toast('Lyrics copied');
+            } catch (e2) { toast('Could not copy lyrics'); }
+        }
+    }
+
     // am-lyrics lines -> the app's own {text,startMs,durMs} shape (used by PiP / seek / current line)
     amLinesToParsed(lines) {
         return lines.filter(l => l && !l.background).map(l => {
@@ -6857,15 +7139,17 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this.styleAmForHost(host);
         host.textContent = '';
         const el = this.amEl;
+        this._lastAmT = null;
         const moving = el.isConnected && !el.isLoading && Array.isArray(el.lyrics) && el.lyrics.length > 0;
         if (moving) el.__amMoving = true;
         try { host.appendChild(el); } finally { el.__amMoving = false; }
+        this.mountAmBar(host);
         if (moving) { this.restoreAmAfterMove(); this.jumpAmToCurrentLine(); return; }
         // moving <am-lyrics> reconnects it, which refetches + resets scroll to the top
         // and it never re-centers on the current line, so do that ourselves
         this.jumpAmToCurrentLine();
     }
-    async jumpAmToCurrentLine() {
+    async jumpAmToCurrentLine(force = false) {
         const el = this.amEl;
         if (!el) return;
         const token = this._amJumpToken = (this._amJumpToken || 0) + 1;
@@ -6885,7 +7169,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             const container = root?.querySelector('.lyrics-container');
             if (!container) return;
             // user already started scrolling by hand, leave them alone
-            if (container.classList.contains('user-scrolling')) return;
+            if (container.classList.contains('user-scrolling')) {
+                if (!force) return;
+                container.classList.remove('user-scrolling');
+                try { el.isUserScrolling = false; } catch (e) {}
+            }
             let line = root.querySelector('.lyrics-line.active');
             if (!line && Array.isArray(el.lyrics)) {
                 const ms = audio.currentTime * 1000;
@@ -6896,7 +7184,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (!line) return;
             const raw = (getComputedStyle(container).getPropertyValue('--lyrics-scroll-padding-top') || '').trim();
             const pad = raw.includes('%') ? container.clientHeight * (parseFloat(raw) / 100) : (parseFloat(raw) || 0);
-            container.scrollTop = Math.max(0, line.offsetTop - pad);
+            container.scrollTo({ top: Math.max(0, line.offsetTop - pad), behavior: force ? 'smooth' : 'auto' });
         };
         // am-lyrics resets scrollTop itself right after load, so snap a few times
         requestAnimationFrame(() => requestAnimationFrame(snap));
@@ -6906,7 +7194,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     styleAmForHost(host) {
         const fullScreen = host.id === 'fullLyricsContent';
         const embedded = host.id === 'playerEmbedLyricsContent';
-        const size = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
+        const baseSize = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
+        const size = `calc(${baseSize} * ${this.amFontScale || 1})`;
         const spacing = fullScreen ? '18px' : '10px';
         const style = this.amEl.style;
         this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
@@ -6929,6 +7218,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
     exitAm() {
+        this.amLoop = null;
+        this.amBar?.remove();
+        this.amJump?.remove();
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
         this.amActive = false;
         this.amTrackKey = null;
@@ -6941,9 +7233,20 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
 
     handleTimeUpdate() {
-        if (this.amActive && this.amEl && this.amEl.isConnected) this.amEl.currentTime = audio.currentTime * 1000;
+        const off = this.currentSource === 'amlyrics' ? (this.amOffsetMs || 0) : 0;
+        if (this.amActive && this.amEl && this.amEl.isConnected) {
+            const t = Math.max(0, Math.round(audio.currentTime * 1000 - off));
+            if (t !== this._lastAmT) { this._lastAmT = t; this.amEl.currentTime = t; }
+        }
+        if (this.amLoop && this.currentSource === 'amlyrics' && !audio.paused) {
+            const lms = audio.currentTime * 1000 - off;
+            if (lms >= this.amLoop.end) {
+                if (lms - this.amLoop.end < 1500) audio.currentTime = (this.amLoop.start + off) / 1000;
+                else { this.amLoop = null; this.refreshAmBar(); toast('Line loop off'); } // user seeked far away
+            }
+        }
         if (!this.isOpen || !this.parsedLines?.length) return;
-        const ms = audio.currentTime * 1000;
+        const ms = audio.currentTime * 1000 - off;
         let newIndex = -1;
         for (let i = 0; i < this.parsedLines.length; i++) {
             const { startMs, durMs } = this.parsedLines[i];
@@ -7373,6 +7676,9 @@ document.addEventListener('keydown', (e) => {
     case 'KeyN':        e.preventDefault(); PlayerController.next(0, false); break;
     case 'KeyP':        e.preventDefault(); PlayerController.previous(); break;
     case 'KeyL':        e.preventDefault(); handleLyricsButtonClick(); break;
+    case 'BracketLeft':  if (lyricsManager?.isOpen && lyricsManager.amActive) { e.preventDefault(); lyricsManager.nudgeOffset(e.shiftKey ? -500 : -100); } break;
+    case 'BracketRight': if (lyricsManager?.isOpen && lyricsManager.amActive) { e.preventDefault(); lyricsManager.nudgeOffset(e.shiftKey ? 500 : 100); } break;
+    case 'Backslash':    if (lyricsManager?.isOpen && lyricsManager.amActive) { e.preventDefault(); lyricsManager.nudgeOffset(0); } break;
     case 'KeyS':        e.preventDefault(); PlayerController.toggleShuffle(); break;
     case 'KeyR':        e.preventDefault(); PlayerController.toggleRepeat(); break;
     case 'KeyM':        e.preventDefault(); PlayerController.toggleMute(); break;
