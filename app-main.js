@@ -7061,8 +7061,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     mountAmBar(host) {
         if (!host || !this.amEl) return;
-        if (host.id === 'lyricsContent') {
-            // the slide-out panel stays plain: no toolbar, menu, glow or edge fade
+        if (host.id === 'playerEmbedLyricsContent') {
+            // the small card in the right sidebar stays plain: no toolbar, menu, glow or edge fade
             this.amUiEls().forEach(n => n.remove());
             this.amLoop = null;
             this.applyAmFocus();
@@ -7144,7 +7144,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     applyAmFocus() {
         if (!this.amEl) return;
-        const plain = this.amEl.parentElement?.id === 'lyricsContent';
+        const plain = this.amEl.parentElement?.id === 'playerEmbedLyricsContent';
         this.amEl.toggleAttribute('data-yl-focus', !!this.amFocus && !plain);
         this.amEl.toggleAttribute('data-yl-fade', !!this.amFade && !plain);
     }
@@ -7324,7 +7324,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (!glow) return;
         const token = this._glowToken = (this._glowToken || 0) + 1;
         glow.style.opacity = '0';
-        if (!this.amAmbient || !track?.albumArt || this.amEl?.parentElement?.id === 'lyricsContent') return;
+        if (!this.amAmbient || !track?.albumArt || this.amEl?.parentElement?.id === 'playerEmbedLyricsContent') return;
         const rgb = await this.dominantColor(track.albumArt);
         if (token !== this._glowToken || !rgb) return;
         const c = `${rgb[0]},${rgb[1]},${rgb[2]}`;
@@ -7555,7 +7555,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const fullScreen = host.id === 'fullLyricsContent';
         const embedded = host.id === 'playerEmbedLyricsContent';
         const baseSize = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
-        const plainPanel = !fullScreen && !embedded;
+        const plainPanel = embedded;
         const size = `calc(${baseSize} * ${plainPanel ? 1 : (this.amFontScale || 1)})`;
         const spacing = `calc(${fullScreen ? '18px' : '10px'} * ${plainPanel ? 1 : (this.amSpacing || 1)})`;
         const style = this.amEl.style;
