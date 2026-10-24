@@ -7061,6 +7061,13 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     mountAmBar(host) {
         if (!host || !this.amEl) return;
+        if (host.id === 'lyricsContent') {
+            // the slide-out panel stays plain: no toolbar, menu, glow or edge fade
+            this.amUiEls().forEach(n => n.remove());
+            this.amLoop = null;
+            this.applyAmFocus();
+            return;
+        }
         this.installAmBarStyles();
         const bar = this.ensureAmBar();
         if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
@@ -7071,6 +7078,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         host.appendChild(this.amMenu);
         host.appendChild(this.amSearch);
         this.refreshAmBar();
+        this.applyAmFocus();
+        this.applyAmbient(queue?.[currentTrackIndex]);
     }
     onAmBarAction(act, e) {
         const big = !!e?.shiftKey;
@@ -7135,8 +7144,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     applyAmFocus() {
         if (!this.amEl) return;
-        this.amEl.toggleAttribute('data-yl-focus', !!this.amFocus);
-        this.amEl.toggleAttribute('data-yl-fade', !!this.amFade);
+        const plain = this.amEl.parentElement?.id === 'lyricsContent';
+        this.amEl.toggleAttribute('data-yl-focus', !!this.amFocus && !plain);
+        this.amEl.toggleAttribute('data-yl-fade', !!this.amFade && !plain);
     }
     toggleFocus() {
         this.amFocus = !this.amFocus;
@@ -7314,7 +7324,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (!glow) return;
         const token = this._glowToken = (this._glowToken || 0) + 1;
         glow.style.opacity = '0';
-        if (!this.amAmbient || !track?.albumArt) return;
+        if (!this.amAmbient || !track?.albumArt || this.amEl?.parentElement?.id === 'lyricsContent') return;
         const rgb = await this.dominantColor(track.albumArt);
         if (token !== this._glowToken || !rgb) return;
         const c = `${rgb[0]},${rgb[1]},${rgb[2]}`;
@@ -7545,8 +7555,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const fullScreen = host.id === 'fullLyricsContent';
         const embedded = host.id === 'playerEmbedLyricsContent';
         const baseSize = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
-        const size = `calc(${baseSize} * ${this.amFontScale || 1})`;
-        const spacing = `calc(${fullScreen ? '18px' : '10px'} * ${this.amSpacing || 1})`;
+        const plainPanel = !fullScreen && !embedded;
+        const size = `calc(${baseSize} * ${plainPanel ? 1 : (this.amFontScale || 1)})`;
+        const spacing = `calc(${fullScreen ? '18px' : '10px'} * ${plainPanel ? 1 : (this.amSpacing || 1)})`;
         const style = this.amEl.style;
         this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
         // Keep the word-wipe contrast explicit: pending words use muted text,
