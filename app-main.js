@@ -5998,6 +5998,11 @@ class UnifiedLyricsManager {
         this.amBarTimer = null;
         this.amFontScale = Math.max(0.7, Math.min(1.8, Number(localStorage.getItem('youtifiy_lyrics_fontscale')) || 1));
         this.amFocus = localStorage.getItem('youtifiy_lyrics_focus') === '1';
+        this.amKaraoke = localStorage.getItem('youtifiy_lyrics_karaoke') === '1';
+        this.amAmbient = localStorage.getItem('youtifiy_lyrics_ambient') === '1';
+        this.amTabTitle = localStorage.getItem('youtifiy_lyrics_tabtitle') === '1';
+        this.amMenu = null; this.amSearch = null; this.amGlow = null; this.amKaraokeEl = null; this._k = null;
+        this._karaokeIdx = null; this._searchHits = []; this._searchSel = 0; this._origTitle = null;
         this._lastAmT = null;        // last time value pushed into <am-lyrics>, skips redundant updates
         this.fetchingKey = null;
         this.pendingTrackChange = false;
@@ -6149,7 +6154,7 @@ class UnifiedLyricsManager {
         if (playerTitle) observer.observe(playerTitle, { childList: true });
         this.startLyricsSync();
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
-        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); } }, 400);
+        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); this.updateKaraoke(); this.updateTabTitle(); } }, 400);
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
         audio.addEventListener('seeked', () => this.handleTimeUpdate());
         audio.addEventListener('play', () => this.handleTimeUpdate());
@@ -6751,6 +6756,16 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 ? Math.min(seconds, duration)
                 : seconds;
         });
+        // right click a line = copy it, shift + right click = save it as an image card
+        el.addEventListener('contextmenu', event => {
+            const ln = event.composedPath?.().find(n => n instanceof HTMLElement && n.classList.contains('lyrics-line'));
+            if (!ln) return;
+            event.preventDefault();
+            const ts = Number(ln.dataset?.startTime);
+            if (event.shiftKey) { this.shareLineCard(Number.isFinite(ts) ? this.indexAtTs(ts) : null); return; }
+            const text = (ln.textContent || '').replace(/\s+/g, ' ').trim();
+            if (text) navigator.clipboard?.writeText(text).then(() => toast('Line copied (shift + right-click saves it as an image)')).catch(() => {});
+        });
         // am-lyrics refetches on every reconnect (connectedCallback). skip that when we're
         // only moving the element between hosts, the lyrics are already loaded
         const origFetch = el.fetchLyrics.bind(el);
@@ -6914,6 +6929,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const token = ++this.amToken;
         this.amActive = true;
         this.placeAm();
+        this.applyAmbient(track);
         const cands = this.amCandidates(track);
         for (let i = 0; i < cands.length; i++) {
             const res = await this.amLookup(el, cands[i], track, token, i === 0 ? 20000 : 12000);
@@ -6965,6 +6981,54 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             transition: opacity .2s ease, transform .2s ease;
           }
           .yl-jump.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+          .yl-host > am-lyrics { position: relative; z-index: 1; }
+          .yl-glow { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .9s ease; }
+          .yl-menu {
+            position: absolute; top: 46px; right: 8px; z-index: 8; min-width: 190px; padding: 6px; display: none;
+            border-radius: 14px; background: rgba(18,18,18,.84); border: 1px solid rgba(255,255,255,.1);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 28px rgba(0,0,0,.45);
+          }
+          .yl-menu.open { display: block; }
+          .yl-menu button {
+            all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 14px;
+            padding: 8px 10px; border-radius: 9px; cursor: pointer; font-size: 13px; color: var(--text-primary, #fff);
+          }
+          .yl-menu button:hover { background: rgba(255,255,255,.1); }
+          .yl-menu button:focus-visible { outline: 2px solid var(--accent, #fff); outline-offset: -2px; }
+          .yl-menu .yl-chk { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.22); transition: background .15s ease, box-shadow .15s ease; }
+          .yl-menu button.on .yl-chk { background: var(--accent, #ff3b3b); box-shadow: 0 0 8px var(--accent, #ff3b3b); }
+          .yl-menu hr { border: 0; height: 1px; background: rgba(255,255,255,.1); margin: 4px 6px; }
+          .yl-karaoke {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 4; display: none; overflow: hidden;
+            flex-direction: column; align-items: center; justify-content: center; text-align: center;
+            gap: clamp(10px, 3vh, 26px); padding: 28px 22px; background: rgba(10,10,10,.86);
+            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+          }
+          .yl-karaoke.show { display: flex; }
+          .yl-k-prev, .yl-k-next { font-size: calc(clamp(13px, 1.6vw, 20px) * var(--yl-scale, 1)); opacity: .38; max-width: 92%; line-height: 1.3; color: var(--text-primary, #fff); min-height: 1.3em; }
+          .yl-k-cur { font-size: calc(clamp(24px, 4.2vw, 52px) * var(--yl-scale, 1)); font-weight: 800; line-height: 1.18; max-width: 94%; color: var(--text-primary, #fff); text-wrap: balance; }
+          .yl-k-cur.swap { animation: ylk-in .35s ease; }
+          @keyframes ylk-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+          .yl-k-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform-origin: left; transform: scaleX(0); background: var(--accent, #ff3b3b); }
+          .yl-search {
+            position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9; display: none; flex-direction: column; gap: 6px; padding: 8px;
+            border-radius: 14px; background: rgba(18,18,18,.9); border: 1px solid rgba(255,255,255,.1);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 28px rgba(0,0,0,.45);
+          }
+          .yl-search.open { display: flex; }
+          .yl-search input {
+            all: unset; box-sizing: border-box; width: 100%; padding: 8px 10px; border-radius: 9px;
+            background: rgba(255,255,255,.08); color: var(--text-primary, #fff); caret-color: var(--accent, #fff); font-size: 13px;
+          }
+          .yl-search-results { display: flex; flex-direction: column; max-height: 34vh; overflow: auto; }
+          .yl-search-results button {
+            all: unset; box-sizing: border-box; display: flex; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer;
+            font-size: 13px; color: var(--text-primary, #fff);
+          }
+          .yl-search-results button:hover, .yl-search-results button.sel { background: rgba(255,255,255,.1); }
+          .yl-search-results .t { opacity: .5; font-variant-numeric: tabular-nums; min-width: 34px; }
+          .yl-search-results mark { background: var(--accent, #ff3b3b); color: #fff; border-radius: 3px; padding: 0 1px; }
+          .yl-search-results .yl-empty { padding: 6px 8px; font-size: 13px; opacity: .5; }
         `;
         document.head.appendChild(st);
     }
@@ -6983,7 +7047,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
           <span class="yl-sep"></span>
           <button data-act="loop" title="Loop the current line (click another line to move the loop)">${ico('<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>')}</button>
           <button data-act="focus" title="Focus mode: dim every line but the current one">${ico('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>')}</button>
-          <button data-act="copy" title="Copy lyrics">${ico('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>')}</button>`;
+          <button data-act="copy" title="Copy lyrics">${ico('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>')}</button>
+          <button data-act="more" title="More">${ico('<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>')}</button>`;
         bar.addEventListener('click', e => {
             const b = e.target.closest('button[data-act]');
             if (!b) return;
@@ -6997,6 +7062,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         jump.addEventListener('click', e => { e.stopPropagation(); this.jumpAmToCurrentLine(true); jump.classList.remove('show'); });
         this.amBar = bar;
         this.amJump = jump;
+        this.ensureAmExtras();
         return bar;
     }
     mountAmBar(host) {
@@ -7005,8 +7071,12 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const bar = this.ensureAmBar();
         if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
         host.classList.add('yl-host');
+        if (this.amEl.parentElement === host) host.insertBefore(this.amGlow, this.amEl); else host.appendChild(this.amGlow);
+        host.appendChild(this.amKaraokeEl);
         host.appendChild(bar);
         host.appendChild(this.amJump);
+        host.appendChild(this.amMenu);
+        host.appendChild(this.amSearch);
         this.refreshAmBar();
     }
     onAmBarAction(act, e) {
@@ -7020,7 +7090,15 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             case 'loop':      this.toggleLineLoop(); break;
             case 'focus':     this.toggleFocus(); break;
             case 'copy':      this.copyLyrics(); break;
+            case 'more':      this.toggleAmMenu(); return;
+            case 'karaoke':   this.toggleKaraoke(); break;
+            case 'ambient':   this.toggleAmbient(); break;
+            case 'tabtitle':  this.toggleTabTitle(); break;
+            case 'search':    this.openAmSearch(); break;
+            case 'share':     this.shareLineCard(null); break;
+            case 'lrc':       this.exportLrc(); break;
         }
+        if (['karaoke', 'ambient', 'tabtitle', 'search', 'share', 'lrc'].includes(act)) this.closeAmMenu();
     }
     refreshAmBar() {
         const bar = this.amBar;
@@ -7030,6 +7108,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (val) val.textContent = `${v > 0 ? '+' : ''}${v.toFixed(1)}s`;
         bar.querySelector('[data-act="loop"]')?.classList.toggle('on', !!this.amLoop);
         bar.querySelector('[data-act="focus"]')?.classList.toggle('on', !!this.amFocus);
+        this.amMenu?.querySelector('[data-act="karaoke"]')?.classList.toggle('on', !!this.amKaraoke);
+        this.amMenu?.querySelector('[data-act="ambient"]')?.classList.toggle('on', !!this.amAmbient);
+        this.amMenu?.querySelector('[data-act="tabtitle"]')?.classList.toggle('on', !!this.amTabTitle);
+        this.amKaraokeEl?.style.setProperty('--yl-scale', String(this.amFontScale || 1));
     }
     // pops the toolbar open for a moment (keyboard nudges, toggles) even when the mouse isn't over it
     flashAmBar() {
@@ -7037,7 +7119,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (!bar) return;
         bar.classList.add('show');
         clearTimeout(this.amBarTimer);
-        this.amBarTimer = setTimeout(() => bar.classList.remove('show'), 2200);
+        this.amBarTimer = setTimeout(() => { if (!this.amMenu?.classList.contains('open')) bar.classList.remove('show'); }, 2200);
     }
     // shows the "jump to current line" pill when the current line has scrolled out of view
     updateAmJump() {
@@ -7108,6 +7190,341 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 toast('Lyrics copied');
             } catch (e2) { toast('Could not copy lyrics'); }
         }
+    }
+
+    // ================= more extras: karaoke, album glow, search, share card, .lrc, tab title =================
+    amUiEls() { return [this.amGlow, this.amKaraokeEl, this.amBar, this.amJump, this.amMenu, this.amSearch].filter(Boolean); }
+    setPref(key, on) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {} }
+    fmtMs(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+    safeName(v) { return String(v || 'lyrics').replace(/[\\\/:*?"<>|]+/g, '').trim() || 'lyrics'; }
+    downloadBlob(blob, name) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+    lineIndexAtMs(ms) {
+        const lines = this.parsedLines || [];
+        let idx = -1;
+        for (let i = 0; i < lines.length; i++) { if (lines[i].startMs <= ms) idx = i; else break; }
+        return idx;
+    }
+    indexAtTs(ts) {
+        const lines = this.parsedLines || [];
+        let idx = lines.findIndex(l => Math.abs(l.startMs - ts) < 5);
+        if (idx < 0) idx = this.lineIndexAtMs(ts + 5);
+        return idx >= 0 ? idx : null;
+    }
+    ensureAmExtras() {
+        if (this.amMenu) return;
+        const glow = document.createElement('div');
+        glow.className = 'yl-glow';
+
+        const k = document.createElement('div');
+        k.className = 'yl-karaoke';
+        k.innerHTML = `<div class="yl-k-prev"></div><div class="yl-k-cur"></div><div class="yl-k-next"></div><div class="yl-k-bar"></div>`;
+        this._k = { prev: k.querySelector('.yl-k-prev'), cur: k.querySelector('.yl-k-cur'), next: k.querySelector('.yl-k-next'), bar: k.querySelector('.yl-k-bar') };
+
+        const menu = document.createElement('div');
+        menu.className = 'yl-menu';
+        menu.innerHTML = `
+          <button data-act="karaoke"><span>Karaoke mode</span><i class="yl-chk"></i></button>
+          <button data-act="ambient"><span>Album glow</span><i class="yl-chk"></i></button>
+          <button data-act="tabtitle"><span>Lyric in tab title</span><i class="yl-chk"></i></button>
+          <hr>
+          <button data-act="search"><span>Search lyrics</span></button>
+          <button data-act="share"><span>Save line as image</span></button>
+          <button data-act="lrc"><span>Export .lrc</span></button>`;
+        menu.addEventListener('click', e => {
+            const b = e.target.closest('button[data-act]');
+            if (!b) return;
+            e.stopPropagation();
+            this.onAmBarAction(b.dataset.act, e);
+        });
+
+        const sp = document.createElement('div');
+        sp.className = 'yl-search';
+        sp.innerHTML = `<input type="text" placeholder="Search lyrics..." spellcheck="false" autocomplete="off"><div class="yl-search-results"></div>`;
+        const inp = sp.querySelector('input');
+        inp.addEventListener('input', () => this.runAmSearch(inp.value));
+        inp.addEventListener('keydown', e => {
+            e.stopPropagation(); // keep the global shortcuts (and the full-screen Esc) out of the way
+            if (e.key === 'Escape') { this.closeAmSearch(); }
+            else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const n = this._searchHits.length;
+                if (n) { this._searchSel = (this._searchSel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; this.markAmSearchSel(); }
+            } else if (e.key === 'Enter') {
+                const i = this._searchHits[this._searchSel];
+                if (i != null) this.pickAmSearch(i);
+            }
+        });
+        sp.addEventListener('click', e => {
+            e.stopPropagation();
+            const b = e.target.closest('button[data-i]');
+            if (b) this.pickAmSearch(Number(b.dataset.i));
+        });
+
+        this.amGlow = glow; this.amKaraokeEl = k; this.amMenu = menu; this.amSearch = sp;
+        if (!this._amDocClick) {
+            this._amDocClick = true;
+            document.addEventListener('click', e => {
+                if (!this.amMenu?.classList.contains('open')) return;
+                if (e.target.closest?.('.yl-menu, .yl-bar')) return;
+                this.closeAmMenu();
+            });
+        }
+    }
+    toggleAmMenu() {
+        if (!this.amMenu) return;
+        const open = this.amMenu.classList.toggle('open');
+        this.amBar?.classList.toggle('show', open);
+        if (!open) this.flashAmBar();
+    }
+    closeAmMenu() {
+        this.amMenu?.classList.remove('open');
+        this.amBar?.classList.remove('show');
+    }
+    // ---- karaoke: big current line + prev/next, progress bar along the bottom ----
+    toggleKaraoke() {
+        this.amKaraoke = !this.amKaraoke;
+        this.setPref('youtifiy_lyrics_karaoke', this.amKaraoke);
+        this._karaokeIdx = null;
+        this.updateKaraoke();
+        this.refreshAmBar();
+    }
+    updateKaraoke() {
+        const k = this.amKaraokeEl, r = this._k;
+        if (!k || !r) return;
+        const lines = this.parsedLines || [];
+        const on = !!this.amKaraoke && this.amActive && this.currentSource === 'amlyrics' && lines.length > 0;
+        k.classList.toggle('show', on);
+        if (!on) return;
+        const off = this.amOffsetMs || 0;
+        const ms = audio.currentTime * 1000 - off;
+        const idx = this.lineIndexAtMs(ms);
+        if (idx !== this._karaokeIdx || this._karaokeLines !== lines) {
+            this._karaokeIdx = idx; this._karaokeLines = lines;
+            r.prev.textContent = lines[idx - 1]?.text || '';
+            r.cur.textContent = lines[idx]?.text || '\u266A';
+            r.next.textContent = lines[idx + 1]?.text || '';
+            r.cur.classList.remove('swap'); void r.cur.offsetWidth; r.cur.classList.add('swap');
+        }
+        const cur = lines[idx];
+        if (cur) {
+            const next = lines[idx + 1];
+            const end = next ? next.startMs : cur.startMs + (cur.durMs || 3000);
+            const frac = Math.max(0, Math.min(1, (ms - cur.startMs) / Math.max(1, end - cur.startMs)));
+            r.bar.style.transform = `scaleX(${frac})`;
+        } else r.bar.style.transform = 'scaleX(0)';
+    }
+    // ---- album glow: soft tint from the cover behind the lyrics ----
+    loadImageCors(url) {
+        return new Promise(resolve => {
+            if (!url) { resolve(null); return; }
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            const t = setTimeout(() => resolve(null), 6000);
+            img.onload = () => { clearTimeout(t); resolve(img); };
+            img.onerror = () => { clearTimeout(t); resolve(null); };
+            img.src = url;
+        });
+    }
+    async dominantColor(url) {
+        if (!this._colorCache) this._colorCache = new Map();
+        if (this._colorCache.has(url)) return this._colorCache.get(url);
+        let out = null;
+        const img = await this.loadImageCors(url);
+        if (img) {
+            try {
+                const c = document.createElement('canvas'); c.width = c.height = 24;
+                const x = c.getContext('2d', { willReadFrequently: true });
+                x.drawImage(img, 0, 0, 24, 24);
+                const d = x.getImageData(0, 0, 24, 24).data;
+                let r = 0, g = 0, b = 0, w = 0;
+                for (let i = 0; i < d.length; i += 4) {
+                    const R = d[i], G = d[i + 1], B = d[i + 2];
+                    const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+                    const lum = (R + G + B) / 3;
+                    if (lum < 25 || lum > 235) continue;
+                    const sat = (mx - mn) / (mx || 1);
+                    const wt = 0.15 + sat * sat * 3;
+                    r += R * wt; g += G * wt; b += B * wt; w += wt;
+                }
+                if (w) out = [Math.round(r / w), Math.round(g / w), Math.round(b / w)];
+            } catch (e) { out = null; }
+        }
+        this._colorCache.set(url, out);
+        return out;
+    }
+    async applyAmbient(track) {
+        const glow = this.amGlow;
+        if (!glow) return;
+        const token = this._glowToken = (this._glowToken || 0) + 1;
+        glow.style.opacity = '0';
+        if (!this.amAmbient || !track?.albumArt) return;
+        const rgb = await this.dominantColor(track.albumArt);
+        if (token !== this._glowToken || !rgb) return;
+        const c = `${rgb[0]},${rgb[1]},${rgb[2]}`;
+        glow.style.background = `radial-gradient(130% 90% at 50% -10%, rgba(${c},.42), rgba(${c},.12) 45%, transparent 75%)`;
+        glow.style.opacity = '1';
+    }
+    toggleAmbient() {
+        this.amAmbient = !this.amAmbient;
+        this.setPref('youtifiy_lyrics_ambient', this.amAmbient);
+        this.applyAmbient(queue?.[currentTrackIndex]);
+        this.refreshAmBar();
+    }
+    // ---- current lyric in the browser tab title ----
+    toggleTabTitle() {
+        this.amTabTitle = !this.amTabTitle;
+        this.setPref('youtifiy_lyrics_tabtitle', this.amTabTitle);
+        if (this.amTabTitle) this.updateTabTitle(); else this.restoreTabTitle();
+        this.refreshAmBar();
+    }
+    updateTabTitle() {
+        if (!this.amTabTitle) return;
+        const lines = this.parsedLines || [];
+        let text = '';
+        if (this.amActive && this.currentSource === 'amlyrics' && !audio.paused && lines.length) {
+            text = lines[this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0))]?.text || '';
+        }
+        if (text) {
+            const cur = document.title;
+            if (!cur.startsWith('\u266A ')) this._origTitle = cur;
+            const nt = '\u266A ' + text;
+            if (cur !== nt) document.title = nt;
+        } else this.restoreTabTitle();
+    }
+    restoreTabTitle() {
+        if (document.title.startsWith('\u266A ') && this._origTitle != null) document.title = this._origTitle;
+    }
+    // ---- search ----
+    openAmSearch() {
+        if (!(this.parsedLines || []).length) { toast('No synced lyrics to search'); return; }
+        const inp = this.amSearch.querySelector('input');
+        this.amSearch.classList.add('open');
+        inp.value = '';
+        this.runAmSearch('');
+        setTimeout(() => inp.focus(), 30);
+    }
+    closeAmSearch() { this.amSearch?.classList.remove('open'); }
+    markAmSearchSel() {
+        this.amSearch?.querySelectorAll('.yl-search-results button').forEach((b, i) => b.classList.toggle('sel', i === this._searchSel));
+    }
+    runAmSearch(q) {
+        const box = this.amSearch.querySelector('.yl-search-results');
+        box.textContent = '';
+        this._searchHits = []; this._searchSel = 0;
+        const norm = v => String(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const nq = norm(q).trim();
+        if (!nq) return;
+        const lines = this.parsedLines || [];
+        for (let i = 0; i < lines.length && this._searchHits.length < 8; i++) {
+            const text = lines[i].text;
+            const nt = norm(text);
+            const mi = nt.indexOf(nq);
+            if (mi < 0) continue;
+            this._searchHits.push(i);
+            const b = document.createElement('button');
+            b.type = 'button'; b.dataset.i = String(i);
+            const t = document.createElement('span'); t.className = 't'; t.textContent = this.fmtMs(lines[i].startMs);
+            const tx = document.createElement('span');
+            if (nt.length === text.length) {
+                const m = document.createElement('mark'); m.textContent = text.slice(mi, mi + nq.length);
+                tx.append(text.slice(0, mi), m, text.slice(mi + nq.length));
+            } else tx.textContent = text;
+            b.append(t, tx);
+            box.appendChild(b);
+        }
+        if (!this._searchHits.length) { const e = document.createElement('div'); e.className = 'yl-empty'; e.textContent = 'No matches'; box.appendChild(e); }
+        this.markAmSearchSel();
+    }
+    pickAmSearch(i) {
+        const l = this.parsedLines?.[i];
+        if (!l) return;
+        audio.currentTime = (l.startMs + (this.amOffsetMs || 0)) / 1000;
+        this.closeAmSearch();
+        setTimeout(() => this.jumpAmToCurrentLine(true), 250);
+    }
+    // ---- export synced lyrics as .lrc (timestamps include your sync offset) ----
+    exportLrc() {
+        const lines = this.parsedLines || [];
+        const track = queue?.[currentTrackIndex];
+        if (!lines.length || !track) { toast('No synced lyrics to export'); return; }
+        const off = this.amOffsetMs || 0;
+        const stamp = ms => {
+            ms = Math.max(0, Math.round(ms));
+            const m = Math.floor(ms / 60000), sec = Math.floor((ms % 60000) / 1000), cs = Math.floor((ms % 1000) / 10);
+            return `[${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}]`;
+        };
+        const head = [`[ti:${track.title || ''}]`, `[ar:${track.artist || ''}]`, track.album ? `[al:${track.album}]` : null, '[by:Youtify]'].filter(Boolean);
+        const text = head.concat(lines.map(l => `${stamp(l.startMs + off)}${l.text}`)).join('\n') + '\n';
+        this.downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `${this.safeName(track.artist)} - ${this.safeName(track.title)}.lrc`);
+        toast('Saved .lrc');
+    }
+    // ---- line card: lyric on a blurred cover background, saved as a png ----
+    async shareLineCard(idx) {
+        const lines = this.parsedLines || [];
+        const track = queue?.[currentTrackIndex];
+        if (idx == null) idx = this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0));
+        const line = lines[idx];
+        if (!line || !track) { toast('Play a line first'); return; }
+        toast('Making line card...');
+        const W = 1080, H = 1350, pad = 96, art = 200;
+        const font = getComputedStyle(document.body).fontFamily || 'sans-serif';
+        const img = await this.loadImageCors(track.albumArt);
+        const rgb = (await this.dominantColor(track.albumArt)) || [90, 90, 110];
+        const fit = (x, text, maxW) => { let t = String(text || ''); while (t.length > 1 && x.measureText(t).width > maxW) t = t.slice(0, -2) + '\u2026'; return t; };
+        const wrap = (x, text, maxW) => {
+            const out = []; let cur = '';
+            for (const w of String(text).split(/\s+/)) {
+                const test = cur ? cur + ' ' + w : w;
+                if (cur && x.measureText(test).width > maxW) { out.push(cur); cur = w; } else cur = test;
+            }
+            if (cur) out.push(cur);
+            return out;
+        };
+        const render = useImg => {
+            const c = document.createElement('canvas'); c.width = W; c.height = H;
+            const x = c.getContext('2d');
+            x.fillStyle = `rgb(${rgb.map(v => Math.round(v * 0.35)).join(',')})`; x.fillRect(0, 0, W, H);
+            if (useImg && img) {
+                try {
+                    x.save(); x.filter = 'blur(48px) brightness(.75) saturate(1.2)';
+                    const sc = Math.max(W / img.width, H / img.height) * 1.25, w = img.width * sc, h = img.height * sc;
+                    x.drawImage(img, (W - w) / 2, (H - h) / 2, w, h); x.restore();
+                } catch (e) {}
+            }
+            const g = x.createLinearGradient(0, 0, 0, H);
+            g.addColorStop(0, 'rgba(0,0,0,.25)'); g.addColorStop(1, 'rgba(0,0,0,.7)');
+            x.fillStyle = g; x.fillRect(0, 0, W, H);
+            let textX = pad;
+            if (useImg && img) {
+                x.save(); x.beginPath();
+                if (x.roundRect) x.roundRect(pad, pad, art, art, 26); else x.rect(pad, pad, art, art);
+                x.clip(); x.drawImage(img, pad, pad, art, art); x.restore();
+                textX = pad + art + 36;
+            }
+            x.textBaseline = 'top'; x.fillStyle = '#fff';
+            x.font = `700 44px ${font}`; x.fillText(fit(x, track.title, W - textX - pad), textX, pad + 40);
+            x.globalAlpha = 0.7; x.font = `500 34px ${font}`; x.fillText(fit(x, track.artist, W - textX - pad), textX, pad + 100); x.globalAlpha = 1;
+            const top = pad + art + 80, availH = H - pad - 90 - top, maxW = W - pad * 2;
+            let fs = 100, rows = [];
+            for (; fs >= 40; fs -= 4) { x.font = `800 ${fs}px ${font}`; rows = wrap(x, line.text, maxW); if (rows.length * fs * 1.2 <= availH) break; }
+            const th = rows.length * fs * 1.2;
+            let y = top + Math.max(0, (availH - th) / 2);
+            x.font = `800 ${fs}px ${font}`;
+            for (const r of rows) { x.fillText(r, pad, y); y += fs * 1.2; }
+            x.globalAlpha = 0.45; x.font = `600 30px ${font}`; x.fillText('Youtify', pad, H - pad - 30); x.globalAlpha = 1;
+            return c;
+        };
+        let blob = null;
+        try { blob = await new Promise(r => render(true).toBlob(r, 'image/png')); } catch (e) { blob = null; }
+        if (!blob) { try { blob = await new Promise(r => render(false).toBlob(r, 'image/png')); } catch (e) { blob = null; } }
+        if (!blob) { toast('Could not make the line card'); return; }
+        this.downloadBlob(blob, `${this.safeName(track.title)} - lyric.png`);
+        toast('Line card saved');
     }
 
     // am-lyrics lines -> the app's own {text,startMs,durMs} shape (used by PiP / seek / current line)
@@ -7219,8 +7636,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     exitAm() {
         this.amLoop = null;
-        this.amBar?.remove();
-        this.amJump?.remove();
+        this.amUiEls().forEach(n => n.remove());
+        this.restoreTabTitle();
+        this._karaokeIdx = null;
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
         this.amActive = false;
         this.amTrackKey = null;
@@ -7247,6 +7665,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         if (!this.isOpen || !this.parsedLines?.length) return;
         const ms = audio.currentTime * 1000 - off;
+        if (this.amKaraoke) this.updateKaraoke();
         let newIndex = -1;
         for (let i = 0; i < this.parsedLines.length; i++) {
             const { startMs, durMs } = this.parsedLines[i];
@@ -7269,7 +7688,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
 
     highlightLine(index) {
-        if (this.currentSource === 'amlyrics') { this.currentLineIndex = index; return; }
+        if (this.currentSource === 'amlyrics') { this.currentLineIndex = index; this.updateTabTitle(); return; }
         if (this.currentSource !== 'spotify' && this.currentSource !== 'musix') return;
         const allLines = document.querySelectorAll('.lyrics-line');
         allLines.forEach(el => {
