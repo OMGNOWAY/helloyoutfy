@@ -5998,14 +5998,12 @@ class UnifiedLyricsManager {
         this.amBarTimer = null;
         this.amFontScale = Math.max(0.7, Math.min(1.8, Number(localStorage.getItem('youtifiy_lyrics_fontscale')) || 1));
         this.amFocus = localStorage.getItem('youtifiy_lyrics_focus') === '1';
-        this.amAmbient = localStorage.getItem('youtifiy_lyrics_ambient') === '1';
-        this.amTabTitle = localStorage.getItem('youtifiy_lyrics_tabtitle') === '1';
+        this.amAmbient = true;       // cover glow is part of the normal lyrics view now
         this.amMenu = null; this.amSearch = null; this.amGlow = null;
-        this._searchHits = []; this._searchSel = 0; this._searchMode = 'search'; this._origTitle = null;
-        this.amFade = localStorage.getItem('youtifiy_lyrics_fade') === '1';
+        this._searchHits = []; this._searchSel = 0;
+        this.amFade = true;          // so is the edge fade
         this.amSpacing = [0.6, 1, 1.6].includes(Number(localStorage.getItem('youtifiy_lyrics_spacing'))) ? Number(localStorage.getItem('youtifiy_lyrics_spacing')) : 1;
-        this.amStep = false;         // pause-after-each-line practice mode (per session, not remembered)
-        this._stepLast = null; this._syncPick = false;
+
         this._lastAmT = null;        // last time value pushed into <am-lyrics>, skips redundant updates
         this.fetchingKey = null;
         this.pendingTrackChange = false;
@@ -6157,9 +6155,9 @@ class UnifiedLyricsManager {
         if (playerTitle) observer.observe(playerTitle, { childList: true });
         this.startLyricsSync();
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
-        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); this.updateTabTitle(); } }, 400);
+        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); } }, 400);
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
-        audio.addEventListener('seeked', () => { this._stepLast = null; this.handleTimeUpdate(); });
+        audio.addEventListener('seeked', () => this.handleTimeUpdate());
         audio.addEventListener('play', () => this.handleTimeUpdate());
         audio.addEventListener('loadedmetadata', () => {
             this.songDuration = audio.duration || 0;
@@ -6752,11 +6750,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             );
             const timestampMs = Number(event.detail?.timestamp ?? clickedLine?.dataset?.startTime);
             if (!Number.isFinite(timestampMs) || timestampMs < 0) return;
-            if (this._syncPick) {
-                this._syncPick = false; el.style.cursor = '';
-                this.setOffsetFromLine(timestampMs);
-                return;
-            }
             if (this.amLoop) this.setLoopToTs(timestampMs);
             const duration = Number(audio.duration);
             const seconds = (timestampMs + (this.amOffsetMs || 0)) / 1000;
@@ -7091,19 +7084,12 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             case 'focus':     this.toggleFocus(); break;
             case 'copy':      this.copyLyrics(); break;
             case 'more':      this.toggleAmMenu(); return;
-            case 'ambient':   this.toggleAmbient(); break;
-            case 'tabtitle':  this.toggleTabTitle(); break;
-            case 'search':    this.openAmSearch('search'); break;
-            case 'saved':     this.openAmSearch('saved'); break;
-            case 'bookmark':  this.toggleBookmark(); break;
-            case 'fade':      this.toggleFade(); break;
-            case 'step':      this.toggleStep(); break;
+            case 'search':    if (this.amSearch?.classList.contains('open')) this.closeAmSearch(); else this.openAmSearch(); break;
             case 'spacing':   this.cycleSpacing(); return;
-            case 'fixsync':   this.startFixSync(); break;
             case 'share':     this.shareLineCard(null); break;
             case 'lrc':       this.exportLrc(); break;
         }
-        if (['ambient', 'tabtitle', 'fade', 'step', 'fixsync', 'bookmark', 'saved', 'search', 'share', 'lrc'].includes(act)) this.closeAmMenu();
+        if (['search', 'share', 'lrc'].includes(act)) this.closeAmMenu();
     }
     refreshAmBar() {
         const bar = this.amBar;
@@ -7113,10 +7099,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (val) val.textContent = `${v > 0 ? '+' : ''}${v.toFixed(1)}s`;
         bar.querySelector('[data-act="loop"]')?.classList.toggle('on', !!this.amLoop);
         bar.querySelector('[data-act="focus"]')?.classList.toggle('on', !!this.amFocus);
-        this.amMenu?.querySelector('[data-act="ambient"]')?.classList.toggle('on', !!this.amAmbient);
-        this.amMenu?.querySelector('[data-act="tabtitle"]')?.classList.toggle('on', !!this.amTabTitle);
-        this.amMenu?.querySelector('[data-act="fade"]')?.classList.toggle('on', !!this.amFade);
-        this.amMenu?.querySelector('[data-act="step"]')?.classList.toggle('on', !!this.amStep);
+        this.amMenu?.querySelector('[data-act="search"]')?.classList.toggle('on', !!this.amSearch?.classList.contains('open'));
         const sl = this.amMenu?.querySelector('.yl-sp-label');
         if (sl) sl.textContent = 'Spacing: ' + ({ 0.6: 'Compact', 1: 'Normal', 1.6: 'Airy' }[this.amSpacing] || 'Normal');
     }
@@ -7232,16 +7215,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const menu = document.createElement('div');
         menu.className = 'yl-menu';
         menu.innerHTML = `
-          <button data-act="ambient"><span>Album glow</span><i class="yl-chk"></i></button>
-          <button data-act="tabtitle"><span>Lyric in tab title</span><i class="yl-chk"></i></button>
-          <button data-act="fade"><span>Fade edges</span><i class="yl-chk"></i></button>
-          <button data-act="step"><span>Pause after each line</span><i class="yl-chk"></i></button>
           <button data-act="spacing"><span class="yl-sp-label">Spacing: Normal</span></button>
-          <hr>
-          <button data-act="fixsync"><span>Fix sync (click the line you hear)</span></button>
-          <button data-act="bookmark"><span>Save / unsave this line</span></button>
-          <button data-act="saved"><span>Saved lines</span></button>
-          <button data-act="search"><span>Search lyrics</span></button>
+          <button data-act="search"><span>Search lyrics</span><i class="yl-chk"></i></button>
           <hr>
           <button data-act="share"><span>Save line as image</span></button>
           <button data-act="lrc"><span>Export .lrc</span></button>`;
@@ -7346,48 +7321,17 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         glow.style.background = `radial-gradient(130% 90% at 50% -10%, rgba(${c},.42), rgba(${c},.12) 45%, transparent 75%)`;
         glow.style.opacity = '1';
     }
-    toggleAmbient() {
-        this.amAmbient = !this.amAmbient;
-        this.setPref('youtifiy_lyrics_ambient', this.amAmbient);
-        this.applyAmbient(queue?.[currentTrackIndex]);
-        this.refreshAmBar();
-    }
-    // ---- current lyric in the browser tab title ----
-    toggleTabTitle() {
-        this.amTabTitle = !this.amTabTitle;
-        this.setPref('youtifiy_lyrics_tabtitle', this.amTabTitle);
-        if (this.amTabTitle) this.updateTabTitle(); else this.restoreTabTitle();
-        this.refreshAmBar();
-    }
-    updateTabTitle() {
-        if (!this.amTabTitle) return;
-        const lines = this.parsedLines || [];
-        let text = '';
-        if (this.amActive && this.currentSource === 'amlyrics' && !audio.paused && lines.length) {
-            text = lines[this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0))]?.text || '';
-        }
-        if (text) {
-            const cur = document.title;
-            if (!cur.startsWith('\u266A ')) this._origTitle = cur;
-            const nt = '\u266A ' + text;
-            if (cur !== nt) document.title = nt;
-        } else this.restoreTabTitle();
-    }
-    restoreTabTitle() {
-        if (document.title.startsWith('\u266A ') && this._origTitle != null) document.title = this._origTitle;
-    }
     // ---- search ----
-    openAmSearch(mode = 'search') {
-        if (!(this.parsedLines || []).length) { toast('No synced lyrics here yet'); return; }
-        this._searchMode = mode;
+    openAmSearch() {
+        if (!(this.parsedLines || []).length) { toast('No synced lyrics to search'); return; }
         const inp = this.amSearch.querySelector('input');
-        inp.placeholder = mode === 'saved' ? 'Filter saved lines...' : 'Search lyrics...';
         this.amSearch.classList.add('open');
         inp.value = '';
         this.runAmSearch('');
+        this.refreshAmBar();
         setTimeout(() => inp.focus(), 30);
     }
-    closeAmSearch() { this.amSearch?.classList.remove('open'); }
+    closeAmSearch() { this.amSearch?.classList.remove('open'); this.refreshAmBar(); }
     markAmSearchSel() {
         this.amSearch?.querySelectorAll('.yl-search-results button').forEach((b, i) => b.classList.toggle('sel', i === this._searchSel));
     }
@@ -7395,35 +7339,28 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const box = this.amSearch.querySelector('.yl-search-results');
         box.textContent = '';
         this._searchHits = []; this._searchSel = 0;
-        const saved = this._searchMode === 'saved';
         const norm = v => String(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         const nq = norm(q).trim();
-        if (!nq && !saved) return;
+        if (!nq) return;
         const lines = this.parsedLines || [];
-        const savedStarts = saved ? this.savedForTrack(queue?.[currentTrackIndex]) : null;
-        for (let i = 0; i < lines.length && this._searchHits.length < (saved ? 30 : 8); i++) {
+        for (let i = 0; i < lines.length && this._searchHits.length < 8; i++) {
             const text = lines[i].text;
-            if (saved && !savedStarts.some(v => Math.abs(v - lines[i].startMs) < 5)) continue;
             const nt = norm(text);
-            const mi = nq ? nt.indexOf(nq) : -1;
-            if (nq && mi < 0) continue;
+            const mi = nt.indexOf(nq);
+            if (mi < 0) continue;
             this._searchHits.push(i);
             const b = document.createElement('button');
             b.type = 'button'; b.dataset.i = String(i);
             const t = document.createElement('span'); t.className = 't'; t.textContent = this.fmtMs(lines[i].startMs);
             const tx = document.createElement('span');
-            if (nq && nt.length === text.length) {
+            if (nt.length === text.length) {
                 const m = document.createElement('mark'); m.textContent = text.slice(mi, mi + nq.length);
                 tx.append(text.slice(0, mi), m, text.slice(mi + nq.length));
             } else tx.textContent = text;
             b.append(t, tx);
             box.appendChild(b);
         }
-        if (!this._searchHits.length) {
-            const e = document.createElement('div'); e.className = 'yl-empty';
-            e.textContent = saved && !nq ? 'No saved lines for this song yet' : 'No matches';
-            box.appendChild(e);
-        }
+        if (!this._searchHits.length) { const e = document.createElement('div'); e.className = 'yl-empty'; e.textContent = 'No matches'; box.appendChild(e); }
         this.markAmSearchSel();
     }
     pickAmSearch(i) {
@@ -7513,19 +7450,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         toast('Line card saved');
     }
 
-    // ================= round 3: fade edges, step mode, spacing, fix sync, saved lines =================
-    toggleFade() {
-        this.amFade = !this.amFade;
-        this.setPref('youtifiy_lyrics_fade', this.amFade);
-        this.applyAmFocus();
-        this.refreshAmBar();
-    }
-    toggleStep() {
-        this.amStep = !this.amStep;
-        this._stepLast = null;
-        this.refreshAmBar();
-        toast(this.amStep ? 'Pausing at the start of each line, press play to continue' : 'Step mode off');
-    }
+    // ---- line spacing (menu cycles compact / normal / airy) ----
     cycleSpacing() {
         const vals = [0.6, 1, 1.6];
         this.amSpacing = vals[(vals.indexOf(this.amSpacing) + 1) % vals.length];
@@ -7533,47 +7458,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const host = this.amEl?.parentElement;
         if (host) { this.styleAmForHost(host); this.jumpAmToCurrentLine(); }
         this.refreshAmBar();
-    }
-    // click the line you're actually hearing and the offset is worked out for you
-    startFixSync() {
-        if (!this.amActive || this.currentSource !== 'amlyrics') { toast('Fix sync only works on am-lyrics'); return; }
-        this._syncPick = !this._syncPick;
-        if (this.amEl) this.amEl.style.cursor = this._syncPick ? 'crosshair' : '';
-        toast(this._syncPick ? 'Click the line being sung right now' : 'Fix sync cancelled');
-    }
-    setOffsetFromLine(ts) {
-        const target = Math.max(-10000, Math.min(10000, Math.round(audio.currentTime * 1000 - ts)));
-        const delta = target - (this.amOffsetMs || 0);
-        if (!delta) { toast('Already in sync'); return; }
-        this.nudgeOffset(delta);
-        toast(`Synced (offset ${(target / 1000).toFixed(1)}s)`);
-    }
-    // ---- saved lines (per song, stored by line start time) ----
-    getSavedStore() {
-        try { return JSON.parse(localStorage.getItem('youtifiy_lyrics_saved') || '{}') || {}; } catch (e) { return {}; }
-    }
-    savedForTrack(track) {
-        if (!track) return [];
-        const a = this.getSavedStore()[this.getLyricsTrackId(track)];
-        return Array.isArray(a) ? a : [];
-    }
-    toggleBookmark() {
-        const track = queue?.[currentTrackIndex];
-        const lines = this.parsedLines || [];
-        const idx = this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0));
-        if (!track || idx < 0 || !lines[idx]) { toast('Play a line first, then save it'); return; }
-        const store = this.getSavedStore();
-        const id = this.getLyricsTrackId(track);
-        const list = Array.isArray(store[id]) ? store[id] : [];
-        const st = lines[idx].startMs;
-        const at = list.findIndex(v => Math.abs(v - st) < 5);
-        if (at >= 0) { list.splice(at, 1); toast('Line removed from saved'); }
-        else { list.push(st); list.sort((x, y) => x - y); toast('Line saved'); }
-        delete store[id];
-        if (list.length) store[id] = list; // re-added last so the oldest songs get trimmed first
-        const keys = Object.keys(store);
-        if (keys.length > 100) keys.slice(0, keys.length - 100).forEach(k => delete store[k]);
-        try { localStorage.setItem('youtifiy_lyrics_saved', JSON.stringify(store)); } catch (e) {}
     }
 
     // am-lyrics lines -> the app's own {text,startMs,durMs} shape (used by PiP / seek / current line)
@@ -7686,9 +7570,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     exitAm() {
         this.amLoop = null;
         this.amUiEls().forEach(n => n.remove());
-        this.restoreTabTitle();
-        this._syncPick = false; this._stepLast = null;
-        if (this.amEl) this.amEl.style.cursor = '';
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
         this.amActive = false;
         this.amTrackKey = null;
@@ -7715,16 +7596,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         if (!this.isOpen || !this.parsedLines?.length) return;
         const ms = audio.currentTime * 1000 - off;
-        if (this.amStep && this.currentSource === 'amlyrics' && !audio.paused) {
-            const si = this.lineIndexAtMs(ms);
-            if (this._stepLast === null) this._stepLast = si;
-            else if (si - this._stepLast === 1 && ms - this.parsedLines[si].startMs < 800) {
-                // the next line just started on its own: stop right on its first beat, press play to go
-                this._stepLast = si;
-                audio.currentTime = (this.parsedLines[si].startMs + off) / 1000;
-                if (typeof PlayerController?.toggle === 'function') PlayerController.toggle(); else audio.pause();
-            } else this._stepLast = si;
-        }
         let newIndex = -1;
         for (let i = 0; i < this.parsedLines.length; i++) {
             const { startMs, durMs } = this.parsedLines[i];
@@ -7747,7 +7618,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
 
     highlightLine(index) {
-        if (this.currentSource === 'amlyrics') { this.currentLineIndex = index; this.updateTabTitle(); return; }
+        if (this.currentSource === 'amlyrics') { this.currentLineIndex = index; return; }
         if (this.currentSource !== 'spotify' && this.currentSource !== 'musix') return;
         const allLines = document.querySelectorAll('.lyrics-line');
         allLines.forEach(el => {
