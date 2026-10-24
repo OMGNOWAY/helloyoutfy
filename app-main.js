@@ -5998,11 +5998,14 @@ class UnifiedLyricsManager {
         this.amBarTimer = null;
         this.amFontScale = Math.max(0.7, Math.min(1.8, Number(localStorage.getItem('youtifiy_lyrics_fontscale')) || 1));
         this.amFocus = localStorage.getItem('youtifiy_lyrics_focus') === '1';
-        this.amKaraoke = localStorage.getItem('youtifiy_lyrics_karaoke') === '1';
         this.amAmbient = localStorage.getItem('youtifiy_lyrics_ambient') === '1';
         this.amTabTitle = localStorage.getItem('youtifiy_lyrics_tabtitle') === '1';
-        this.amMenu = null; this.amSearch = null; this.amGlow = null; this.amKaraokeEl = null; this._k = null;
-        this._karaokeIdx = null; this._searchHits = []; this._searchSel = 0; this._origTitle = null;
+        this.amMenu = null; this.amSearch = null; this.amGlow = null;
+        this._searchHits = []; this._searchSel = 0; this._searchMode = 'search'; this._origTitle = null;
+        this.amFade = localStorage.getItem('youtifiy_lyrics_fade') === '1';
+        this.amSpacing = [0.6, 1, 1.6].includes(Number(localStorage.getItem('youtifiy_lyrics_spacing'))) ? Number(localStorage.getItem('youtifiy_lyrics_spacing')) : 1;
+        this.amStep = false;         // pause-after-each-line practice mode (per session, not remembered)
+        this._stepLast = null; this._syncPick = false;
         this._lastAmT = null;        // last time value pushed into <am-lyrics>, skips redundant updates
         this.fetchingKey = null;
         this.pendingTrackChange = false;
@@ -6154,9 +6157,9 @@ class UnifiedLyricsManager {
         if (playerTitle) observer.observe(playerTitle, { childList: true });
         this.startLyricsSync();
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
-        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); this.updateKaraoke(); this.updateTabTitle(); } }, 400);
+        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); this.updateTabTitle(); } }, 400);
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
-        audio.addEventListener('seeked', () => this.handleTimeUpdate());
+        audio.addEventListener('seeked', () => { this._stepLast = null; this.handleTimeUpdate(); });
         audio.addEventListener('play', () => this.handleTimeUpdate());
         audio.addEventListener('loadedmetadata', () => {
             this.songDuration = audio.duration || 0;
@@ -6749,6 +6752,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             );
             const timestampMs = Number(event.detail?.timestamp ?? clickedLine?.dataset?.startTime);
             if (!Number.isFinite(timestampMs) || timestampMs < 0) return;
+            if (this._syncPick) {
+                this._syncPick = false; el.style.cursor = '';
+                this.setOffsetFromLine(timestampMs);
+                return;
+            }
             if (this.amLoop) this.setLoopToTs(timestampMs);
             const duration = Number(audio.duration);
             const seconds = (timestampMs + (this.amOffsetMs || 0)) / 1000;
@@ -6822,6 +6830,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             transition: opacity .35s ease, filter .35s ease;
           }
           :host([data-yl-focus]) .lyrics-line:not(.active):hover { opacity: 0.75; filter: none; }
+          /* fade edges (menu toggle): lines melt away at the top and bottom */
+          :host([data-yl-fade]) .lyrics-container {
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
+          }
         `;
         root.appendChild(style);
     }
@@ -6984,7 +6997,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
           .yl-host > am-lyrics { position: relative; z-index: 1; }
           .yl-glow { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .9s ease; }
           .yl-menu {
-            position: absolute; top: 46px; right: 8px; z-index: 8; min-width: 190px; padding: 6px; display: none;
+            position: absolute; top: 46px; right: 8px; z-index: 8; min-width: 190px; padding: 6px; display: none; max-height: calc(100% - 56px); overflow-y: auto;
             border-radius: 14px; background: rgba(18,18,18,.84); border: 1px solid rgba(255,255,255,.1);
             backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 28px rgba(0,0,0,.45);
           }
@@ -6998,18 +7011,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
           .yl-menu .yl-chk { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.22); transition: background .15s ease, box-shadow .15s ease; }
           .yl-menu button.on .yl-chk { background: var(--accent, #ff3b3b); box-shadow: 0 0 8px var(--accent, #ff3b3b); }
           .yl-menu hr { border: 0; height: 1px; background: rgba(255,255,255,.1); margin: 4px 6px; }
-          .yl-karaoke {
-            position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 4; display: none; overflow: hidden;
-            flex-direction: column; align-items: center; justify-content: center; text-align: center;
-            gap: clamp(10px, 3vh, 26px); padding: 28px 22px; background: rgba(10,10,10,.86);
-            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-          }
-          .yl-karaoke.show { display: flex; }
-          .yl-k-prev, .yl-k-next { font-size: calc(clamp(13px, 1.6vw, 20px) * var(--yl-scale, 1)); opacity: .38; max-width: 92%; line-height: 1.3; color: var(--text-primary, #fff); min-height: 1.3em; }
-          .yl-k-cur { font-size: calc(clamp(24px, 4.2vw, 52px) * var(--yl-scale, 1)); font-weight: 800; line-height: 1.18; max-width: 94%; color: var(--text-primary, #fff); text-wrap: balance; }
-          .yl-k-cur.swap { animation: ylk-in .35s ease; }
-          @keyframes ylk-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
-          .yl-k-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; transform-origin: left; transform: scaleX(0); background: var(--accent, #ff3b3b); }
           .yl-search {
             position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9; display: none; flex-direction: column; gap: 6px; padding: 8px;
             border-radius: 14px; background: rgba(18,18,18,.9); border: 1px solid rgba(255,255,255,.1);
@@ -7072,7 +7073,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
         host.classList.add('yl-host');
         if (this.amEl.parentElement === host) host.insertBefore(this.amGlow, this.amEl); else host.appendChild(this.amGlow);
-        host.appendChild(this.amKaraokeEl);
         host.appendChild(bar);
         host.appendChild(this.amJump);
         host.appendChild(this.amMenu);
@@ -7091,14 +7091,19 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             case 'focus':     this.toggleFocus(); break;
             case 'copy':      this.copyLyrics(); break;
             case 'more':      this.toggleAmMenu(); return;
-            case 'karaoke':   this.toggleKaraoke(); break;
             case 'ambient':   this.toggleAmbient(); break;
             case 'tabtitle':  this.toggleTabTitle(); break;
-            case 'search':    this.openAmSearch(); break;
+            case 'search':    this.openAmSearch('search'); break;
+            case 'saved':     this.openAmSearch('saved'); break;
+            case 'bookmark':  this.toggleBookmark(); break;
+            case 'fade':      this.toggleFade(); break;
+            case 'step':      this.toggleStep(); break;
+            case 'spacing':   this.cycleSpacing(); return;
+            case 'fixsync':   this.startFixSync(); break;
             case 'share':     this.shareLineCard(null); break;
             case 'lrc':       this.exportLrc(); break;
         }
-        if (['karaoke', 'ambient', 'tabtitle', 'search', 'share', 'lrc'].includes(act)) this.closeAmMenu();
+        if (['ambient', 'tabtitle', 'fade', 'step', 'fixsync', 'bookmark', 'saved', 'search', 'share', 'lrc'].includes(act)) this.closeAmMenu();
     }
     refreshAmBar() {
         const bar = this.amBar;
@@ -7108,10 +7113,12 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (val) val.textContent = `${v > 0 ? '+' : ''}${v.toFixed(1)}s`;
         bar.querySelector('[data-act="loop"]')?.classList.toggle('on', !!this.amLoop);
         bar.querySelector('[data-act="focus"]')?.classList.toggle('on', !!this.amFocus);
-        this.amMenu?.querySelector('[data-act="karaoke"]')?.classList.toggle('on', !!this.amKaraoke);
         this.amMenu?.querySelector('[data-act="ambient"]')?.classList.toggle('on', !!this.amAmbient);
         this.amMenu?.querySelector('[data-act="tabtitle"]')?.classList.toggle('on', !!this.amTabTitle);
-        this.amKaraokeEl?.style.setProperty('--yl-scale', String(this.amFontScale || 1));
+        this.amMenu?.querySelector('[data-act="fade"]')?.classList.toggle('on', !!this.amFade);
+        this.amMenu?.querySelector('[data-act="step"]')?.classList.toggle('on', !!this.amStep);
+        const sl = this.amMenu?.querySelector('.yl-sp-label');
+        if (sl) sl.textContent = 'Spacing: ' + ({ 0.6: 'Compact', 1: 'Normal', 1.6: 'Airy' }[this.amSpacing] || 'Normal');
     }
     // pops the toolbar open for a moment (keyboard nudges, toggles) even when the mouse isn't over it
     flashAmBar() {
@@ -7144,7 +7151,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this.flashAmBar();
     }
     applyAmFocus() {
-        if (this.amEl) this.amEl.toggleAttribute('data-yl-focus', !!this.amFocus);
+        if (!this.amEl) return;
+        this.amEl.toggleAttribute('data-yl-focus', !!this.amFocus);
+        this.amEl.toggleAttribute('data-yl-fade', !!this.amFade);
     }
     toggleFocus() {
         this.amFocus = !this.amFocus;
@@ -7192,8 +7201,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
     }
 
-    // ================= more extras: karaoke, album glow, search, share card, .lrc, tab title =================
-    amUiEls() { return [this.amGlow, this.amKaraokeEl, this.amBar, this.amJump, this.amMenu, this.amSearch].filter(Boolean); }
+    // ================= more extras: album glow, search, share card, .lrc, tab title =================
+    amUiEls() { return [this.amGlow, this.amBar, this.amJump, this.amMenu, this.amSearch].filter(Boolean); }
     setPref(key, on) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {} }
     fmtMs(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
     safeName(v) { return String(v || 'lyrics').replace(/[\\\/:*?"<>|]+/g, '').trim() || 'lyrics'; }
@@ -7220,19 +7229,20 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const glow = document.createElement('div');
         glow.className = 'yl-glow';
 
-        const k = document.createElement('div');
-        k.className = 'yl-karaoke';
-        k.innerHTML = `<div class="yl-k-prev"></div><div class="yl-k-cur"></div><div class="yl-k-next"></div><div class="yl-k-bar"></div>`;
-        this._k = { prev: k.querySelector('.yl-k-prev'), cur: k.querySelector('.yl-k-cur'), next: k.querySelector('.yl-k-next'), bar: k.querySelector('.yl-k-bar') };
-
         const menu = document.createElement('div');
         menu.className = 'yl-menu';
         menu.innerHTML = `
-          <button data-act="karaoke"><span>Karaoke mode</span><i class="yl-chk"></i></button>
           <button data-act="ambient"><span>Album glow</span><i class="yl-chk"></i></button>
           <button data-act="tabtitle"><span>Lyric in tab title</span><i class="yl-chk"></i></button>
+          <button data-act="fade"><span>Fade edges</span><i class="yl-chk"></i></button>
+          <button data-act="step"><span>Pause after each line</span><i class="yl-chk"></i></button>
+          <button data-act="spacing"><span class="yl-sp-label">Spacing: Normal</span></button>
           <hr>
+          <button data-act="fixsync"><span>Fix sync (click the line you hear)</span></button>
+          <button data-act="bookmark"><span>Save / unsave this line</span></button>
+          <button data-act="saved"><span>Saved lines</span></button>
           <button data-act="search"><span>Search lyrics</span></button>
+          <hr>
           <button data-act="share"><span>Save line as image</span></button>
           <button data-act="lrc"><span>Export .lrc</span></button>`;
         menu.addEventListener('click', e => {
@@ -7265,7 +7275,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (b) this.pickAmSearch(Number(b.dataset.i));
         });
 
-        this.amGlow = glow; this.amKaraokeEl = k; this.amMenu = menu; this.amSearch = sp;
+        this.amGlow = glow; this.amMenu = menu; this.amSearch = sp;
         if (!this._amDocClick) {
             this._amDocClick = true;
             document.addEventListener('click', e => {
@@ -7284,39 +7294,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     closeAmMenu() {
         this.amMenu?.classList.remove('open');
         this.amBar?.classList.remove('show');
-    }
-    // ---- karaoke: big current line + prev/next, progress bar along the bottom ----
-    toggleKaraoke() {
-        this.amKaraoke = !this.amKaraoke;
-        this.setPref('youtifiy_lyrics_karaoke', this.amKaraoke);
-        this._karaokeIdx = null;
-        this.updateKaraoke();
-        this.refreshAmBar();
-    }
-    updateKaraoke() {
-        const k = this.amKaraokeEl, r = this._k;
-        if (!k || !r) return;
-        const lines = this.parsedLines || [];
-        const on = !!this.amKaraoke && this.amActive && this.currentSource === 'amlyrics' && lines.length > 0;
-        k.classList.toggle('show', on);
-        if (!on) return;
-        const off = this.amOffsetMs || 0;
-        const ms = audio.currentTime * 1000 - off;
-        const idx = this.lineIndexAtMs(ms);
-        if (idx !== this._karaokeIdx || this._karaokeLines !== lines) {
-            this._karaokeIdx = idx; this._karaokeLines = lines;
-            r.prev.textContent = lines[idx - 1]?.text || '';
-            r.cur.textContent = lines[idx]?.text || '\u266A';
-            r.next.textContent = lines[idx + 1]?.text || '';
-            r.cur.classList.remove('swap'); void r.cur.offsetWidth; r.cur.classList.add('swap');
-        }
-        const cur = lines[idx];
-        if (cur) {
-            const next = lines[idx + 1];
-            const end = next ? next.startMs : cur.startMs + (cur.durMs || 3000);
-            const frac = Math.max(0, Math.min(1, (ms - cur.startMs) / Math.max(1, end - cur.startMs)));
-            r.bar.style.transform = `scaleX(${frac})`;
-        } else r.bar.style.transform = 'scaleX(0)';
     }
     // ---- album glow: soft tint from the cover behind the lyrics ----
     loadImageCors(url) {
@@ -7400,9 +7377,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (document.title.startsWith('\u266A ') && this._origTitle != null) document.title = this._origTitle;
     }
     // ---- search ----
-    openAmSearch() {
-        if (!(this.parsedLines || []).length) { toast('No synced lyrics to search'); return; }
+    openAmSearch(mode = 'search') {
+        if (!(this.parsedLines || []).length) { toast('No synced lyrics here yet'); return; }
+        this._searchMode = mode;
         const inp = this.amSearch.querySelector('input');
+        inp.placeholder = mode === 'saved' ? 'Filter saved lines...' : 'Search lyrics...';
         this.amSearch.classList.add('open');
         inp.value = '';
         this.runAmSearch('');
@@ -7416,28 +7395,35 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const box = this.amSearch.querySelector('.yl-search-results');
         box.textContent = '';
         this._searchHits = []; this._searchSel = 0;
+        const saved = this._searchMode === 'saved';
         const norm = v => String(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         const nq = norm(q).trim();
-        if (!nq) return;
+        if (!nq && !saved) return;
         const lines = this.parsedLines || [];
-        for (let i = 0; i < lines.length && this._searchHits.length < 8; i++) {
+        const savedStarts = saved ? this.savedForTrack(queue?.[currentTrackIndex]) : null;
+        for (let i = 0; i < lines.length && this._searchHits.length < (saved ? 30 : 8); i++) {
             const text = lines[i].text;
+            if (saved && !savedStarts.some(v => Math.abs(v - lines[i].startMs) < 5)) continue;
             const nt = norm(text);
-            const mi = nt.indexOf(nq);
-            if (mi < 0) continue;
+            const mi = nq ? nt.indexOf(nq) : -1;
+            if (nq && mi < 0) continue;
             this._searchHits.push(i);
             const b = document.createElement('button');
             b.type = 'button'; b.dataset.i = String(i);
             const t = document.createElement('span'); t.className = 't'; t.textContent = this.fmtMs(lines[i].startMs);
             const tx = document.createElement('span');
-            if (nt.length === text.length) {
+            if (nq && nt.length === text.length) {
                 const m = document.createElement('mark'); m.textContent = text.slice(mi, mi + nq.length);
                 tx.append(text.slice(0, mi), m, text.slice(mi + nq.length));
             } else tx.textContent = text;
             b.append(t, tx);
             box.appendChild(b);
         }
-        if (!this._searchHits.length) { const e = document.createElement('div'); e.className = 'yl-empty'; e.textContent = 'No matches'; box.appendChild(e); }
+        if (!this._searchHits.length) {
+            const e = document.createElement('div'); e.className = 'yl-empty';
+            e.textContent = saved && !nq ? 'No saved lines for this song yet' : 'No matches';
+            box.appendChild(e);
+        }
         this.markAmSearchSel();
     }
     pickAmSearch(i) {
@@ -7527,6 +7513,69 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         toast('Line card saved');
     }
 
+    // ================= round 3: fade edges, step mode, spacing, fix sync, saved lines =================
+    toggleFade() {
+        this.amFade = !this.amFade;
+        this.setPref('youtifiy_lyrics_fade', this.amFade);
+        this.applyAmFocus();
+        this.refreshAmBar();
+    }
+    toggleStep() {
+        this.amStep = !this.amStep;
+        this._stepLast = null;
+        this.refreshAmBar();
+        toast(this.amStep ? 'Pausing at the start of each line, press play to continue' : 'Step mode off');
+    }
+    cycleSpacing() {
+        const vals = [0.6, 1, 1.6];
+        this.amSpacing = vals[(vals.indexOf(this.amSpacing) + 1) % vals.length];
+        try { localStorage.setItem('youtifiy_lyrics_spacing', String(this.amSpacing)); } catch (e) {}
+        const host = this.amEl?.parentElement;
+        if (host) { this.styleAmForHost(host); this.jumpAmToCurrentLine(); }
+        this.refreshAmBar();
+    }
+    // click the line you're actually hearing and the offset is worked out for you
+    startFixSync() {
+        if (!this.amActive || this.currentSource !== 'amlyrics') { toast('Fix sync only works on am-lyrics'); return; }
+        this._syncPick = !this._syncPick;
+        if (this.amEl) this.amEl.style.cursor = this._syncPick ? 'crosshair' : '';
+        toast(this._syncPick ? 'Click the line being sung right now' : 'Fix sync cancelled');
+    }
+    setOffsetFromLine(ts) {
+        const target = Math.max(-10000, Math.min(10000, Math.round(audio.currentTime * 1000 - ts)));
+        const delta = target - (this.amOffsetMs || 0);
+        if (!delta) { toast('Already in sync'); return; }
+        this.nudgeOffset(delta);
+        toast(`Synced (offset ${(target / 1000).toFixed(1)}s)`);
+    }
+    // ---- saved lines (per song, stored by line start time) ----
+    getSavedStore() {
+        try { return JSON.parse(localStorage.getItem('youtifiy_lyrics_saved') || '{}') || {}; } catch (e) { return {}; }
+    }
+    savedForTrack(track) {
+        if (!track) return [];
+        const a = this.getSavedStore()[this.getLyricsTrackId(track)];
+        return Array.isArray(a) ? a : [];
+    }
+    toggleBookmark() {
+        const track = queue?.[currentTrackIndex];
+        const lines = this.parsedLines || [];
+        const idx = this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0));
+        if (!track || idx < 0 || !lines[idx]) { toast('Play a line first, then save it'); return; }
+        const store = this.getSavedStore();
+        const id = this.getLyricsTrackId(track);
+        const list = Array.isArray(store[id]) ? store[id] : [];
+        const st = lines[idx].startMs;
+        const at = list.findIndex(v => Math.abs(v - st) < 5);
+        if (at >= 0) { list.splice(at, 1); toast('Line removed from saved'); }
+        else { list.push(st); list.sort((x, y) => x - y); toast('Line saved'); }
+        delete store[id];
+        if (list.length) store[id] = list; // re-added last so the oldest songs get trimmed first
+        const keys = Object.keys(store);
+        if (keys.length > 100) keys.slice(0, keys.length - 100).forEach(k => delete store[k]);
+        try { localStorage.setItem('youtifiy_lyrics_saved', JSON.stringify(store)); } catch (e) {}
+    }
+
     // am-lyrics lines -> the app's own {text,startMs,durMs} shape (used by PiP / seek / current line)
     amLinesToParsed(lines) {
         return lines.filter(l => l && !l.background).map(l => {
@@ -7613,7 +7662,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const embedded = host.id === 'playerEmbedLyricsContent';
         const baseSize = fullScreen ? 'clamp(24px, 3vw, 40px)' : embedded ? '17px' : '20px';
         const size = `calc(${baseSize} * ${this.amFontScale || 1})`;
-        const spacing = fullScreen ? '18px' : '10px';
+        const spacing = `calc(${fullScreen ? '18px' : '10px'} * ${this.amSpacing || 1})`;
         const style = this.amEl.style;
         this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
         // Keep the word-wipe contrast explicit: pending words use muted text,
@@ -7638,7 +7687,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this.amLoop = null;
         this.amUiEls().forEach(n => n.remove());
         this.restoreTabTitle();
-        this._karaokeIdx = null;
+        this._syncPick = false; this._stepLast = null;
+        if (this.amEl) this.amEl.style.cursor = '';
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
         this.amActive = false;
         this.amTrackKey = null;
@@ -7665,7 +7715,16 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         if (!this.isOpen || !this.parsedLines?.length) return;
         const ms = audio.currentTime * 1000 - off;
-        if (this.amKaraoke) this.updateKaraoke();
+        if (this.amStep && this.currentSource === 'amlyrics' && !audio.paused) {
+            const si = this.lineIndexAtMs(ms);
+            if (this._stepLast === null) this._stepLast = si;
+            else if (si - this._stepLast === 1 && ms - this.parsedLines[si].startMs < 800) {
+                // the next line just started on its own: stop right on its first beat, press play to go
+                this._stepLast = si;
+                audio.currentTime = (this.parsedLines[si].startMs + off) / 1000;
+                if (typeof PlayerController?.toggle === 'function') PlayerController.toggle(); else audio.pause();
+            } else this._stepLast = si;
+        }
         let newIndex = -1;
         for (let i = 0; i < this.parsedLines.length; i++) {
             const { startMs, durMs } = this.parsedLines[i];
