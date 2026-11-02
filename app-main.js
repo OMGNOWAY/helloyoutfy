@@ -6007,13 +6007,15 @@ class UnifiedLyricsManager {
         this._lastAmT = null;        // last time value pushed into <am-lyrics>, skips redundant updates
         this.fetchingKey = null;
         this.pendingTrackChange = false;
-        this.initDB().then(() => this.init());
+        this.initDB().catch(error => console.warn('Lyrics storage unavailable', error)).finally(() => this.init());
     }
     async initDB() {
         return new Promise((resolve) => {
+            const timeout = setTimeout(() => resolve(null), 2500);
             const req = indexedDB.open('YoutifiyLyricsDB', 1);
+            req.onblocked = () => resolve(null);
             req.onerror = () => { console.error('❌ Lyrics DB failed to open'); resolve(null); };
-            req.onsuccess = () => { this.db = req.result; console.log('✅ Lyrics DB opened'); resolve(this.db); };
+            req.onsuccess = () => { clearTimeout(timeout); this.db = req.result; this.db.onversionchange = () => { this.db.close(); this.db = null; }; console.log('✅ Lyrics DB opened'); resolve(this.db); };
             req.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains('lyrics')) {
@@ -6028,11 +6030,13 @@ class UnifiedLyricsManager {
 
     
     getLyricsTrackId(track) {
-      const title = String(track.title || '')
-        .replace(/\s*\((?:feat\.?|ft\.?)\s+[^)]*\)/gi, '')
-        .trim();
-      const artist = String(track.artist || '').trim();
-      return `${title}-${artist}`.replace(/[^\w\s&-]/g, '').trim();
+        // Preserve Unicode and punctuation: stripping them merges unrelated songs.
+        return JSON.stringify([String(track.title || '').normalize('NFKC').trim().toLowerCase(),
+            String(track.artist || '').normalize('NFKC').trim().toLowerCase()]);
+    }
+    isCurrentLyricsTrack(track) {
+        const current = queue[currentTrackIndex];
+        return !!current && this.getLyricsTrackId(current) === this.getLyricsTrackId(track);
     }
 
     async saveLyricsToDB(track, lyrics, source, parsedLines) {
@@ -6042,8 +6046,8 @@ class UnifiedLyricsManager {
         await new Promise((resolve, reject) => {
             const tx = this.db.transaction(['lyrics'], 'readwrite');
             const req = tx.objectStore('lyrics').put(data);
-            req.onsuccess = () => { console.log('💾 Lyrics saved to DB:', track.title); resolve(); };
-            req.onerror = () => reject(req.error);
+            tx.oncomplete = () => resolve();
+            tx.onabort = tx.onerror = () => reject(tx.error || new Error('Lyrics cache write failed'));
         });
         this.pruneLyricsDB();
     }
@@ -6086,13 +6090,13 @@ class UnifiedLyricsManager {
       const newId = `${cleanTitle}-${track.artist}`.replace(/[^\w\s&-]/g, '').trim();
       return new Promise((resolve, reject) => {
           const store = this.db.transaction(['lyrics'], 'readonly').objectStore('lyrics');
-          const req = store.get(oldId);
+          const req = store.get(this.getLyricsTrackId(track));
           req.onsuccess = () => {
               if (req.result) {
                   resolve(req.result);
                   return;
               }
-              if (newId !== oldId) {
+              if (newId !== this.getLyricsTrackId(track)) {
                   const newReq = store.get(newId);
                   newReq.onsuccess = () => resolve(newReq.result || null);
                   newReq.onerror = () => reject(newReq.error);
@@ -6140,19 +6144,26 @@ class UnifiedLyricsManager {
         }
     }
     init() {
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((m) => {
-                if (m.target.id === 'playerTitle' && m.type === 'childList') {
-                    const newTitle = m.target.textContent;
-                    if (newTitle && newTitle !== 'No track playing' && newTitle !== this.lastTrackTitle) {
-                        this.lastTrackTitle = newTitle;
-                        setTimeout(() => this.onTrackChange(), 500);
-                    }
-                }
-            });
+        let observedTrack = null;
+        const observer = new MutationObserver(() => {
+            const track = queue[currentTrackIndex];
+            const key = track ? this.getLyricsTrackId(track) : null;
+            if (key === observedTrack) return;
+            observedTrack = key;
+            this.onTrackChange().catch(error => console.warn('Lyrics track change failed', error));
         });
-        const playerTitle = document.getElementById('playerTitle');
-        if (playerTitle) observer.observe(playerTitle, { childList: true });
+        ['playerTitle', 'playerArtist'].forEach(id => {
+            const node = document.getElementById(id);
+            if (node) observer.observe(node, { childList: true, characterData: true, subtree: true });
+        });
+        document.addEventListener('wheel', event => {
+            const host = event.target.closest?.('#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent');
+            if (host) host.dataset.followAfter = String(Date.now() + 6500);
+        }, { passive: true });
+        document.addEventListener('touchmove', event => {
+            const host = event.target.closest?.('#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent');
+            if (host) host.dataset.followAfter = String(Date.now() + 6500);
+        }, { passive: true });
         this.startLyricsSync();
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
         setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); } }, 400);
@@ -6184,7 +6195,8 @@ class UnifiedLyricsManager {
                     this.currentLyrics = cached.lyrics; this.currentSource = cached.source; this.parsedLines = cached.parsedLines || [];
                     this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
                 } else {
-                    const dbData = await this.getLyricsFromDB(track);
+                    const dbData = await this.getLyricsFromDB(track).catch(() => null);
+                    if (!this.isCurrentLyricsTrack(track)) return;
                     if (dbData) {
                         this.currentLyrics = dbData.lyrics; this.currentSource = dbData.source; this.parsedLines = dbData.parsedLines || []; this.songDuration = dbData.duration || 0;
                         this.cache.set(cacheKey, dbData); this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
@@ -6199,7 +6211,7 @@ class UnifiedLyricsManager {
     async onTrackChange() {
         if (this.isFetching) {
             const t = queue[currentTrackIndex];
-            if (t && `${t.title}-${t.artist}` !== this.fetchingKey) { this.pendingTrackChange = true; this.amToken++; }
+            if (!t || `${t.title}-${t.artist}` !== this.fetchingKey) { this.pendingTrackChange = true; this.amToken++; this.lyricsAbort?.abort(); this.exitAm(); this.currentLyrics = null; this.parsedLines = []; this.currentSource = null; this.showLoading('Loading next song…'); }
             return;
         }
         const track = queue[currentTrackIndex];
@@ -6215,7 +6227,8 @@ class UnifiedLyricsManager {
             this.updateFetchButtonVisibility();
             if (this.isOpen) this.renderLyrics(); return;
         }
-        const dbData = await this.getLyricsFromDB(track);
+        const dbData = await this.getLyricsFromDB(track).catch(() => null);
+        if (!this.isCurrentLyricsTrack(track)) return;
         if (dbData) {
             this.currentLyrics = dbData.lyrics; this.currentSource = dbData.source; this.parsedLines = dbData.parsedLines || []; this.songDuration = dbData.duration || 0;
             this.cache.set(cacheKey, dbData); this.updateFetchButtonVisibility();
@@ -6229,6 +6242,7 @@ class UnifiedLyricsManager {
         if (this.isFetching) return;
         this.isFetching = true;
         this.fetchingKey = `${track.title}-${track.artist}`;
+        this.lyricsAbort = new AbortController();
         try {
             this.isLoading = true;
             this.exitAm();
@@ -6236,6 +6250,7 @@ class UnifiedLyricsManager {
             // 1) am-lyrics first (no API key needed)
             this.showLoading('Loading lyrics...');
             const amLines = await this.tryAm(track);
+            if (!this.isCurrentLyricsTrack(track)) return;
             if (amLines === null) { this.isLoading = false; return; } // superseded by a newer track
             if (amLines) {
                 console.log('✅ Using am-lyrics');
@@ -6254,12 +6269,15 @@ class UnifiedLyricsManager {
             this.showLoading('am-lyrics found nothing, searching Musix...');
             try {
                 const musixResult = await this.tryMusix(track);
+                if (!this.isCurrentLyricsTrack(track)) return;
                 if (musixResult) { console.log('✅ Using Musix lyrics'); this.currentSource = 'musix'; this.currentLyrics = musixResult; this.parsedLines = musixResult; await this.cacheAndRender(musixResult, 'musix', track); return; }
                 this.showLoading('Musix not found, trying Spotify...');
                 const spotifyResult = await this.trySpotify(track);
+                if (!this.isCurrentLyricsTrack(track)) return;
                 if (spotifyResult) { console.log('✅ Using Spotify synced lyrics'); this.currentSource = 'spotify'; await this.cacheAndRender(spotifyResult, 'spotify', track); return; }
                 this.showLoading('Musix not found, trying Genius...');
                 const geniusResult = await this.tryGenius(track);
+                if (!this.isCurrentLyricsTrack(track)) return;
                 if (geniusResult) { console.log('✅ Using Genius lyrics'); this.currentSource = 'genius'; this.currentLyrics = geniusResult; this.parseGeniusLyrics(geniusResult); await this.cacheAndRender(geniusResult, 'genius', track); return; }
                 this.showNotFound('No lyrics found on Spotify, Genius, or Musix');
             } catch (error) {
@@ -6268,8 +6286,12 @@ class UnifiedLyricsManager {
                 else if (error.message.includes('429')) this.showError('Rate Limited', 'Too many requests. Please wait');
                 else this.showError('Failed to load lyrics', error.message);
             } finally { this.isLoading = false; }
+        } catch (error) {
+            if (this.isCurrentLyricsTrack(track) && error.name !== 'AbortError') this.showError('Could not load lyrics', error.message);
         } finally {
+            this.isLoading = false;
             this.isFetching = false;
+            this.updateFetchButtonVisibility();
             if (this.pendingTrackChange) { this.pendingTrackChange = false; setTimeout(() => this.onTrackChange(), 0); }
         }
     }
@@ -6396,6 +6418,7 @@ class UnifiedLyricsManager {
     async makeApiRequest(url, host) {
         const response = await fetch(url, {
             method: 'GET',
+            signal: AbortSignal.any([this.lyricsAbort?.signal || new AbortController().signal, AbortSignal.timeout(12000)]),
             headers: {
                 'x-rapidapi-key': this.apiKey,
                 'x-rapidapi-host': host,
@@ -6680,19 +6703,17 @@ class UnifiedLyricsManager {
         lyrics = lyrics.replace(/\[[^\]]*\]/g, '');
         const lines = lyrics.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         if (!lines.length) { this.parsedLines = []; return; }
-        const avg = this.songDuration > 0 ? (this.songDuration * 0.9) / lines.length : 3;
-        this.parsedLines = lines.map((text, i) => {
-            const wc = text.split(/\s+/).length;
-            const dur = Math.max(0.8, Math.min(1.5, wc / 5));
-            return { text, startMs: ((i * avg) + (this.songDuration * 0.05)) * 1000, durMs: avg * dur * 1000, index: i };
-        });
+        this.parsedLines = lines.map((text, index) => ({ text, index, unsynced: true }));
     }
     async cacheAndRender(lyrics, source, track) {
-        const cacheKey = `${track.title}-${track.artist.split(', ')[0]}`;
+        const cacheKey = `${track.title}-${track.artist}`;
         const lines = (source === 'spotify' || source === 'musix') ? lyrics : this.parsedLines;
+        this.currentLyrics = lyrics;
         const data = { lyrics, source, parsedLines: lines };
         this.cache.set(cacheKey, data);
-        await this.saveLyricsToDB(track, lyrics, source, lines);
+        if (this.cache.size > 100) this.cache.delete(this.cache.keys().next().value);
+        await this.saveLyricsToDB(track, lyrics, source, lines).catch(error => console.warn('Lyrics could not be saved offline', error));
+        if (!this.isCurrentLyricsTrack(track)) return;
         if (source === 'spotify' || source === 'musix') this.parsedLines = lyrics;
         this.renderLyrics();
         toast(`Lyrics saved (${source})`);
@@ -6701,12 +6722,13 @@ class UnifiedLyricsManager {
         const container = document.getElementById('lyricsContent');
         if (!container) return;
         if (!this.parsedLines?.length) { this.showNotFound('No lyrics available'); return; }
-        const badge = this.currentSource === 'spotify' ? '<span style="color:var(--accent);font-size:11px;">⚡ Synced</span>' : '<span style="color:var(--text-muted);font-size:11px;"></span>';
+        const badge = ['spotify', 'musix'].includes(this.currentSource) ? '<span style="color:var(--accent);font-size:11px;">⚡ Synced</span>' : '<span style="color:var(--text-muted);font-size:11px;"></span>';
         container.innerHTML = `
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">
 <span style="font-size:12px;color:var(--text-muted);">Source: ${this.currentSource === 'spotify' ? 'Spotify' : this.currentSource === 'musix' ? 'Musix' : "Genius"}</span>${badge}
 </div>
-${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${idx}" onclick="lyricsManager.seekToLine(${idx})"><span class="moveitalittle">${this.escapeHtml(line.text)}</span></div>`).join('')}`;
+<div class="lyrics-tools"><input class="lyrics-find" type="search" placeholder="Find a line…" aria-label="Find a lyric line" oninput="lyricsManager.filterLyrics(this)"><span class="lyrics-mode">${this.currentSource === 'genius' ? 'Plain lyrics · timing unavailable' : 'Synced · click a line to seek'}</span></div>
+${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${idx}" ${this.currentSource === 'genius' ? '' : `role="button" tabindex="0" aria-label="Seek to line ${idx + 1}" onclick="lyricsManager.seekToLine(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lyricsManager.seekToLine(${idx})}"`}><span class="moveitalittle">${this.escapeHtml(line.text)}</span></div>`).join('')}`;
         this.currentLineIndex = -1;
         this.handleTimeUpdate();
         this.updateFetchButtonVisibility();
@@ -6932,6 +6954,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             try { el = await this.ensureAm(); }
             catch (e2) { this.amErr = e2?.message || 'am-lyrics failed to load'; console.log('❌ am-lyrics load error:', e2); return false; }
         }
+        if (!this.isCurrentLyricsTrack(track) || this.pendingTrackChange) return null;
         const token = ++this.amToken;
         this.amActive = true;
         this.placeAm();
@@ -7651,6 +7674,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             );
             if (!line) return;
             line.classList.add('active');
+            if (!container.getClientRects().length || Number(container.dataset.followAfter) > Date.now() || container.querySelector('.lyrics-find')?.value) return;
             // Calculate the line's position relative to THIS container.
             const containerRect = container.getBoundingClientRect();
             const lineRect = line.getBoundingClientRect();
@@ -7661,14 +7685,32 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 (lineRect.height / 2);
             container.scrollTo({
                 top: Math.max(0, target),
-                behavior: 'smooth'
+                behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
             });
         });
         this.currentLineIndex = index;
     }
+    filterLyrics(input) {
+        const host = input.closest('#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent');
+        if (!host) return;
+        const query = input.value.trim().toLocaleLowerCase();
+        let found = 0;
+        host.querySelectorAll('.lyrics-line').forEach(line => {
+            line.hidden = !!query && !line.textContent.toLocaleLowerCase().includes(query);
+            if (!line.hidden) found++;
+        });
+        let status = host.querySelector('.lyrics-search-status');
+        if (!status) {
+            status = document.createElement('div'); status.className = 'lyrics-search-status';
+            status.setAttribute('role', 'status'); host.querySelector('.lyrics-tools').after(status);
+        }
+        status.textContent = query ? `${found} matching line${found === 1 ? '' : 's'}` : '';
+    }
     seekToLine(index) {
-        if (!this.parsedLines[index]) return;
-        audio.currentTime = this.parsedLines[index].startMs / 1000;
+        if (!this.parsedLines[index] || this.currentSource === 'genius') return;
+        const seconds = this.parsedLines[index].startMs / 1000;
+        if (!Number.isFinite(seconds)) return;
+        audio.currentTime = Math.max(0, Number.isFinite(audio.duration) ? Math.min(seconds, audio.duration) : seconds);
         this.highlightLine(index);
     }
     updateFetchButtonVisibility() {
@@ -7678,7 +7720,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         // trigger a lookup.
         const hasLyrics = !!(this.parsedLines && this.parsedLines.length);
         document.querySelectorAll('.lyrics-fetch-btn').forEach(btn => {
-            btn.style.display = hasLyrics ? 'none' : '';
+            btn.style.display = '';
+            btn.disabled = this.isFetching;
+            btn.textContent = this.isFetching ? 'Loading…' : hasLyrics ? '↻ Refresh' : '↻ Find lyrics';
+            btn.setAttribute('aria-busy', String(this.isFetching));
         });
     }
     showLoading(msg = 'Loading lyrics...') {
@@ -7704,7 +7749,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     showError(title, msg) {
         const c = document.getElementById('lyricsContent');
-        if (c) c.innerHTML = `<div class="lyrics-error"><div class="lyrics-empty-icon">⚠️</div><div style="font-weight:600;margin-bottom:8px;">${title}</div><div style="font-size:13px;margin-bottom:16px;">${msg}</div><button class="btn secondary" onclick="lyricsManager.retry()" style="font-size:12px;">🔄 Retry</button></div>`;
+        if (c) c.innerHTML = `<div class="lyrics-error"><div class="lyrics-empty-icon">⚠️</div><div style="font-weight:600;margin-bottom:8px;">${this.escapeHtml(title)}</div><div style="font-size:13px;margin-bottom:16px;">${this.escapeHtml(msg)}</div><button class="btn secondary" onclick="lyricsManager.retry()" style="font-size:12px;">🔄 Retry</button></div>`;
         this.updateFetchButtonVisibility();
     }
     retry() { const t = queue[currentTrackIndex]; if (t) this.fetchLyrics(t); }
@@ -15490,4 +15535,37 @@ document.addEventListener("DOMContentLoaded", () => {
   // console cheats
   window.boo = boo; window.treats = treats; window.storm = storm; window.swarm = swarm;
   if (on()) console.log('%c🎃 psst... try boo()  treats()  storm()  swarm()', 'color:#ff7a18;font-size:14px;font-weight:bold');
+})();
+
+// Keyboard access for the library navigation and both playback timelines.
+(function improvePlayerAccess() {
+    document.querySelectorAll('#app .nav-item[onclick]').forEach(item => {
+        item.tabIndex = 0; item.setAttribute('role', 'button');
+        item.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); item.click(); }
+        });
+    });
+    const timelines = ['progressBar', 'fullLyricsProgress'].map(id => document.getElementById(id)).filter(Boolean);
+    const update = () => timelines.forEach(bar => {
+        const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+        bar.setAttribute('aria-valuemax', String(duration));
+        bar.setAttribute('aria-valuenow', String(Math.round(audio.currentTime || 0)));
+        bar.setAttribute('aria-valuetext', `${Utils.formatTime(audio.currentTime)} of ${Utils.formatTime(duration)}`);
+    });
+    timelines.forEach(bar => {
+        bar.tabIndex = 0; bar.setAttribute('role', 'slider');
+        bar.setAttribute('aria-label', 'Playback position'); bar.setAttribute('aria-valuemin', '0');
+        bar.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault(); event.stopPropagation();
+            if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+            const step = event.shiftKey ? 15 : 5;
+            audio.currentTime = event.key === 'Home' ? 0 : event.key === 'End' ? audio.duration :
+                Math.max(0, Math.min(audio.duration, audio.currentTime + (event.key === 'ArrowRight' ? step : -step)));
+            update();
+        });
+    });
+    audio.addEventListener('timeupdate', update);
+    audio.addEventListener('durationchange', update);
+    update();
 })();

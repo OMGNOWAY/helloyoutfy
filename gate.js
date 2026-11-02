@@ -213,21 +213,24 @@ function loadScript(src) {
     url.searchParams.set("_cb", Date.now().toString());
     s.src = url.href;
     s.async = false;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("failed to load " + src));
+    const timeout = setTimeout(() => { s.remove(); reject(new Error("loading timed out: " + src)); }, 20000);
+    s.onload = () => { clearTimeout(timeout); resolve(); };
+    s.onerror = () => { clearTimeout(timeout); s.remove(); reject(new Error("failed to load " + src)); };
     document.head.appendChild(s);
   });
 }
 async function loadApp() {
   showLoading("loading…");
+  let insertedNodes = [];
   try {
     const url = new URL(G.appHtml);
     url.searchParams.set("_cb", Date.now().toString());
-    const res = await fetch(url.href, { cache: "no-store" });
+    const res = await fetch(url.href, { cache: "no-store", signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw new Error("app.html " + res.status);
     const html = await res.text();
     const t = document.createElement("template");
     t.innerHTML = html;
+    insertedNodes = Array.from(t.content.childNodes);
     document.body.appendChild(t.content);
 
     for (const lib of (G.libs || [])) { try { await loadScript(lib); } catch (e) { console.warn("[gate]", e.message); } }
@@ -240,8 +243,14 @@ async function loadApp() {
     if (el) el.remove();
   } catch (err) {
     console.error("[gate] couldn't load the app", err);
+    insertedNodes.forEach(node => node.remove());
     launched = false;
-    showLoading("couldn't load the app — refresh to try again");
+    showLoading("couldn't load the app — check your connection and try again");
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.textContent = 'Try again';
+    retry.style.cssText = 'display:block;margin:16px auto;padding:10px 18px;border-radius:10px;cursor:pointer';
+    retry.addEventListener('click', launch, { once: true });
+    $('gLoading').appendChild(retry);
   }
 }
 

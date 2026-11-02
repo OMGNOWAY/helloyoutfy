@@ -1,3 +1,31 @@
+<style id="youtify-refinements">
+/* Keep custom theme colors while making controls, surfaces and spacing consistent. */
+#app { --surface-radius: 16px; }
+#app .search-input { border-radius: 14px; min-height: 44px; transition: border-color .18s, box-shadow .18s; }
+#app .search-input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #ff4444) 22%, transparent); }
+#app .nav-item { border-radius: 12px; transition: background .18s, color .18s; }
+#app .settings-section { border: 1px solid var(--border); border-radius: var(--surface-radius); padding: clamp(16px, 3vw, 24px); margin-bottom: 18px; background: var(--bg-secondary); }
+#app .player-img { border-radius: 12px; }
+#app .player-title, #app .player-artist { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+#app button, #app input, #app select { font: inherit; }
+button:disabled { cursor: wait; opacity: .5; }
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent, #ff4444); outline-offset: 3px; }
+.lyrics-header { gap: 8px; flex-wrap: wrap; padding: 18px; }
+.lyrics-title { margin-right: auto; font-weight: 750; letter-spacing: -.03em; }
+.lyrics-fetch-btn, .lyrics-popout-btn { min-height: 34px; border-radius: 10px; }
+.lyrics-content, .full-lyrics-content, .player-embed-lyrics-content { overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.lyrics-tools { position: sticky; top: 0; z-index: 3; padding: 10px 0 14px; background: var(--bg-secondary, #161616); display: grid; gap: 8px; }
+.lyrics-find { box-sizing: border-box; width: 100%; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); border-radius: 12px; padding: 11px 14px; font: inherit; }
+.lyrics-mode, .lyrics-search-status { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.lyrics-line { border-radius: 12px; padding: 12px 10px; line-height: 1.5; transition: color .2s, background .2s, opacity .2s; overflow-wrap: anywhere; }
+.lyrics-line[hidden] { display: none !important; }
+.lyrics-line[role="button"] { cursor: pointer; }
+.lyrics-line[role="button"]:hover { background: var(--bg-hover); }
+.lyrics-line.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.lyrics-loading, .lyrics-error, .lyrics-not-found, .lyrics-empty { text-align: center; padding: 32px 20px; line-height: 1.65; }
+@media (max-width: 640px) { .lyrics-header { padding: 12px; } .lyrics-line { padding: 10px 8px; } #app .settings-section { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+</style>
 <input type="file" style="display: none;">
 <div id="artBg">
   <div class="art-blob" id="blob1"></div>
@@ -416,7 +444,7 @@
     <span class="lyrics-title">Lyrics</span>
       <button class="btn secondary lyrics-fetch-btn" style="padding:2px 8px;font-size:11px;margin-right:8px;" onclick="fetchCurrentTrackLyrics()" title="Fetch lyrics for the current track">⟳ Fetch</button>
       <button class="btn secondary lyrics-popout-btn" style="padding:2px 8px;font-size:11px;margin-right:8px;" onclick="openLyricsPopout()" title="Pop out lyrics into a floating window">⧉ Pop out</button>
-      <button class="lyrics-close" onclick="toggleLyrics()">✕</button>
+      <button class="lyrics-close" aria-label="Close lyrics" onclick="toggleLyrics()">✕</button>
   </div>
   <div class="lyrics-content" id="lyricsContent"><div class="lyrics-empty"><div class="lyrics-empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div><div>Press the "Fetch" button to get lyrics</div><div style="font-size:12px;margin-top:8px;opacity:0.7;"></div></div></div>
 </div>
