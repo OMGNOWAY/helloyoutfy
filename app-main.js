@@ -1,6 +1,15 @@
 /* ===================== changelog.js ===================== */
-var version = "1.4.6";
+var version = "1.4.7";
 const CHANGELOG_DATA = {
+  "Release 1.4.7": [
+    `You can undo removing songs or clearing the queue for 30 seconds`,
+    `Search works across titles, artists and albums together, accents included`,
+    `Fixed album tracks playing backwards when added with Play next`,
+    `Fixed older YouTube searches replacing newer results and duplicate downloads`,
+    `Volume saves now, and changing it while muted actually unmutes it`,
+    `Fixed the full lyrics progress bar shrinking and lyric search losing focus`,
+    `API key changes apply right away, plus smoother duration loading for big libraries`
+  ],
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
     `Added am-lyrics (<(there will be bugs)>)`
@@ -187,6 +196,13 @@ class Utils {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  static matchesTrack(track, query) {
+    const normalize = value => String(value || '').normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase();
+    const words = normalize(query).trim().split(/\s+/).filter(Boolean);
+    const text = [track.title, track.artist, track.album].map(normalize).join(' ');
+    return words.every(word => text.includes(word));
   }
 
   static formatTime(seconds) {
@@ -864,7 +880,7 @@ function addTracksToUserQueue(trackList, playNext = false) {
 
   if (playNext) {
     // Preserve the order of an album: the first track should be next.
-    userQueue = valid.slice().reverse().concat(userQueue);
+    userQueue = valid.concat(userQueue);
   } else {
     userQueue.push(...valid);
   }
@@ -1133,8 +1149,9 @@ function shuffleForwardIndex() { // next song to replay after going back, or -1
 }
 let repeatMode = 'off';
 let currentVolume = 1;
-let isMuted = false;
-let previousVolume = 1;
+try { const saved = localStorage.getItem('youtifiy_volume'); if (saved !== null && Number.isFinite(Number(saved))) currentVolume = Math.max(0, Math.min(1, Number(saved))); } catch {}
+let isMuted = currentVolume === 0;
+let previousVolume = currentVolume || 1;
 let currentView = 'home';
 let downloads = [];
 let customThemes = [];
@@ -1205,6 +1222,9 @@ class YouTubeAPI {
     this.cooldowns = new Map();   // host -> timestamp it's benched until
   }
 
+  get key() { return this.keys[0] || ''; }
+  set key(value) { this.keys = [].concat(value || []).filter(Boolean); this.keyIdx = 0; }
+
   // ---------- round robin helpers ----------
   nextHost() {
     for (let i = 0; i < this.hosts.length; i++) {
@@ -1220,13 +1240,22 @@ class YouTubeAPI {
   }
 
   parseID(input) {
-    if (!input) return '';
-    const match = input.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/))([^&?\s]+)/);
-    return match ? match[1] : input;
+    const value = String(input || '').trim();
+    if (/^[\w-]{11}$/.test(value)) return value;
+    try {
+      const url = new URL(/^https?:\/\//i.test(value) ? value : 'https://' + value);
+      const host = url.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
+      let id = '';
+      if (host === 'youtu.be') id = url.pathname.split('/')[1];
+      else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+        id = url.searchParams.get('v') || (/^\/(shorts|embed|live|v)\//.test(url.pathname) ? url.pathname.split('/')[2] : '');
+      }
+      return /^[\w-]{11}$/.test(id || '') ? id : '';
+    } catch { return ''; }
   }
 
   // ---------- search (rotates keys, skips rate-limited ones) ----------
-  async search(query) {
+  async search(query, signal) {
     if (!this.keys.length) throw new Error('API key not set');
     let lastErr;
     for (let i = 0; i < this.keys.length; i++) {
@@ -1234,14 +1263,17 @@ class YouTubeAPI {
       try {
         const res = await fetch('https://youtube-v2.p.rapidapi.com/search/?query=' + encodeURIComponent(query), {
           method: 'GET',
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
           headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'youtube-v2.p.rapidapi.com' }
         });
         if (res.status === 429 || res.status === 403) {   // quota / rate limit -> next key
           lastErr = new Error('Key limited (' + res.status + ')');
           continue;
         }
-        return res.json();
+        if (!res.ok) throw new Error('Search failed (HTTP ' + res.status + ')');
+        return await res.json();
       } catch (e) {
+        if (signal?.aborted) throw e;
         lastErr = e;
       }
     }
@@ -2736,7 +2768,10 @@ class PlayerController {
   }
 
   static pause() {
+    this.resumeRequest = (this.resumeRequest || 0) + 1;
+    PlayerController.cancelCrossfade();
     audio.pause();
+    audio2.pause();
     isPlaying1 = false;
 isPlaying2 = false;
     PlayerController.updatePlayPauseBtn();
@@ -2744,17 +2779,28 @@ isPlaying2 = false;
     if (miniBtn) miniBtn.textContent = '▶';
   }
 
-  static resume() {
-    if (!audioContext) AudioEngine.init();
-    audio.play();
-    isPlaying1 = true;
-isPlaying2 = true;
+  static async resume() {
+    const request = this.resumeRequest = (this.resumeRequest || 0) + 1;
+    try {
+      if (!audioContext) AudioEngine.init();
+      if (audioContext?.state === 'suspended') await audioContext.resume();
+      if (request !== this.resumeRequest) return;
+      await audio.play();
+      if (request !== this.resumeRequest) return;
+      isPlaying1 = !audio.paused;
+      isPlaying2 = !audio2.paused;
+    } catch (error) {
+      if (request !== this.resumeRequest) return;
+      isPlaying1 = !audio.paused; isPlaying2 = !audio2.paused;
+      if (error.name !== 'AbortError') toast('Could not start playback. Try playing the track again.');
+    }
     PlayerController.updatePlayPauseBtn();
     const miniBtn = document.getElementById('miniPlayBtn');
-    if (miniBtn) miniBtn.textContent = '⏸';
+    if (miniBtn) miniBtn.textContent = isPlaying1 || isPlaying2 ? '⏸' : '▶';
   }
 
   static next(where = 0, isCrossfade = false) {
+    if (!queue.length) { PlayerController.pause(); return; }
     // Manual next must cancel any crossfade still in flight, or its setInterval keeps
     // running against stale audio elements and clobbers currentTrackIndex a few seconds
     // later. (Crossfade completion does not go through this function — it swaps
@@ -2804,6 +2850,7 @@ isPlaying2 = true;
   }
 
   static previous() {
+    if (!queue.length) return;
     PlayerController.cancelCrossfade();
     if (audio.currentTime > 3) { audio.currentTime = 0; return; }
     if (isShuffle) {
@@ -2821,33 +2868,35 @@ isPlaying2 = true;
     playTrackAtIndex(0, audio, prevIndex < 0 ? queue.length - 1 : prevIndex);
   }
 
+  static seekSeconds(seconds) {
+    if (!Number.isFinite(audio.duration) || audio.duration <= 0 || !Number.isFinite(seconds)) return;
+    audio.currentTime = Math.max(0, Math.min(seconds, audio.duration));
+  }
+
   static seekTo(event) {
     const rect = event.currentTarget.getBoundingClientRect();
-    audio.currentTime = ((event.clientX - rect.left) / rect.width) * audio.duration;
+    if (rect.width <= 0) return;
+    PlayerController.seekSeconds(((event.clientX - rect.left) / rect.width) * audio.duration);
+  }
+
+  static applyVolume(value) {
+    if (!Number.isFinite(value)) return;
+    currentVolume = Math.max(0, Math.min(1, value));
+    isMuted = currentVolume === 0;
+    if (currentVolume > 0) previousVolume = currentVolume;
+    audio.volume = audio2.volume = currentVolume;
+    try { localStorage.setItem('youtifiy_volume', String(currentVolume)); } catch {}
+    PlayerController.updateVolumeUI();
   }
 
   static setVolume(event) {
     const rect = event.currentTarget.getBoundingClientRect();
-    currentVolume = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    audio.volume = audio2.volume = currentVolume;
-    PlayerController.updateVolumeUI();
+    if (rect.width <= 0) return;
+    PlayerController.applyVolume((event.clientX - rect.left) / rect.width);
   }
 
   static toggleMute() {
-    const btn = document.getElementById('volumebutton');
-    if (isMuted) {
-      audio.volume = audio2.volume = currentVolume = previousVolume;
-      isMuted = false;
-    } else {
-      previousVolume = currentVolume;
-      audio.volume = audio2.volume = 0;
-      isMuted = true;
-    }
-    if (btn) btn.innerHTML = isMuted
-      ? `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h3l5 4V6l-5 4H4z"></path><line x1="17" y1="9" x2="21" y2="15"></line><line x1="21" y1="9" x2="17" y2="15"></line></svg>`
-      : `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h3l5 4V6l-5 4H4z"></path><path d="M16 9.5a4 4 0 0 1 0 5"></path><path d="M18.8 7a7.5 7.5 0 0 1 0 10"></path></svg>`;
-    if (btn) btn.title = isMuted ? 'Unmute' : 'Mute';
-    PlayerController.updateVolumeUI();
+    PlayerController.applyVolume(isMuted ? previousVolume || 1 : 0);
   }
 
   static toggleShuffle() {
@@ -2882,16 +2931,20 @@ isPlaying2 = true;
   static updateVolumeUI() {
     const fill = document.getElementById('volumeFill');
     if (fill) fill.style.width = (isMuted ? 0 : currentVolume * 100) + '%';
+    const btn = document.getElementById('volumebutton');
+    if (btn) { btn.title = isMuted ? 'Unmute' : 'Mute'; btn.setAttribute('aria-label', btn.title); btn.setAttribute('aria-pressed', String(isMuted)); btn.classList.toggle('is-muted', isMuted); }
+    const slider = document.querySelector('.volume-slider');
+    if (slider) { slider.setAttribute('aria-valuenow', String(Math.round(currentVolume * 100))); slider.setAttribute('aria-valuetext', `${Math.round(currentVolume * 100)} percent`); }
   }
 
   static updateProgressBar() {
     const fill     = document.getElementById('progressFill');
-    const ffill     = document.getElementById('fullLyricsProgress');
+    const ffill     = document.getElementById('fullLyricsProgressFill');
     const current  = document.getElementById('currentTime');
     const duration = document.getElementById('duration');
-    if (!fill || !audio.duration) return;
-    fill.style.width = ((audio.currentTime / audio.duration) * 100 || 0) + '%';
-    ffill.style.width = ((audio.currentTime / audio.duration) * 100 || 0) + '%';
+    const percent = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.max(0, Math.min(100, audio.currentTime / audio.duration * 100)) : 0;
+    if (fill) fill.style.width = percent + '%';
+    if (ffill) ffill.style.width = percent + '%';
     if (current)  current.textContent  = Utils.formatTime(audio.currentTime);
     if (duration) duration.textContent = Utils.formatTime(audio.duration);
     if (lyricsManager?.isOpen) lyricsManager.handleTimeUpdate();
@@ -3434,7 +3487,7 @@ function initMiniPlayer() {
 // ============================================================================
 
 class QueueManager {
-  static render(query = '') {
+  static render(query = getQueueSearchQuery()) {
     //setStorageInfo();
     const queueList = document.getElementById('queueList');
     if (!queueList) return;
@@ -3452,9 +3505,7 @@ class QueueManager {
       .map((track, index) => ({ track, index }))
       .filter(({ track }) => {
         if (!isFiltered) return true;
-        return (track.title || '').toLowerCase().includes(normalizedQuery)
-          || (track.artist || '').toLowerCase().includes(normalizedQuery)
-          || (track.album || '').toLowerCase().includes(normalizedQuery);
+        return Utils.matchesTrack(track, normalizedQuery);
       });
     QueueManager.updateSearchControls(entries.length, queue.length, isFiltered, entries.map(entry => entry.track));
 
@@ -3510,58 +3561,64 @@ class QueueManager {
     QueueManager.updateSearchControls(entries.length, queue.length, isFiltered, entries.map(entry => entry.track));
   }
 
-  static async loadMissingDurations() {
-    //setStorageInfo();
-    for (let i = 0; i < queue.length; i++) {
-      const track = queue[i];
-      if (track.duration && !isNaN(track.duration) && track.duration > 0) continue;
+  static durationPending = new Map();
+  static durationReading = new Set();
+  static durationWorkers = 0;
+
+  static loadMissingDurations() {
+    for (const track of queue) {
+      if (Number.isFinite(Number(track.duration)) && Number(track.duration) > 0) continue;
       if (track.type === 'youtube' && !track.src) continue;
-      try {
-        const duration = await QueueManager.getAudioDuration(track);
-        if (duration && !isNaN(duration) && duration > 0) {
-          track.duration = duration;
-          const el = document.getElementById(`duration-${track.uid}`);
-          if (el) el.textContent = Utils.formatTime(duration);
-        }
-      } catch (e) { console.error('Failed to load duration for:', track.title, e); }
+      if (track.durationRetryAfter > Date.now() || this.durationReading.has(track)) continue;
+      this.durationPending.set(track, track);
     }
-    QueueManager.refreshSearchStatus();
+    while (this.durationWorkers < 3 && this.durationPending.size) {
+      const track = this.durationPending.keys().next().value;
+      this.durationPending.delete(track);
+      if (!queue.includes(track)) continue;
+      this.durationWorkers++; this.durationReading.add(track);
+      this.getAudioDuration(track).then(duration => {
+        if (!Number.isFinite(duration) || duration <= 0) throw new Error('Duration unavailable');
+        track.duration = duration;
+        const el = document.getElementById(`duration-${track.uid}`);
+        if (el) el.textContent = Utils.formatTime(duration);
+      }).catch(() => { track.durationRetryAfter = Date.now() + 60000; }).finally(() => {
+        this.durationWorkers--; this.durationReading.delete(track);
+        QueueManager.refreshSearchStatus();
+        QueueManager.loadMissingDurations();
+      });
+    }
   }
 
   static getAudioDuration(track) {
     return new Promise((resolve, reject) => {
-      const getSrc = async () => {
-        // 'import' tracks: File object held in memory
-        if (track.type === 'import' && track.file) {
-          return URL.createObjectURL(track.file);
-        }
-        // 'folder' tracks: re-read via FileSystemFileHandle
-        if (track.type === 'folder' && track.fileHandle) {
-          try {
-            const file = await track.fileHandle.getFile();
-            return URL.createObjectURL(file);
-          } catch (e) { reject(e); return null; }
-        }
-        // 'local' tracks: stored in IndexedDB
-        if (track.type === 'local' && track.idbId) {
-          try { return await streamingManager.prepareTrackForPlayback(track); }
-          catch (e) { reject(e); return null; }
-        }
-        return track.src;
+      let probe = null, src = '', temporary = false, finished = false;
+      const finish = (error, duration) => {
+        if (finished) return;
+        finished = true; clearTimeout(timeout);
+        if (probe) { probe.onloadedmetadata = probe.onerror = null; probe.removeAttribute('src'); probe.load(); }
+        if (temporary && src) URL.revokeObjectURL(src);
+        if (error) reject(error); else resolve(duration);
       };
-      getSrc().then(src => {
-        if (!src) { reject(new Error('No source available')); return; }
-        // Revoke temporary blob URLs (import/folder types) after reading metadata
-        const isTempBlob = src.startsWith('blob:') &&
-          (track.type === 'import' || track.type === 'folder');
-        const cleanup = () => { if (isTempBlob) URL.revokeObjectURL(src); };
-        const a = new Audio();
-        a.addEventListener('loadedmetadata', () => { resolve(a.duration); a.src = ''; cleanup(); });
-        a.addEventListener('error', () => { reject(new Error('Failed to load audio metadata')); cleanup(); });
-        setTimeout(() => { reject(new Error('Timeout loading duration')); cleanup(); }, 10000);
-        a.src = src;
-        a.preload = 'metadata';
-      }).catch(reject);
+      const timeout = setTimeout(() => finish(new Error('Timeout loading duration')), 10000);
+      (async () => {
+        if (track.type === 'import' && track.file) {
+          src = URL.createObjectURL(track.file); temporary = true;
+        } else if (track.type === 'folder' && track.fileHandle) {
+          const file = await track.fileHandle.getFile();
+          if (finished) return;
+          src = URL.createObjectURL(file); temporary = true;
+        } else if (track.type === 'local' && track.idbId) {
+          src = await streamingManager.prepareTrackForPlayback(track);
+        } else { src = track.src; }
+        if (finished) return;
+        if (!src) throw new Error('No source available');
+        probe = new Audio();
+        probe.preload = 'metadata';
+        probe.onloadedmetadata = () => finish(null, probe.duration);
+        probe.onerror = () => finish(new Error('Failed to load audio metadata'));
+        probe.src = src;
+      })().catch(error => finish(error));
     });
   }
 
@@ -3577,7 +3634,35 @@ class QueueManager {
     /*setStorageInfo();*/
   }
 
+  static rememberRemoval(entries) {
+    this.lastRemoval = { entries, expires: Date.now() + 30000 };
+    toast('Removed from queue', 30000);
+    const host = document.getElementById('toastMessage');
+    if (!host) return;
+    const undo = document.createElement('button');
+    undo.type = 'button'; undo.className = 'btn secondary queue-undo'; undo.textContent = 'Undo';
+    undo.addEventListener('click', () => QueueManager.undoRemoval());
+    host.appendChild(undo);
+  }
+
+  static undoRemoval() {
+    const saved = this.lastRemoval;
+    this.lastRemoval = null;
+    if (!saved || saved.expires < Date.now()) { toast('Undo expired'); return; }
+    const currentUid = queue[currentTrackIndex]?.uid;
+    let restored = 0;
+    saved.entries.forEach(({ track, index }) => {
+      if (queue.some(item => item.uid === track.uid)) return;
+      queue.splice(Math.min(index, queue.length), 0, track); restored++;
+    });
+    if (currentUid) currentTrackIndex = queue.findIndex(track => track.uid === currentUid);
+    QueueManager.render();
+    toast(`Restored ${restored} song${restored === 1 ? '' : 's'}`);
+  }
+
   static remove(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= queue.length) return;
+    const removed = queue[index];
     queue.splice(index, 1);
     if (currentTrackIndex === index) {
       if (queue.length > 0) playTrackAtIndex(0, audio, Math.min(index, queue.length - 1));
@@ -3586,6 +3671,7 @@ class QueueManager {
       currentTrackIndex--;
     }
     QueueManager.render();
+    QueueManager.rememberRemoval([{ track: removed, index }]);
   }
 
   static shuffle() {
@@ -3601,11 +3687,12 @@ class QueueManager {
 
   static clear() {
     if (!confirm('Clear all tracks from queue?')) return;
+    const entries = queue.map((track, index) => ({ track, index }));
     queue = [];
     currentTrackIndex = -1;
     PlayerController.pause();
     QueueManager.render();
-    toast('Queue cleared');
+    if (entries.length) QueueManager.rememberRemoval(entries);
   }
 }
 
@@ -5269,6 +5356,9 @@ class SettingsManager {
     localStorage.removeItem('youtifiy_api_key');
     localStorage.removeItem('youtifiy_lyrics_key');
     youtubeAPI.key = '';
+    lyricsManager.apiKey = '';
+    const lyricsKeyInput = document.getElementById('lyricsApiKey');
+    if (lyricsKeyInput) lyricsKeyInput.value = '';
     document.getElementById('apiKeyInput').value = '';
     toast('API key reset');
     notifyKeysChanged();
@@ -5322,56 +5412,62 @@ let lastYouTubeSearchQuery = '';
 let lastYouTubeSearchHTML  = '';
 let lastSearchVideos       = [];
 
+let youtubeSearchToken = 0;
+let youtubeSearchAbort = null;
 async function searchYouTube() {
-  const query = document.getElementById('ytSearchInput').value.trim();
+  const query = document.getElementById('ytSearchInput')?.value.trim();
   if (!query) return;
   if (!apiKey) { toast('Please set your API key in settings first'); return; }
-
+  youtubeSearchAbort?.abort();
+  const controller = youtubeSearchAbort = new AbortController();
+  const token = ++youtubeSearchToken;
   lastYouTubeSearchQuery = query;
   const results = document.getElementById('searchResults');
-  results.innerHTML = '<div style="color:var(--text-muted);padding:20px">Searching YouTube...</div>';
-
+  if (!results) return;
+  results.setAttribute('aria-busy', 'true');
+  results.innerHTML = '<div class="search-feedback" role="status">Searching YouTube…</div>';
   try {
-    const data = await youtubeAPI.search(query);
-    results.innerHTML = '';
-    if (!data.videos || !Array.isArray(data.videos)) {
-      results.innerHTML = '<div style="color:var(--text-muted);padding:20px">No results found</div>';
-      return;
-    }
-    // Keep the raw video objects around and reference them by index from the
-    // onclick handler below, rather than interpolating title/author text
-    // directly into the inline JS — those can contain quotes (e.g. "Don't
-    // Stop Believin'") that would otherwise break out of the handler string.
-    lastSearchVideos = data.videos;
-    data.videos.forEach((v, i) => {
-      if (v.video_length === 'SHORTS') return;
-      const item = document.createElement('div');
-      item.className = 'result-item';
-      const thumbUrl = v.thumbnails?.[0]?.url || '';
-      item.innerHTML = `
-        <div class="result-thumb" style="background-image:url('${thumbUrl}')"></div>
-        <div class="result-meta">
-          <div class="result-title">${Utils.escapeHtml(v.title || 'Unknown')}</div>
-          <div class="result-author">${Utils.escapeHtml(v.author || 'Unknown')} • ${v.video_length || ''}</div>
-        </div>
-        <button class="btn primary" onclick="addYouTubeTrack(${i})">Add</button>`;
-      results.appendChild(item);
+    const data = await youtubeAPI.search(query, controller.signal);
+    if (token !== youtubeSearchToken) return;
+    const videos = Array.isArray(data.videos) ? data.videos.filter(v => v && v.video_length !== 'SHORTS') : [];
+    lastSearchVideos = videos;
+    results.textContent = '';
+    if (!videos.length) results.innerHTML = '<div class="search-feedback" role="status">No results found. Try a different title or artist.</div>';
+    videos.forEach((v, i) => {
+      const item = document.createElement('div'); item.className = 'result-item';
+      const thumb = document.createElement('img'); thumb.className = 'result-thumb'; thumb.alt = ''; thumb.loading = 'lazy';
+      try { const url = new URL(v.thumbnails?.[0]?.url); if (['https:', 'http:'].includes(url.protocol)) thumb.src = url.href; } catch {}
+      const meta = document.createElement('div'); meta.className = 'result-meta';
+      const title = document.createElement('div'); title.className = 'result-title'; title.textContent = v.title || 'Unknown';
+      const author = document.createElement('div'); author.className = 'result-author'; author.textContent = `${v.author || 'Unknown'}${v.video_length ? ' • ' + v.video_length : ''}`;
+      meta.append(title, author);
+      const add = document.createElement('button'); add.className = 'btn primary'; add.textContent = 'Add';
+      add.setAttribute('onclick', `addYouTubeTrack(${i})`);
+      item.append(thumb, meta, add); results.appendChild(item);
     });
-  } catch (err) {
-    console.error('Search error:', err);
-    results.innerHTML = '<div style="color:var(--text-muted);padding:20px">Error searching YouTube</div>';
+  } catch (error) {
+    if (token !== youtubeSearchToken || controller.signal.aborted) return;
+    lastSearchVideos = [];
+    results.innerHTML = '<div class="search-feedback" role="status">Search failed. Check your connection or API key, then try again.</div><button class="btn secondary" onclick="searchYouTube()">Try again</button>';
   } finally {
-    // Cache whatever ended up in the panel so navigating away and back
-    // (which rebuilds #mainContent from scratch) can restore it instead
-    // of silently discarding the last search.
-    lastYouTubeSearchHTML = results.innerHTML;
+    if (token === youtubeSearchToken) {
+      results.setAttribute('aria-busy', 'false');
+      lastYouTubeSearchHTML = results.innerHTML;
+      const visibleResults = document.getElementById('searchResults');
+      if (visibleResults && visibleResults !== results) { visibleResults.innerHTML = lastYouTubeSearchHTML; visibleResults.setAttribute('aria-busy', 'false'); }
+    }
   }
+}
+
+function isYouTubeDownloadPending(id) {
+  return downloads.some(track => track.id === id && track.status !== 'Error');
 }
 
 function addYouTubeTrack(index) {
   if (!apiKey) { toast('Please set your API key in settings first'); return; }
   const v = lastSearchVideos[index];
   if (!v) { toast('That search result is no longer available — try searching again'); return; }
+  if (isYouTubeDownloadPending(v.video_id)) { toast('That song is already in downloads'); return; }
   const thumbUrl = v.thumbnails?.[0]?.url || '';
   const track = { uid: Utils.generateUID(), type: 'youtube', id: v.video_id, title: v.title || 'Unknown', artist: v.author || 'Unknown', status: 'Fetching...', src: null, albumArt: thumbUrl, duration: 0, progress: 0 };
   downloads.push(track);
@@ -5387,6 +5483,8 @@ async function addDownload() {
   if (!input) return;
   if (!apiKey) { toast('Please set your API key in settings first'); return; }
   const id = youtubeAPI.parseID(input);
+  if (!id) { toast('Enter a valid YouTube video link or 11-character ID'); return; }
+  if (isYouTubeDownloadPending(id)) { toast('That song is already in downloads'); return; }
   const track = { uid: Utils.generateUID(), type: 'youtube', id, title: 'YT: ' + id, artist: 'YouTube', status: 'Fetching...', src: null, albumArt: null, duration: 0, progress: 0 };
   downloads.push(track);
   QueueManager.rebuild(); QueueManager.render(); renderDownloads();
@@ -6707,6 +6805,7 @@ class UnifiedLyricsManager {
     }
     async cacheAndRender(lyrics, source, track) {
         const cacheKey = `${track.title}-${track.artist}`;
+        if (source === 'spotify' || source === 'musix') lyrics = lyrics.filter(line => Number.isFinite(line.startMs) && line.startMs >= 0).slice().sort((a, b) => a.startMs - b.startMs);
         const lines = (source === 'spotify' || source === 'musix') ? lyrics : this.parsedLines;
         this.currentLyrics = lyrics;
         const data = { lyrics, source, parsedLines: lines };
@@ -6723,6 +6822,7 @@ class UnifiedLyricsManager {
         if (!container) return;
         if (!this.parsedLines?.length) { this.showNotFound('No lyrics available'); return; }
         const badge = ['spotify', 'musix'].includes(this.currentSource) ? '<span style="color:var(--accent);font-size:11px;">⚡ Synced</span>' : '<span style="color:var(--text-muted);font-size:11px;"></span>';
+        container.dataset.lyricsRevision = String(this.renderRevision = (this.renderRevision || 0) + 1);
         container.innerHTML = `
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">
 <span style="font-size:12px;color:var(--text-muted);">Source: ${this.currentSource === 'spotify' ? 'Spotify' : this.currentSource === 'musix' ? 'Musix' : "Genius"}</span>${badge}
@@ -7628,27 +7728,16 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 else { this.amLoop = null; this.refreshAmBar(); toast('Line loop off'); } // user seeked far away
             }
         }
-        if (!this.isOpen || !this.parsedLines?.length) return;
+        if (!this.isOpen || !this.parsedLines?.length || this.currentSource === 'genius') return;
         const ms = audio.currentTime * 1000 - off;
-        let newIndex = -1;
-        for (let i = 0; i < this.parsedLines.length; i++) {
-            const { startMs, durMs } = this.parsedLines[i];
-            if (ms >= startMs && ms < startMs + (durMs || 3000)) {
-                newIndex = i;
-                break;
-            }
+        // Find the latest timestamp, including after backwards seeks and before verse one.
+        let low = 0, high = this.parsedLines.length - 1, newIndex = -1;
+        while (low <= high) {
+            const mid = (low + high) >>> 1;
+            if (this.parsedLines[mid].startMs <= ms) { newIndex = mid; low = mid + 1; }
+            else high = mid - 1;
         }
-        if (newIndex === -1) {
-            for (let i = this.parsedLines.length - 1; i >= 0; i--) {
-                if (ms >= this.parsedLines[i].startMs) {
-                    newIndex = i;
-                    break;
-                }
-            }
-        }
-        if (newIndex !== -1 && newIndex !== this.currentLineIndex) {
-            this.highlightLine(newIndex);
-        }
+        if (newIndex !== this.currentLineIndex) this.highlightLine(newIndex);
     }
 
     highlightLine(index) {
@@ -8067,17 +8156,19 @@ audio.addEventListener('loadedmetadata', () => {
 });
 audio.dataset.coreListenersBound = '1';
 
-navigator.mediaSession.setActionHandler('nexttrack',     () => PlayerController.next(0, false));
-navigator.mediaSession.setActionHandler('previoustrack', () => PlayerController.previous());
+if (navigator.mediaSession) {
+  try { navigator.mediaSession.setActionHandler('nexttrack', () => PlayerController.next(0, false)); } catch {}
+  try { navigator.mediaSession.setActionHandler('previoustrack', () => PlayerController.previous()); } catch {}
+}
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.target.isContentEditable || e.target.closest?.('input, textarea, select, button, a, [role="slider"], [role="button"]')) return;
   switch (e.code) {
     case 'Space':       e.preventDefault(); PlayerController.toggle(); break;
-    case 'ArrowRight':  e.preventDefault(); audio.currentTime += 5; break;
-    case 'ArrowLeft':   e.preventDefault(); audio.currentTime -= 5; break;
-    case 'ArrowUp':     e.preventDefault(); currentVolume = Math.min(1, currentVolume + 0.1); audio.volume = audio2.volume = currentVolume; PlayerController.updateVolumeUI(); break;
-    case 'ArrowDown':   e.preventDefault(); currentVolume = Math.max(0, currentVolume - 0.1); audio.volume = audio2.volume = currentVolume; PlayerController.updateVolumeUI(); break;
+    case 'ArrowRight':  e.preventDefault(); PlayerController.seekSeconds(audio.currentTime + 5); break;
+    case 'ArrowLeft':   e.preventDefault(); PlayerController.seekSeconds(audio.currentTime - 5); break;
+    case 'ArrowUp':     e.preventDefault(); PlayerController.applyVolume(currentVolume + 0.1); break;
+    case 'ArrowDown':   e.preventDefault(); PlayerController.applyVolume(currentVolume - 0.1); break;
     case 'KeyN':        e.preventDefault(); PlayerController.next(0, false); break;
     case 'KeyP':        e.preventDefault(); PlayerController.previous(); break;
     case 'KeyL':        e.preventDefault(); handleLyricsButtonClick(); break;
@@ -8317,9 +8408,7 @@ function getVisibleQueueEntries() {
     .map((track, index) => ({ track, index }))
     .filter(({ track }) => {
       if (!normalizedQuery) return true;
-      return (track.title || '').toLowerCase().includes(normalizedQuery)
-        || (track.artist || '').toLowerCase().includes(normalizedQuery)
-        || (track.album || '').toLowerCase().includes(normalizedQuery);
+      return Utils.matchesTrack(track, normalizedQuery);
     });
 }
 
@@ -8444,6 +8533,22 @@ function getAABTheme() {
 // Clicking the bottom player's album art opens an Apple Music-style lyrics
 // view. It intentionally does not replace or mutate the existing PlayerEmbed.
 // ============================================================================
+// Highlight changes should not recreate focused search inputs in mirrored views.
+function mirrorLyricsContent(source, target) {
+    const revision = source.dataset.lyricsRevision || '';
+    const sourceLines = source.querySelectorAll('.lyrics-line');
+    const targetLines = target.querySelectorAll('.lyrics-line');
+    if (sourceLines.length && sourceLines.length === targetLines.length && target.dataset.lyricsRevision === revision) {
+        sourceLines.forEach((line, index) => {
+            targetLines[index].classList.toggle('active', line.classList.contains('active'));
+            targetLines[index].classList.toggle('passed', line.classList.contains('passed'));
+        });
+        return;
+    }
+    if (target.innerHTML !== source.innerHTML) target.innerHTML = source.innerHTML;
+    target.dataset.lyricsRevision = revision;
+}
+
 const FullLyricsPlayer = (() => {
   let opened = false;
 
@@ -8490,11 +8595,11 @@ function mirrorLyrics() {
     if (!source || !target) return;
     if (lyricsManager?.amActive) { lyricsManager.placeAm(); return; }
 
-    target.innerHTML = source.innerHTML;
+    mirrorLyricsContent(source, target);
 
     const active = target.querySelector('.lyrics-line.active');
 
-    if (opened && active) {
+    if (opened && active && Number(target.dataset.followAfter || 0) <= Date.now() && !target.querySelector('.lyrics-find')?.value) {
         requestAnimationFrame(() => {
             const containerRect = target.getBoundingClientRect();
             const lineRect = active.getBoundingClientRect();
@@ -8650,7 +8755,7 @@ const PlayerEmbed = (function () {
 
   // --- Live lyrics mirroring -------------------------------------------
   if (embedLyrics && realLyrics) {
-    const mirrorLyrics = () => { if (lyricsManager?.amActive) { lyricsManager.placeAm(); return; } embedLyrics.innerHTML = realLyrics.innerHTML; };
+    const mirrorLyrics = () => { if (lyricsManager?.amActive) { lyricsManager.placeAm(); return; } mirrorLyricsContent(realLyrics, embedLyrics); };
     mirrorLyrics();
     new MutationObserver(mirrorLyrics).observe(realLyrics, {
       childList: true, subtree: true, characterData: true,
@@ -15565,7 +15670,23 @@ document.addEventListener("DOMContentLoaded", () => {
             update();
         });
     });
-    audio.addEventListener('timeupdate', update);
-    audio.addEventListener('durationchange', update);
+    [audio, audio2].forEach(player => {
+        player.addEventListener('timeupdate', update);
+        player.addEventListener('durationchange', update);
+    });
     update();
+})();
+
+(function improveVolumeAccess() {
+    const slider = document.querySelector('.volume-slider');
+    if (!slider) return;
+    slider.tabIndex = 0; slider.setAttribute('role', 'slider');
+    slider.setAttribute('aria-label', 'Volume'); slider.setAttribute('aria-valuemin', '0'); slider.setAttribute('aria-valuemax', '100');
+    slider.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault(); event.stopPropagation();
+        PlayerController.applyVolume(event.key === 'Home' ? 0 : event.key === 'End' ? 1 :
+            currentVolume + (['ArrowLeft', 'ArrowDown'].includes(event.key) ? -.05 : .05));
+    });
+    PlayerController.updateVolumeUI();
 })();

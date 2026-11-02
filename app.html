@@ -25,6 +25,13 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .lyrics-loading, .lyrics-error, .lyrics-not-found, .lyrics-empty { text-align: center; padding: 32px 20px; line-height: 1.65; }
 @media (max-width: 640px) { .lyrics-header { padding: 12px; } .lyrics-line { padding: 10px 8px; } #app .settings-section { padding: 16px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+.queue-undo { margin-left: 12px; padding: 5px 12px; font-size: 12px; }
+.search-feedback { padding: 28px 16px; color: var(--text-secondary); line-height: 1.6; }
+.result-thumb { object-fit: cover; flex-shrink: 0; }
+.volume-btn.is-muted { color: var(--accent); opacity: .65; }
+.volume-slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
+.queue-item:focus-within .queue-actions { opacity: 1; }
+@media (hover: none) { .queue-actions { opacity: 1; } }
 </style>
 <input type="file" style="display: none;">
 <div id="artBg">

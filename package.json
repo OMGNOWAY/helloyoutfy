@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "publishConfig":{"registry":"https://soleng.jfrog.io/artifactory/api/npm/ghjfdemo-ghjf-npm-virt/"},
+  "publishConfig": {
+    "registry": "https://soleng.jfrog.io/artifactory/api/npm/ghjfdemo-ghjf-npm-virt/"
+  },
   "scripts": {
     "dev": "nodemon ./index.js",
-    "ui": "browser-sync start --config bs-config.js"
+    "ui": "browser-sync start --config bs-config.js",
+    "test": "node tests/app-regressions.cjs"
   },
   "keywords": [],
   "author": "",
