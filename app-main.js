@@ -6,7 +6,9 @@ const CHANGELOG_DATA = {
     `You can import .lrc or .txt lyrics for the current song in settings`,
     `Fixed stale lyrics after clearing the queue, mobile panel toggling and crossfade seeking`,
     `Refresh now checks the providers again instead of reusing cached responses`,
-    `Fixed Next getting stuck on the same song with repeat one enabled`
+    `Fixed Next getting stuck on the same song with repeat one enabled`,
+    `Fixed am-lyrics not following the current line when it was only partly visible`,
+    `Shift + right-click now saves the line you clicked on unsynced songs`
   ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
@@ -6978,15 +6980,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 : seconds;
         });
         // right click a line = copy it, shift + right click = save it as an image card
-        el.addEventListener('contextmenu', event => {
-            const ln = event.composedPath?.().find(n => n instanceof HTMLElement && n.classList.contains('lyrics-line'));
-            if (!ln) return;
-            event.preventDefault();
-            const ts = Number(ln.dataset?.startTime);
-            if (event.shiftKey) { this.shareLineCard(Number.isFinite(ts) ? this.indexAtTs(ts) : null); return; }
-            const text = (ln.textContent || '').replace(/\s+/g, ' ').trim();
-            if (text) navigator.clipboard?.writeText(text).then(() => toast('Line copied (shift + right-click saves it as an image)')).catch(() => {});
-        });
+        el.addEventListener('contextmenu', event => this.handleAmContextMenu(event));
         // am-lyrics refetches on every reconnect (connectedCallback). skip that when we're
         // only moving the element between hosts, the lyrics are already loaded
         const origFetch = el.fetchLyrics.bind(el);
@@ -6997,6 +6991,17 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this.amEl = el;
         this.applyAmFocus();
         return el;
+    }
+    handleAmContextMenu(event) {
+        const line = event.composedPath?.().find(node => node?.classList?.contains('lyrics-line'));
+        if (!line) return;
+        const text = (line.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text) return;
+        event.preventDefault();
+        // Unsynced/repeated lines may all have timestamp zero. Save the clicked
+        // text directly instead of looking up a different line by timestamp.
+        if (event.shiftKey) { void this.shareLineCard(null, { text }); return; }
+        void navigator.clipboard?.writeText(text).then(() => toast('Line copied (shift + right-click saves it as an image)')).catch(() => {});
     }
     // disconnectedCallback tears down the scroll listeners + viewport observer, put them back
     restoreAmAfterMove() {
@@ -7344,19 +7349,60 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         clearTimeout(this.amBarTimer);
         this.amBarTimer = setTimeout(() => { if (!this.amMenu?.classList.contains('open')) bar.classList.remove('show'); }, 2200);
     }
-    // shows the "jump to current line" pill when the current line has scrolled out of view
+    getAmCurrentLine() {
+        const el = this.amEl, root = el?.shadowRoot;
+        if (!root) return null;
+        const active = root.querySelector('.lyrics-line.active');
+        if (active) return active;
+        const ms = audio.currentTime * 1000 - (this.amOffsetMs || 0);
+        let index = -1;
+        for (let i = 0; i < (el.lyrics || []).length; i++) {
+            const time = Number(el.lyrics[i].timestamp);
+            if (Number.isFinite(time) && time <= ms) index = i;
+            else if (Number.isFinite(time) && time > ms) break;
+        }
+        return index >= 0 ? root.querySelector(`#lyrics-line-${index}`) : null;
+    }
+    amLineNeedsScroll(container, line) {
+        const viewport = container.getBoundingClientRect(), rect = line.getBoundingClientRect();
+        if (viewport.height <= 0 || rect.height <= 0) return false;
+        const margin = Math.min(8, viewport.height * .1);
+        const top = viewport.top + margin, bottom = viewport.bottom - margin;
+        // A very tall verse cannot fit in one viewport; don't repeatedly scroll it.
+        if (rect.height > bottom - top) {
+            const visible = Math.min(rect.bottom, bottom) - Math.max(rect.top, top);
+            return visible < Math.min(64, (bottom - top) / 2);
+        }
+        return rect.top < top - 2 || rect.bottom > bottom + 2;
+    }
+    scrollAmLineIntoView(container, line, force = false) {
+        const el = this.amEl;
+        if (!el || !container || !line) return;
+        if (!force && (el.isUserScrolling || container.classList.contains('user-scrolling'))) return;
+        if (typeof el.scrollToActiveLineYouLy === 'function') {
+            // Force bypasses the renderer's "already near the bottom" shortcut
+            // and keeps its scroll position / animation state in sync.
+            el.scrollToActiveLineYouLy(line, true);
+            return;
+        }
+        if (force) { container.classList.remove('user-scrolling'); el.isUserScrolling = false; }
+        const cr = container.getBoundingClientRect(), lr = line.getBoundingClientRect();
+        const top = container.scrollTop + lr.top - cr.top - Math.max(0, (container.clientHeight - lr.height) / 2);
+        container.scrollTo({ top: Math.max(0, top), behavior: el.shouldReduceMotion ? 'auto' : 'smooth' });
+    }
+    // Partial visibility isn't enough: keep the whole current line readable.
     updateAmJump() {
         const el = this.amEl, jump = this.amJump;
-        if (!el || !jump || !el.isConnected) return;
-        const root = el.shadowRoot;
-        const c = root?.querySelector('.lyrics-container');
-        const line = root?.querySelector('.lyrics-line.active');
-        let show = false;
-        if (c && line) {
-            const cr = c.getBoundingClientRect(), lr = line.getBoundingClientRect();
-            show = cr.height > 0 && (lr.bottom < cr.top + 8 || lr.top > cr.bottom - 8);
+        if (!el || !el.isConnected) return;
+        const container = el.shadowRoot?.querySelector('.lyrics-container');
+        const line = this.getAmCurrentLine();
+        const show = !el.cachedIsUnsynced && !!container && !!line && this.amLineNeedsScroll(container, line);
+        jump?.classList.toggle('show', show);
+        if (show && !audio.paused && el.autoScroll !== false && !el.isLoading &&
+            !el.isUserScrolling && !el.isClickSeeking && !el.isProgrammaticScroll &&
+            !container.classList.contains('user-scrolling')) {
+            this.scrollAmLineIntoView(container, line);
         }
-        jump.classList.toggle('show', show);
     }
     setFontScale(v) {
         this.amFontScale = Math.max(0.7, Math.min(1.8, Math.round(v * 10) / 10));
@@ -7621,11 +7667,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         toast('Saved .lrc');
     }
     // ---- line card: lyric on a blurred cover background, saved as a png ----
-    async shareLineCard(idx) {
+    async shareLineCard(idx, selectedLine = null) {
         const lines = this.parsedLines || [];
         const track = queue?.[currentTrackIndex];
-        if (idx == null) idx = this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0));
-        const line = lines[idx];
+        if (!selectedLine && idx == null) idx = this.lineIndexAtMs(audio.currentTime * 1000 - (this.amOffsetMs || 0));
+        const line = selectedLine || lines[idx];
         if (!line || !track) { toast('Play a line first'); return; }
         toast('Making line card...');
         const W = 1080, H = 1350, pad = 96, art = 200;
@@ -7753,23 +7799,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             const root = el.shadowRoot;
             const container = root?.querySelector('.lyrics-container');
             if (!container) return;
-            // user already started scrolling by hand, leave them alone
-            if (container.classList.contains('user-scrolling')) {
-                if (!force) return;
-                container.classList.remove('user-scrolling');
-                try { el.isUserScrolling = false; } catch (e) {}
-            }
-            let line = root.querySelector('.lyrics-line.active');
-            if (!line && Array.isArray(el.lyrics)) {
-                const ms = audio.currentTime * 1000;
-                let idx = -1;
-                for (let i = 0; i < el.lyrics.length; i++) { if ((Number(el.lyrics[i].timestamp) || 0) <= ms) idx = i; else break; }
-                if (idx >= 0) line = root.querySelector(`#lyrics-line-${idx}`);
-            }
-            if (!line) return;
-            const raw = (getComputedStyle(container).getPropertyValue('--lyrics-scroll-padding-top') || '').trim();
-            const pad = raw.includes('%') ? container.clientHeight * (parseFloat(raw) / 100) : (parseFloat(raw) || 0);
-            container.scrollTo({ top: Math.max(0, line.offsetTop - pad), behavior: force ? 'smooth' : 'auto' });
+            const line = this.getAmCurrentLine();
+            if (line) this.scrollAmLineIntoView(container, line, force);
         };
         // am-lyrics resets scrollTop itself right after load, so snap a few times
         requestAnimationFrame(() => requestAnimationFrame(snap));

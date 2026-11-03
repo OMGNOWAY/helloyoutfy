@@ -124,5 +124,50 @@ await check('settings open without mounting the removed lyrics section',()=>{
  context.SettingsManager.open();assert.equal(inserted,undefined);assert.equal(typeof context.lyricsManager.importLyricsFile,'function');assert.equal(typeof context.lyricsManager.refreshAllLyrics,'function');
  document.querySelector=originalQuery;context.lyricsManager=null;
 });
+
+const lyricViewport={classList:{contains:()=>false},getBoundingClientRect:()=>({top:0,bottom:200,height:200})};
+const lyricRect=(top,height=40)=>({getBoundingClientRect:()=>({top,bottom:top+height,height})});
+await check('partly visible current lines at either edge need scrolling',()=>{
+ const m=lyricManager();assert(m.amLineNeedsScroll(lyricViewport,lyricRect(-20)));assert(m.amLineNeedsScroll(lyricViewport,lyricRect(190)));
+ assert(!m.amLineNeedsScroll(lyricViewport,lyricRect(70)));
+});
+await check('tall verses only recenter when too little remains readable',()=>{
+ const m=lyricManager();assert(!m.amLineNeedsScroll(lyricViewport,lyricRect(-50,400)));assert(m.amLineNeedsScroll(lyricViewport,lyricRect(189,400)));
+});
+await check('automatic follow works without the floating jump button',()=>{
+ const m=lyricManager(),calls=[];audio.paused=false;const line=lyricRect(190);
+ m.amEl={isConnected:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:(...args)=>calls.push(args)};
+ m.getAmCurrentLine=()=>line;m.updateAmJump();assert.equal(calls.length,1);assert.equal(calls[0][0],line);assert.equal(calls[0][1],true);
+});
+await check('automatic follow respects manual scroll and unsynced lyrics',()=>{
+ const m=lyricManager();let calls=0;m.amEl={isConnected:true,isUserScrolling:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:()=>calls++};
+ m.getAmCurrentLine=()=>lyricRect(190);audio.paused=false;m.updateAmJump();assert.equal(calls,0);
+ m.amEl.isUserScrolling=false;m.amEl.cachedIsUnsynced=true;m.updateAmJump();assert.equal(calls,0);
+});
+await check('timestamp fallback accounts for the saved lyric offset',()=>{
+ const m=lyricManager();m.amOffsetMs=2000;audio.currentTime=11;
+ const selectors=[];m.amEl={lyrics:[{timestamp:0},{timestamp:10000}],shadowRoot:{querySelector:selector=>{selectors.push(selector);return selector==='.lyrics-line.active'?null:{}}}};
+ m.getAmCurrentLine();assert.equal(selectors.at(-1),'#lyrics-line-0');
+});
+await check('shift-right-click passes the clicked unsynced line instead of its shared timestamp',()=>{
+ const m=lyricManager();let selected,prevented=false;
+ m.indexAtTs=()=>{throw new Error('Timestamp lookup must not select an unsynced line')};
+ m.shareLineCard=(index,line)=>{selected=line};
+ const clicked={dataset:{startTime:'0'},textContent:'  The second line  ',classList:{contains:name=>name==='lyrics-line'}};
+ m.handleAmContextMenu({composedPath:()=>[clicked],shiftKey:true,preventDefault:()=>prevented=true});
+ assert(prevented);assert.equal(selected.text,'The second line');
+});
+await check('line image renderer uses the supplied clicked text rather than the first parsed line',async()=>{
+ const m=lyricManager(),drawn=[];context.queue=[{title:'Song',artist:'Artist'}];context.currentTrackIndex=0;
+ m.parsedLines=[{text:'First line',startMs:0},{text:'Second line',startMs:0}];m.lineIndexAtMs=()=>{throw new Error('Should use the clicked line')};
+ m.loadImageCors=async()=>null;m.dominantColor=async()=>null;m.downloadBlob=()=>{};
+ const originalCreate=document.createElement;context.getComputedStyle=()=>({fontFamily:'sans-serif'});
+ const drawing={fillRect(){},fillText:text=>drawn.push(text),measureText:text=>({width:text.length*10}),createLinearGradient:()=>({addColorStop(){}})};
+ document.createElement=tag=>tag==='canvas'?{getContext:()=>drawing,toBlob:callback=>callback({})}:new Element();
+ await m.shareLineCard(null,{text:'Second line'});assert(drawn.includes('Second line'));assert(!drawn.includes('First line'));document.createElement=originalCreate;
+});
+await check('these fixes stay in the 1.4.8 release',()=>{
+ assert(source.includes('var version = "1.4.8";'));assert(!source.includes('"Release 1.4.9"'));assert(source.includes('Shift + right-click now saves the line you clicked on unsynced songs'));
+});
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});
