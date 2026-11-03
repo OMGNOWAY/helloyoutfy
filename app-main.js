@@ -10,7 +10,7 @@ const CHANGELOG_DATA = {
     `Fixed am-lyrics not following the current line when it was only partly visible`,
     `Shift + right-click now saves the line you clicked on unsynced songs`,
     `Fixed scroll correction interfering with lyric highlighting and restored the original active-line colors`,
-    `Fixed am-lyrics word-fill and character animations running at normal speed when playback speed changes`
+    `Removed the animation-speed override that interfered with native lyric highlighting and focus visuals`
   ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
@@ -6307,9 +6307,7 @@ class UnifiedLyricsManager {
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
         [audio, audio2].forEach(player => {
             player.addEventListener('seeked', () => { if (player === audio) this.handleTimeUpdate(); });
-            ['play', 'pause', 'ratechange', 'seeking'].forEach(event => {
-                player.addEventListener(event, () => { if (player === audio) this.handleTimeUpdate(); });
-            });
+            player.addEventListener('play', () => { if (player === audio) this.handleTimeUpdate(); });
             player.addEventListener('loadedmetadata', () => {
                 if (player === audio) this.songDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
             });
@@ -7867,58 +7865,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
     }
 
-    syncAmAnimationClock(timeMs) {
-        const el = this.amEl;
-        if (!el || el.cachedIsUnsynced) return;
-        const container = el.lyricsContainer || el.shadowRoot?.querySelector('.lyrics-container');
-        if (!container?.getAnimations) return;
-        const renderer = el.constructor;
-        const rate = audio.paused || audio.seeking ? 0 :
-            (Number.isFinite(audio.playbackRate) && audio.playbackRate > 0 ? audio.playbackRate : 1);
-        for (const animation of container.getAnimations({ subtree: true })) {
-            if (animation.playState === 'idle' || animation.playState === 'finished') continue;
-            const target = animation.effect?.target;
-            const line = target?.closest?.('.lyrics-line');
-            if (line && el.rewindingLines?.has(line)) continue;
-            const name = String(animation.animationName || '');
-            let epoch = renderer.wipeClocks?.get(animation) ?? renderer.normalRiseClocks?.get(animation);
-            let delay = 0;
-            if (!Number.isFinite(epoch) && name.includes('wipe')) {
-                const syllable = target?.closest?.('.lyrics-syllable');
-                const start = syllable?.dataset?.startTime;
-                if (start !== undefined && Number.isFinite(Number(start))) {
-                    epoch = Number(start);
-                    delay = Number(animation.effect?.getTiming?.().delay) || 0;
-                }
-            }
-            if (!Number.isFinite(epoch)) {
-                const char = target?.classList?.contains('char-motion') ? target.querySelector('.char') : target;
-                const motion = char && renderer.characterAnimations?.get(char);
-                if (motion && (motion.animation === animation || name === 'char-glow')) {
-                    epoch = motion.start + (name === 'char-glow' ? motion.glowEpoch || 0 : 0);
-                }
-            }
-            // UI scrolling, focus transitions and background effects keep their own clocks.
-            if (!Number.isFinite(epoch)) continue;
-            const end = Number(animation.effect?.getComputedTiming?.().endTime);
-            const elapsed = Math.max(0, timeMs - epoch + delay);
-            const position = Number.isFinite(end) ? Math.min(elapsed, Math.max(0, end)) : elapsed;
-            const rateChanged = animation.playbackRate !== rate;
-            if (rateChanged) animation.playbackRate = rate;
-            // Correct old drift once; running animations then advance smoothly at the
-            // media rate instead of repeatedly jumping back to a 1x animation clock.
-            if (rateChanged || rate === 0 || Math.abs(Number(animation.currentTime) - position) > 45) {
-                animation.currentTime = position;
-            }
-        }
-    }
-
     handleTimeUpdate() {
         const off = this.hasSyncedLyrics() ? (this.amOffsetMs || 0) : 0;
         if (this.amActive && this.amEl && this.amEl.isConnected) {
             const t = Math.max(0, Math.round(audio.currentTime * 1000 - off));
             if (t !== this._lastAmT) { this._lastAmT = t; this.amEl.currentTime = t; }
-            this.syncAmAnimationClock(t);
         }
         if (this.amLoop && this.currentSource === 'amlyrics' && !audio.paused) {
             const lms = audio.currentTime * 1000 - off;
