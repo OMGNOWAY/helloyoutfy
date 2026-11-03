@@ -167,7 +167,7 @@ await check('line image renderer uses the supplied clicked text rather than the 
  await m.shareLineCard(null,{text:'Second line'});assert(drawn.includes('Second line'));assert(!drawn.includes('First line'));document.createElement=originalCreate;
 });
 await check('these fixes stay in the 1.4.8 release',()=>{
- assert(source.includes('var version = "1.4.8";'));assert(!source.includes('"Release 1.4.9"'));assert(source.includes('Shift + right-click now saves the line you clicked on unsynced songs'));
+ assert(source.includes('var version = "1.4.8";'));assert(!source.includes('"Release 1.4.9"'));
 });
 
 await check('scroll corrections do not clear word colors or toggle focus mode',()=>{

@@ -248,7 +248,7 @@ async function loadApp() {
     showLoading("couldn't load the app — check your connection and try again");
     const retry = document.createElement('button');
     retry.type = 'button'; retry.textContent = 'Try again';
-    retry.style.cssText = 'display:block;margin:16px auto;padding:10px 18px;border-radius:10px;cursor:pointer';
+    retry.className = 'gate-retry';
     retry.addEventListener('click', launch, { once: true });
     $('gLoading').appendChild(retry);
   }

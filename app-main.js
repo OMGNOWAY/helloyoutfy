@@ -2,30 +2,17 @@
 var version = "1.4.8";
 const CHANGELOG_DATA = {
   "Release 1.4.8": [
-    `Lyrics switch songs faster and save a synced copy for revisiting songs`,
-    `You can import .lrc or .txt lyrics for the current song in settings`,
-    `Fixed stale lyrics after clearing the queue, mobile panel toggling and crossfade seeking`,
-    `Refresh now checks the providers again instead of reusing cached responses`,
-    `Fixed Next getting stuck on the same song with repeat one enabled`,
-    `Fixed am-lyrics not following the current line when it was only partly visible`,
-    `Shift + right-click now saves the line you clicked on unsynced songs`,
-    `Fixed scroll correction interfering with lyric highlighting and restored the original active-line colors`,
-    `Removed the animation-speed override that interfered with native lyric highlighting and focus visuals`,
-    `Fixed scroll corrections touching the lyric renderer animation state`,
-    `Fixed saved unsynced lyrics being treated as timed lyrics`,
-    `Fixed imported songs failing to play when browser storage is unavailable`,
-    `Fixed the mini lyrics renderer exceeding the side panel height and cutting off the last lines`,
+    `Improved lyrics loading and saved lyric fallback`,
+    `Fixed Next repeating the same song with repeat one enabled`,
+    `Fixed partly visible lyrics not following and saving the wrong unsynced line`,
     `Added a Christmas theme in settings, with lights and snow`,
     `Hidden a small game somewhere in the app`
   ],
   "Release 1.4.7": [
-    `You can undo removing songs or clearing the queue for 30 seconds`,
-    `Search works across titles, artists and albums together, accents included`,
-    `Fixed album tracks playing backwards when added with Play next`,
-    `Fixed older YouTube searches replacing newer results and duplicate downloads`,
-    `Volume saves now, and changing it while muted actually unmutes it`,
-    `Fixed the full lyrics progress bar shrinking and lyric search losing focus`,
-    `API key changes apply right away, plus smoother duration loading for big libraries`
+    `Added undo for removed songs and cleared queues`,
+    `Improved song search across titles, artists and albums`,
+    `Fixed album Play next order and outdated YouTube search results`,
+    `Fixed volume controls and API key changes not applying correctly`
   ],
   "Release 1.4.6": [
     `Added Discord formatting messages thing (<so like **hi** and stuff>)`,
@@ -40,7 +27,6 @@ const CHANGELOG_DATA = {
     `Added playlists, so you can make playlists now or something...`,
     `Fixed a bug with playing a album (<(it would make the album your songs on the home page)>)`,
     `Thats it for now i think`,
-    `(<halloween time!>)`,
   ],
   "Release 1.4.4": [
     `Redid (<(kinda)>) the chat UI`,
@@ -1208,10 +1194,6 @@ let lyricsManager = null;
 let albumArtBackground = localStorage.getItem('youtifiy_aab') === 'on';
 let performanceModeEnabled = localStorage.getItem('youtify_performance_mode') === 'on';
 let sidebarBottom = localStorage.getItem('youtify_sidebar_bottom') === 'on';
-// Halloween: if they've flipped the Settings toggle that choice wins; otherwise it's on only while no theme is picked
-const _hwStored = localStorage.getItem('youtify_halloween');
-const _hwTheme = localStorage.getItem('theme');
-let halloweenEnabled = _hwStored ? _hwStored === 'on' : (!_hwTheme || _hwTheme === 'default');
 
 let playStats = { totalPlays: 0, totalTime: 0, trackStats: {} };
 let playHistory = [];
@@ -3433,46 +3415,6 @@ function toggleSidebarPosition() {
   document.body.classList.toggle('sidebar-bottom', sidebarBottom);
 }
 
-// Halloween theme: pure CSS layer scoped under html.halloween (see style1.css)
-function applyHalloween() {
-  document.documentElement.classList.toggle('halloween', halloweenEnabled);
-  document.documentElement.classList.toggle('halloween-off', !halloweenEnabled);
-  const btn = document.getElementById('halloweenBtn');
-  if (btn) btn.setAttribute('aria-checked', halloweenEnabled ? 'true' : 'false');
-  try { ThemeManager.applyAccentInk(); } catch (e) {}
-}
-
-function toggleHalloween() {
-  if (!halloweenEnabled) window.ChristmasTheme?.setEnabled(false);
-  halloweenEnabled = !halloweenEnabled;
-  localStorage.setItem('youtify_halloween', halloweenEnabled ? 'on' : 'off');
-  applyHalloween();
-}
-
-// No explicit choice yet? Halloween follows whether a theme is picked (default/no theme = Halloween on).
-new MutationObserver(() => {
-  if (localStorage.getItem('youtify_halloween')) return;
-  const t = document.documentElement.getAttribute('data-theme');
-  const want = !t || t === 'default';
-  if (want !== halloweenEnabled) { halloweenEnabled = want; applyHalloween(); }
-}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-
-// Adds the toggle row to Settings (right under Performance Mode) if the HTML doesn't already have one.
-function ensureHalloweenToggle() {
-  if (document.getElementById('halloweenBtn')) return;
-  const perf = document.getElementById('performanceModeBtn');
-  const row = perf ? perf.closest('.setting-toggle-row') : null;
-  const holder = row || (perf && perf.parentElement);
-  if (!holder || !holder.parentElement) return;
-  const el = document.createElement('div');
-  el.className = 'setting-toggle-row';
-  el.innerHTML =
-    '<span class="setting-toggle-label">\uD83C\uDF83 Halloween Theme</span>' +
-    '<button class="toggle-slider" id="halloweenBtn" type="button" role="switch" aria-checked="' + (halloweenEnabled ? 'true' : 'false') + '" onclick="toggleHalloween()">' +
-    '<span class="slider-thumb"></span></button>';
-  holder.insertAdjacentElement('afterend', el);
-}
-
 // ============================================================================
 // MINI PLAYER
 // ============================================================================
@@ -5351,7 +5293,6 @@ function resetStats() {
 class SettingsManager {
   static open() {
     document.getElementById('settingsModal').classList.add('active');
-    ensureHalloweenToggle();
     window.ChristmasTheme?.ensureToggle();
     addLyricsSettings();
     [['apiKeyInput', apiKey], ['FileURLinput', svgfile], ['appTitleInput', document.title]].forEach(([id, value]) => {
@@ -6970,7 +6911,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (this.amEl) return this.amEl;
         const el = document.createElement('am-lyrics');
         el.id = 'amLyricsEl';
-        el.style.cssText = 'display:block;width:100%;height:100%;min-height:0;max-height:100%;box-sizing:border-box;background:transparent;';
         el.autoScroll = true;
         el.interpolate = true;
         el.noBlur = true;
@@ -8360,8 +8300,6 @@ loadFavoriteTracks();
 
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme && savedTheme !== 'default') document.documentElement.setAttribute('data-theme', savedTheme);
-document.documentElement.classList.toggle('halloween', halloweenEnabled);
-document.documentElement.classList.toggle('halloween-off', !halloweenEnabled);
 ThemeManager.loadCustom();
 ThemeManager.applyAccentInk();
 
@@ -8644,8 +8582,6 @@ if (performanceModeButton) performanceModeButton.setAttribute('aria-checked', pe
 if (sidebarPosButton) sidebarPosButton.setAttribute('aria-checked', sidebarBottom ? 'true' : 'false');  
 document.body.classList.toggle('sidebar-bottom', sidebarBottom);                                          
 document.body.classList.toggle('performance-mode', performanceModeEnabled);
-ensureHalloweenToggle();
-applyHalloween();
 
 // Miscellaneous helpers (called from HTML)
 function timeAgo(s) { return Utils.timeAgo(s); }
@@ -15642,146 +15578,6 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(sync, 800); // safety net: re-check now and then
 })();
 
-// ============================================================
-// 🎃 Halloween easter eggs (only live while the Halloween theme is on)
-//   click the logo 5x fast ......... ghost jumpscare
-//   shift + click the logo ......... candy rain
-//   click the app name 3x fast ..... thunderstorm
-//   play a spooky-titled song ...... bat swarm
-//   open the app on Oct 31 ......... pumpkin rain (once per session)
-//   log in ......................... ghost jumpscare (once per tab session)
-//   console ........................ boo()  treats()  storm()  swarm()
-// ============================================================
-(function () {
-  const on      = () => document.documentElement.classList.contains('halloween');
-  const calm    = () => document.body.classList.contains('performance-mode');
-  const reduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const ok      = () => on() && !calm() && !reduced();
-  const rand    = (a, b) => a + Math.random() * (b - a);
-
-  const st = document.createElement('style');
-  st.textContent = `
-    .hw-fx{position:fixed;pointer-events:none;z-index:9999;user-select:none}
-    .hw-fall{top:-60px;animation:hwFall linear forwards}
-    @keyframes hwFall{to{transform:translateY(115vh) rotate(540deg)}}
-    .hw-ghost{left:50%;top:50%;font-size:40px;filter:drop-shadow(0 0 30px rgba(157,77,255,.9));animation:hwGhost 1.8s ease-out forwards}
-    @keyframes hwGhost{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}15%{opacity:1}55%{transform:translate(-50%,-50%) scale(9) rotate(-6deg);opacity:1}100%{transform:translate(-50%,-50%) scale(12) rotate(6deg);opacity:0}}
-    .hw-boo{left:50%;top:68%;transform:translateX(-50%);font-family:var(--font-spooky,sans-serif);font-size:80px;color:#ff7a18;text-shadow:0 0 26px #ff7a18;opacity:0;animation:hwBoo 1.8s ease-out forwards}
-    @keyframes hwBoo{0%,30%{opacity:0}45%{opacity:1}100%{opacity:0}}
-    .hw-bat{left:-60px;animation:hwBat linear forwards;filter:drop-shadow(0 0 8px rgba(157,77,255,.8))}
-    @keyframes hwBat{from{transform:translate(0,0) rotate(0)}to{transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}}
-    .hw-flash{inset:0;background:#e8d6ff;opacity:0;animation:hwFlash 1s steps(1) forwards}
-    @keyframes hwFlash{0%{opacity:0}5%{opacity:.85}12%{opacity:0}20%{opacity:.7}30%{opacity:0}45%{opacity:.4}60%,100%{opacity:0}}
-  `;
-  document.head.appendChild(st);
-
-  function fx(cls, text, style, ms) {
-    const el = document.createElement('div');
-    el.className = 'hw-fx ' + cls;
-    if (text) el.textContent = text;
-    if (style) Object.assign(el.style, style);
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), ms);
-    return el;
-  }
-
-  function rain(emojis, n) {
-    if (!ok()) return;
-    for (let i = 0; i < (n || 45); i++) {
-      const dur = rand(2.5, 5);
-      const delay = rand(0, 1.6);
-      fx('hw-fall', emojis[Math.floor(Math.random() * emojis.length)], {
-        left: rand(0, 98) + 'vw',
-        fontSize: rand(20, 42) + 'px',
-        animationDuration: dur + 's',
-        animationDelay: delay + 's'
-      }, (dur + delay) * 1000 + 300);
-    }
-  }
-
-  function boo() {
-    if (!ok()) return;
-    fx('hw-ghost', '👻', null, 2000);
-    fx('hw-boo', 'BOO!', null, 2000);
-  }
-
-  function storm() {
-    if (!ok()) return;
-    fx('hw-flash', '', null, 1100);
-    setTimeout(() => fx('hw-flash', '', null, 1100), 1300);
-  }
-
-  function swarm() {
-    if (!ok()) return;
-    for (let i = 0; i < 16; i++) {
-      const dur = rand(3, 6.5);
-      const delay = rand(0, 1.8);
-      fx('hw-bat', '🦇', {
-        top: rand(4, 85) + '%',
-        fontSize: rand(22, 40) + 'px',
-        animationDuration: dur + 's',
-        animationDelay: delay + 's',
-        '--dx': '120vw',
-        '--dy': rand(-220, 220) + 'px',
-        '--rot': rand(-25, 25) + 'deg'
-      }, (dur + delay) * 1000 + 300);
-    }
-  }
-
-  const treats = () => rain(['🍬', '🍭', '🍫', '🍪', '🎃'], 50);
-
-  // click eggs (logo x5 = ghost, shift+logo = candy, app name x3 = storm)
-  let logoClicks = [], nameClicks = [];
-  const burst = (arr, n, ms) => {
-    const now = Date.now();
-    arr.push(now);
-    while (arr.length && now - arr[0] > ms) arr.shift();
-    if (arr.length >= n) { arr.length = 0; return true; }
-    return false;
-  };
-  document.addEventListener('click', (e) => {
-    if (!on()) return;
-    if (e.target.closest('.logo')) {
-      if (e.shiftKey) { treats(); return; }
-      if (burst(logoClicks, 5, 2000)) boo();
-    } else if (e.target.closest('.brand-title')) {
-      if (burst(nameClicks, 3, 1200)) storm();
-    }
-  });
-
-  // spooky song titles summon bats (media events don't bubble, so listen in the capture phase)
-  const spooky = /thriller|monster|ghost|spooky|halloween|witch|haunt|zombie|skelet|vampire|werewolf|scary|devil|demon|nightmare|graveyard|creep|boo\b|bones|dead|death|reaper|phantom/i;
-  let lastSpooky = '';
-  document.addEventListener('play', () => {
-    setTimeout(() => {
-      let t = '';
-      try { t = queue[currentTrackIndex].title || ''; } catch (e) {}
-      if (t && t !== lastSpooky && spooky.test(t)) { lastSpooky = t; treats(); }
-    }, 400);
-  }, true);
-
-  // Oct 31: pumpkins on first open of the session
-  try {
-    const d = new Date();
-    if (d.getMonth() === 9 && d.getDate() === 31 && !sessionStorage.getItem('hw_oct31')) {
-      sessionStorage.setItem('hw_oct31', '1');
-      setTimeout(() => rain(['🎃', '👻', '🦇', '🕷️'], 60), 1800);
-    }
-  } catch (e) {}
-
-  // jumpscare as soon as the app loads after login (once per tab session so refreshes don't spam it)
-  try {
-    if (!sessionStorage.getItem('hw_boo')) {
-      sessionStorage.setItem('hw_boo', '1');
-      setTimeout(boo, 900);
-    }
-  } catch (e) {}
-
-  // console cheats
-  window.boo = boo; window.treats = treats; window.storm = storm; window.swarm = swarm;
-  if (on()) console.log('%c🎃 psst... try boo()  treats()  storm()  swarm()', 'color:#ff7a18;font-size:14px;font-weight:bold');
-})();
-
 // ===================== Christmas theme + Snake easter egg =====================
 class WinterSnakeGame {
   constructor(random = Math.random, size = 20) { this.random = random; this.size = size; this.reset(); }
@@ -15822,35 +15618,6 @@ class WinterSnakeGame {
   const read=(key,fallback)=>{try{return localStorage.getItem(key)??fallback;}catch{return fallback;}};
   const save=(key,value)=>{try{localStorage.setItem(key,String(value));}catch{}};
   let enabled=read('youtify_christmas','off')==='on';
-  const css=document.createElement('style'); css.id='youtify-christmas-style';
-  css.textContent=`
-    html.christmas { color-scheme:dark; --bg-primary:#081e19!important; --bg-secondary:#102e26!important; --bg-tertiary:#193e32!important; --bg-hover:#254d3e!important; --bg-card:#103128!important; --bg-elevated:#1b3c30!important; --border-hover:rgba(226,190,112,.45)!important; --player-bg:#0b261f!important; --text-primary:#fff8e8!important; --text-secondary:#c9d9c8!important; --text-muted:#b0c5b6!important; --accent:#ef7784!important; --accent-secondary:#e4bc70!important; --accent-hover:#ff9ca6!important; --border:rgba(226,190,112,.25)!important; --shadow-glow:226,190,112!important; --glass-bg:rgba(10,39,31,.84)!important; }
-    html.christmas body { background:radial-gradient(ellipse at 85% 0%,#314330 0%,#0b271f 48%,#061510 100%)!important; }
-    html.christmas .brand-title { color:#f6d494!important; -webkit-text-fill-color:#f6d494!important; }
-    html.christmas .sidebar,html.christmas .main,html.christmas .player { border-color:rgba(226,190,112,.28)!important; }
-    html.christmas .main,html.christmas .queue-container,html.christmas .settings-section,html.christmas .stats-card,html.christmas .album-card,html.christmas .album-tracklist { background:linear-gradient(145deg,rgba(31,69,48,.92),rgba(12,39,30,.94))!important; border-color:rgba(226,190,112,.28)!important; }
-    html.christmas .hero-now { background:linear-gradient(120deg,rgba(132,36,54,.75),rgba(30,67,45,.9))!important; border-color:rgba(226,190,112,.32)!important; }
-    html.christmas .player::before { background:linear-gradient(90deg,#bd394e,#e4bc70,#347d50)!important; }
-    html.christmas .nav-item.active { background:rgba(177,45,67,.28)!important; color:#ffe8ce!important; }
-    html.christmas .btn.primary { background:linear-gradient(135deg,#a52e43,#d65364)!important; color:#fff8e8!important; }
-    .xmas-decorations { display:none; position:fixed;inset:0;pointer-events:none;z-index:55;overflow:hidden;contain:strict; }
-    html.christmas .xmas-decorations { display:block; }
-    .xmas-wire {position:absolute;top:-8px;left:-2%;width:104%;height:22px;border-bottom:3px solid #35563a;border-radius:0 0 50% 50%;display:flex;justify-content:space-around;}
-    .xmas-bulb {width:8px;height:13px;margin-top:16px;border-radius:45% 45% 55% 55%;background:var(--bulb);box-shadow:0 0 10px 3px var(--bulb);transform:rotate(var(--tilt));}
-    .xmas-snow {position:absolute;top:-20px;width:var(--size);height:var(--size);border-radius:50%;background:#fff9e4;opacity:.6;animation:xmasSnow var(--duration) linear var(--delay) infinite;}
-    @keyframes xmasSnow {to{transform:translate(45px,105vh);}}
-    @media(prefers-reduced-motion:reduce) {.xmas-snow{display:none}.xmas-bulb{box-shadow:none}}
-    body.performance-mode .xmas-snow {display:none}
-    .winter-snake {margin:auto;color:#f7eed7;background:#0a211b;border:1px solid #cda85f;border-radius:20px;padding:22px;width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;box-sizing:border-box;box-shadow:0 25px 100px #0008;font:14px system-ui,sans-serif;}
-    .winter-snake::backdrop {background:#000a;backdrop-filter:blur(6px)}
-    .winter-snake header,.snake-stats,.snake-actions {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
-    .winter-snake h2 {margin:0;font-size:22px;color:#f5d38e}.winter-snake button {border:1px solid #cda85f70;border-radius:9px;background:#183e30;color:#fff8e7;padding:8px 13px;font:inherit;cursor:pointer;}
-    .winter-snake button:focus-visible,.winter-snake canvas:focus-visible {outline:2px solid #f0ca7e;outline-offset:3px}
-    .winter-snake canvas {display:block;width:min(100%,52dvh);height:auto;aspect-ratio:1;margin:0 auto;border:1px solid #345b42;border-radius:12px;touch-action:none;background:#061610;}
-    .snake-note {color:#b8cdbd;font-size:12px;line-height:1.5;margin:10px 0}.snake-status {min-height:20px;color:#f5d38e;margin:8px 0;text-align:center;}
-    .snake-pad {display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:repeat(2,34px);gap:4px;justify-content:center;margin-top:10px}.snake-pad button{padding:3px}.snake-pad [data-dir=up]{grid-column:2}.snake-pad [data-dir=left]{grid-column:1;grid-row:2}.snake-pad [data-dir=down]{grid-column:2;grid-row:2}.snake-pad [data-dir=right]{grid-column:3;grid-row:2}
-  `;
-  document.head.append(css);
   const decor=document.createElement('div');decor.className='xmas-decorations';decor.setAttribute('aria-hidden','true');
   const wire=document.createElement('div');wire.className='xmas-wire';
   const colors=['#ff7781','#f7cc6e','#71be8d','#fff3ce'];
@@ -15860,7 +15627,7 @@ class WinterSnakeGame {
   document.body.append(decor);
   function ensureToggle(){
     if(document.getElementById('christmasBtn'))return;
-    const anchor=document.getElementById('halloweenBtn')?.closest('.setting-toggle-row')||document.getElementById('performanceModeBtn')?.closest('.setting-toggle-row');
+    const anchor=document.getElementById('performanceModeBtn')?.closest('.setting-toggle-row');
     if(!anchor)return;
     const row=document.createElement('div');row.className='setting-toggle-row';
     const label=document.createElement('span');label.className='setting-toggle-label';label.id='christmasToggleLabel';label.textContent='🎄 Christmas Theme';
@@ -15868,7 +15635,6 @@ class WinterSnakeGame {
     const thumb=document.createElement('span');thumb.className='slider-thumb';button.append(thumb);button.addEventListener('click',()=>setEnabled(!enabled));row.append(label,button);anchor.after(row);
   }
   function apply(){
-    if(enabled){halloweenEnabled=false;save('youtify_halloween','off');applyHalloween();}
     root.classList.toggle('christmas',enabled);
     document.getElementById('christmasBtn')?.setAttribute('aria-checked',String(enabled));
     try{ThemeManager.applyAccentInk();}catch{}
