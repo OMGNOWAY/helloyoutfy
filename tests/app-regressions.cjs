@@ -125,7 +125,7 @@ await check('settings open without mounting the removed lyrics section',()=>{
  document.querySelector=originalQuery;context.lyricsManager=null;
 });
 
-const lyricViewport={scrollTop:0,classList:{contains:()=>false},getBoundingClientRect:()=>({top:0,bottom:200,height:200})};
+const lyricViewport={scrollTop:0,scrollTo(options){this.lastScroll=options},classList:{contains:()=>false},getBoundingClientRect:()=>({top:0,bottom:200,height:200})};
 const lyricRect=(top,height=40)=>({getBoundingClientRect:()=>({top,bottom:top+height,height})});
 await check('partly visible current lines at either edge need scrolling',()=>{
  const m=lyricManager();assert(m.amLineNeedsScroll(lyricViewport,lyricRect(-20)));assert(m.amLineNeedsScroll(lyricViewport,lyricRect(190)));
@@ -137,7 +137,7 @@ await check('tall verses only recenter when too little remains readable',()=>{
 await check('automatic follow works without the floating jump button',()=>{
  const m=lyricManager(),calls=[];audio.paused=false;const line=lyricRect(190);
  m.amEl={isConnected:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:()=>{throw new Error('Must not clear lyric highlights')},animateScrollYouLy:(...args)=>calls.push(args)};
- m.getAmCurrentLine=()=>line;m.updateAmJump();assert.equal(calls.length,1);assert.equal(calls[0][0],-182);assert.equal(calls[0][1],false);assert.equal(calls[0][3],line);clearTimeout(m.amCorrectionTimer);
+ m.getAmCurrentLine=()=>line;m.updateAmJump();assert.equal(calls.length,0);assert.equal(lyricViewport.lastScroll.top,182);
 });
 await check('automatic follow respects manual scroll and unsynced lyrics',()=>{
  const m=lyricManager();let calls=0;m.amEl={isConnected:true,isUserScrolling:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:()=>calls++};
@@ -177,7 +177,7 @@ await check('scroll corrections do not clear word colors or toggle focus mode',(
  setUserScrolling(){throw new Error('Automatic correction must preserve user focus state')},
  animateScrollYouLy(){moved=true},toggleAttribute(){throw new Error('Must preserve focus mode')}};
  const before=m.amEl.currentPrimaryActiveLine;m.scrollAmLineIntoView(lyricViewport,line);
- assert(moved);assert.equal(m.amEl.currentPrimaryActiveLine,before);assert.equal(m.amEl.highlightColor,'#abcdef');assert.equal(attributes.get('data-yl-focus'),true);clearTimeout(m.amCorrectionTimer);
+ assert.equal(moved,false);assert.equal(lyricViewport.lastScroll.top,182);assert.equal(m.amEl.currentPrimaryActiveLine,before);assert.equal(m.amEl.highlightColor,'#abcdef');assert.equal(attributes.get('data-yl-focus'),true);clearTimeout(m.amCorrectionTimer);
 });
 await check('the original focus toggle still applies and removes its attribute',()=>{
  const m=lyricManager(),attributes=new Map();m.amEl={parentElement:{id:'fullLyricsContent'},toggleAttribute:(name,value)=>attributes.set(name,value)};
@@ -202,6 +202,14 @@ await check('no custom animation-clock override remains installed',()=>{
  assert(!source.includes('syncAmAnimationClock'));
  assert(!source.includes('renderer.wipeClocks'));
  assert(!source.includes('animation.playbackRate = rate'));
+});
+
+await check('unsynced am-lyrics stay untimed when saved and reopened',async()=>{
+ const m=lyricManager(),track={title:'Unsynced',artist:'Artist'};context.queue=[track];context.currentTrackIndex=0;
+ m.amEl={cachedIsUnsynced:true};m.tryAm=async()=>[{text:'First',timestamp:0},{text:'Second',timestamp:0}];
+ await m.fetchLyrics(track);assert.equal(m.hasSyncedLyrics(),false);
+ const saved=m.cache.get(m.getLyricsTrackId(track));assert.equal(saved.source,'saved-amlyrics-text');
+ m.loadCachedLyrics(saved);assert.equal(m.hasSyncedLyrics(),false);assert(m.shouldRefreshSavedLyrics(saved));
 });
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});

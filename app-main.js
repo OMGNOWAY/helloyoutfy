@@ -10,7 +10,9 @@ const CHANGELOG_DATA = {
     `Fixed am-lyrics not following the current line when it was only partly visible`,
     `Shift + right-click now saves the line you clicked on unsynced songs`,
     `Fixed scroll correction interfering with lyric highlighting and restored the original active-line colors`,
-    `Removed the animation-speed override that interfered with native lyric highlighting and focus visuals`
+    `Removed the animation-speed override that interfered with native lyric highlighting and focus visuals`,
+    `Fixed scroll corrections touching the lyric renderer animation state`,
+    `Fixed saved unsynced lyrics being treated as timed lyrics`
   ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
@@ -6164,6 +6166,7 @@ class UnifiedLyricsManager {
         this.isFetching = false; this.isLoading = false; this.pendingTrackChange = false;
     }
     hasSyncedLyrics() {
+        if (this.currentSource === 'amlyrics' && this.amEl?.cachedIsUnsynced) return false;
         return ['amlyrics', 'saved-amlyrics', 'spotify', 'musix', 'imported-lrc'].includes(this.currentSource);
     }
     rememberLyrics(track, data) {
@@ -6174,7 +6177,7 @@ class UnifiedLyricsManager {
     }
     shouldRefreshSavedLyrics(data) {
         // Preserve word-by-word playback online; saved line timings also work offline.
-        return data.source === 'saved-amlyrics' && (typeof navigator === 'undefined' || navigator.onLine !== false);
+        return ['saved-amlyrics', 'saved-amlyrics-text'].includes(data.source) && (typeof navigator === 'undefined' || navigator.onLine !== false);
     }
     loadCachedLyrics(data) {
         this.currentLyrics = data.lyrics; this.currentSource = data.source;
@@ -6411,14 +6414,14 @@ class UnifiedLyricsManager {
                 this.parsedLines = this.amLinesToParsed(amLines);
                 this.currentLyrics = this.parsedLines;
                 this.amTrackKey = this.fetchingKey;
-                const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: 'saved-amlyrics' };
+                const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: this.amEl?.cachedIsUnsynced ? 'saved-amlyrics-text' : 'saved-amlyrics' };
                 void this.rememberLyrics(track, saved);
                 this.isLoading = false;
                 this.updateFetchButtonVisibility();
                 return;
             }
             const saved = this.cache.get(this.getLyricsTrackId(track));
-            if (!force && saved?.source === 'saved-amlyrics') {
+            if (!force && ['saved-amlyrics', 'saved-amlyrics-text'].includes(saved?.source)) {
                 this.exitAm(); this.loadCachedLyrics(saved); this.renderLyrics();
                 return;
             }
@@ -6926,7 +6929,7 @@ class UnifiedLyricsManager {
         container.dataset.lyricsRevision = String(this.renderRevision = (this.renderRevision || 0) + 1);
         container.innerHTML = `
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">
-<span style="font-size:12px;color:var(--text-muted);">Source: ${({spotify:'Spotify', musix:'Musix', genius:'Genius', 'saved-amlyrics':'am-lyrics (saved)', 'imported-lrc':'Local LRC', 'imported-text':'Local text'})[this.currentSource] || 'Lyrics'}</span>${badge}
+<span style="font-size:12px;color:var(--text-muted);">Source: ${({spotify:'Spotify', musix:'Musix', genius:'Genius', 'saved-amlyrics':'am-lyrics (saved)', 'saved-amlyrics-text':'am-lyrics (saved)', 'imported-lrc':'Local LRC', 'imported-text':'Local text'})[this.currentSource] || 'Lyrics'}</span>${badge}
 </div>
 <div class="lyrics-tools"><input class="lyrics-find" type="search" placeholder="Find a line…" aria-label="Find a lyric line" oninput="lyricsManager.filterLyrics(this)"><span class="lyrics-mode">${this.hasSyncedLyrics() ? 'Synced · click a line to seek' : 'Plain lyrics · timing unavailable'}</span></div>
 ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${idx}" ${!this.hasSyncedLyrics() ? '' : `role="button" tabindex="0" aria-label="Seek to line ${idx + 1}" onclick="lyricsManager.seekToLine(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lyricsManager.seekToLine(${idx})}"`}><span class="moveitalittle">${this.escapeHtml(line.text)}</span></div>`).join('')}`;
@@ -7390,19 +7393,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const cr = container.getBoundingClientRect(), lr = line.getBoundingClientRect();
         const pad = typeof el.getScrollPaddingTop === 'function' ? el.getScrollPaddingTop() : 8;
         const top = Math.max(0, Number.isFinite(line.offsetTop) ? line.offsetTop - pad : container.scrollTop + lr.top - cr.top - pad);
-        // scrollToActiveLineYouLy also calls clearPastLineHighlights, which changes
-        // word colors. The lower-level animation only moves the existing lines.
-        el.isProgrammaticScroll = true;
-        clearTimeout(this.amCorrectionTimer);
-        this.amCorrectionTimer = setTimeout(() => {
-            if (this.amEl === el) el.isProgrammaticScroll = false;
-        }, 550);
-        if (typeof el.animateScrollYouLy === 'function') {
-            el.animateScrollYouLy(-top, false, undefined, line);
-        } else {
-            container.scrollTo({ top, behavior: el.shouldReduceMotion ? 'auto' : 'smooth' });
-            el.currentScrollOffset = -top;
-        }
+        // Move only the viewport. Calling renderer animation helpers here can
+        // interfere with the focus/highlight state managed by am-lyrics.
+        this.amScrollUntil = Date.now() + 550;
+        container.scrollTo({ top, behavior: el.shouldReduceMotion ? 'auto' : 'smooth' });
     }
     // Partial visibility isn't enough: keep the whole current line readable.
     updateAmJump() {
@@ -7412,7 +7406,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const line = this.getAmCurrentLine();
         const show = !el.cachedIsUnsynced && !!container && !!line && this.amLineNeedsScroll(container, line);
         jump?.classList.toggle('show', show);
-        if (show && !audio.paused && el.autoScroll !== false && !el.isLoading &&
+        if (show && Date.now() >= (this.amScrollUntil || 0) && !audio.paused && el.autoScroll !== false && !el.isLoading &&
             !el.isUserScrolling && !el.isClickSeeking && !el.isProgrammaticScroll &&
             !container.classList.contains('user-scrolling')) {
             this.scrollAmLineIntoView(container, line);
@@ -7808,13 +7802,14 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         if (stale()) return;
         try { await el.updateComplete; } catch (e) {}
+        let firstSnap = true;
         const snap = () => {
             if (stale()) return;
             const root = el.shadowRoot;
             const container = root?.querySelector('.lyrics-container');
             if (!container) return;
             const line = this.getAmCurrentLine();
-            if (line) this.scrollAmLineIntoView(container, line, force);
+            if (line) { this.scrollAmLineIntoView(container, line, force && firstSnap); firstSnap = false; }
         };
         // am-lyrics resets scrollTop itself right after load, so snap a few times
         requestAnimationFrame(() => requestAnimationFrame(snap));
@@ -7849,9 +7844,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
     exitAm() {
-        clearTimeout(this.amCorrectionTimer);
-        if (this.amCorrectionTimer && this.amEl) this.amEl.isProgrammaticScroll = false;
-        this.amCorrectionTimer = null;
+        this.amScrollUntil = 0;
         this.amLoop = null;
         this.amUiEls().forEach(n => n.remove());
         const wasConnected = !!(this.amEl && this.amEl.isConnected);
