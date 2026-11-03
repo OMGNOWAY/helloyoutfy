@@ -14,7 +14,9 @@ const CHANGELOG_DATA = {
     `Fixed scroll corrections touching the lyric renderer animation state`,
     `Fixed saved unsynced lyrics being treated as timed lyrics`,
     `Fixed imported songs failing to play when browser storage is unavailable`,
-    `Fixed the mini lyrics renderer exceeding the side panel height and cutting off the last lines`
+    `Fixed the mini lyrics renderer exceeding the side panel height and cutting off the last lines`,
+    `Added a Christmas theme in settings, with lights and snow`,
+    `Hidden a small game somewhere in the app`
   ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
@@ -3441,6 +3443,7 @@ function applyHalloween() {
 }
 
 function toggleHalloween() {
+  if (!halloweenEnabled) window.ChristmasTheme?.setEnabled(false);
   halloweenEnabled = !halloweenEnabled;
   localStorage.setItem('youtify_halloween', halloweenEnabled ? 'on' : 'off');
   applyHalloween();
@@ -5349,6 +5352,7 @@ class SettingsManager {
   static open() {
     document.getElementById('settingsModal').classList.add('active');
     ensureHalloweenToggle();
+    window.ChristmasTheme?.ensureToggle();
     addLyricsSettings();
     [['apiKeyInput', apiKey], ['FileURLinput', svgfile], ['appTitleInput', document.title]].forEach(([id, value]) => {
       const input = document.getElementById(id);
@@ -15776,6 +15780,169 @@ document.addEventListener("DOMContentLoaded", () => {
   // console cheats
   window.boo = boo; window.treats = treats; window.storm = storm; window.swarm = swarm;
   if (on()) console.log('%c🎃 psst... try boo()  treats()  storm()  swarm()', 'color:#ff7a18;font-size:14px;font-weight:bold');
+})();
+
+// ===================== Christmas theme + Snake easter egg =====================
+class WinterSnakeGame {
+  constructor(random = Math.random, size = 20) { this.random = random; this.size = size; this.reset(); }
+  reset() {
+    const mid = Math.floor(this.size / 2);
+    this.body = [{x:mid,y:mid},{x:mid-1,y:mid},{x:mid-2,y:mid}];
+    this.direction = {x:1,y:0}; this.turn = null; this.score = 0; this.over = false; this.won = false;
+    this.spawnFood();
+  }
+  spawnFood() {
+    const free = [];
+    for (let y=0;y<this.size;y++) for(let x=0;x<this.size;x++) {
+      if (!this.body.some(part=>part.x===x && part.y===y)) free.push({x,y});
+    }
+    if (!free.length) { this.food=null; this.over=true; this.won=true; return; }
+    this.food=free[Math.min(free.length-1,Math.max(0,Math.floor(this.random()*free.length)))];
+  }
+  steer(x,y) {
+    if (this.over || this.turn || !((x===0&&Math.abs(y)===1)||(y===0&&Math.abs(x)===1)) || (x===-this.direction.x && y===-this.direction.y)) return false;
+    this.turn={x,y}; return true;
+  }
+  step() {
+    if(this.over) return;
+    if(this.turn) { this.direction=this.turn; this.turn=null; }
+    const head={x:this.body[0].x+this.direction.x,y:this.body[0].y+this.direction.y};
+    const eats=this.food && head.x===this.food.x && head.y===this.food.y;
+    const occupied=eats?this.body:this.body.slice(0,-1);
+    if(head.x<0||head.y<0||head.x>=this.size||head.y>=this.size||occupied.some(p=>p.x===head.x&&p.y===head.y)) { this.over=true; return; }
+    this.body.unshift(head);
+    if(eats) { this.score++; this.spawnFood(); } else this.body.pop();
+  }
+}
+
+(function installChristmasAndSnake() {
+  'use strict';
+  if (window.ChristmasTheme) return;
+  const root=document.documentElement;
+  const read=(key,fallback)=>{try{return localStorage.getItem(key)??fallback;}catch{return fallback;}};
+  const save=(key,value)=>{try{localStorage.setItem(key,String(value));}catch{}};
+  let enabled=read('youtify_christmas','off')==='on';
+  const css=document.createElement('style'); css.id='youtify-christmas-style';
+  css.textContent=`
+    html.christmas { color-scheme:dark; --bg-primary:#081e19!important; --bg-secondary:#102e26!important; --bg-tertiary:#193e32!important; --bg-hover:#254d3e!important; --bg-card:#103128!important; --bg-elevated:#1b3c30!important; --border-hover:rgba(226,190,112,.45)!important; --player-bg:#0b261f!important; --text-primary:#fff8e8!important; --text-secondary:#c9d9c8!important; --text-muted:#b0c5b6!important; --accent:#ef7784!important; --accent-secondary:#e4bc70!important; --accent-hover:#ff9ca6!important; --border:rgba(226,190,112,.25)!important; --shadow-glow:226,190,112!important; --glass-bg:rgba(10,39,31,.84)!important; }
+    html.christmas body { background:radial-gradient(ellipse at 85% 0%,#314330 0%,#0b271f 48%,#061510 100%)!important; }
+    html.christmas .brand-title { color:#f6d494!important; -webkit-text-fill-color:#f6d494!important; }
+    html.christmas .sidebar,html.christmas .main,html.christmas .player { border-color:rgba(226,190,112,.28)!important; }
+    html.christmas .main,html.christmas .queue-container,html.christmas .settings-section,html.christmas .stats-card,html.christmas .album-card,html.christmas .album-tracklist { background:linear-gradient(145deg,rgba(31,69,48,.92),rgba(12,39,30,.94))!important; border-color:rgba(226,190,112,.28)!important; }
+    html.christmas .hero-now { background:linear-gradient(120deg,rgba(132,36,54,.75),rgba(30,67,45,.9))!important; border-color:rgba(226,190,112,.32)!important; }
+    html.christmas .player::before { background:linear-gradient(90deg,#bd394e,#e4bc70,#347d50)!important; }
+    html.christmas .nav-item.active { background:rgba(177,45,67,.28)!important; color:#ffe8ce!important; }
+    html.christmas .btn.primary { background:linear-gradient(135deg,#a52e43,#d65364)!important; color:#fff8e8!important; }
+    .xmas-decorations { display:none; position:fixed;inset:0;pointer-events:none;z-index:55;overflow:hidden;contain:strict; }
+    html.christmas .xmas-decorations { display:block; }
+    .xmas-wire {position:absolute;top:-8px;left:-2%;width:104%;height:22px;border-bottom:3px solid #35563a;border-radius:0 0 50% 50%;display:flex;justify-content:space-around;}
+    .xmas-bulb {width:8px;height:13px;margin-top:16px;border-radius:45% 45% 55% 55%;background:var(--bulb);box-shadow:0 0 10px 3px var(--bulb);transform:rotate(var(--tilt));}
+    .xmas-snow {position:absolute;top:-20px;width:var(--size);height:var(--size);border-radius:50%;background:#fff9e4;opacity:.6;animation:xmasSnow var(--duration) linear var(--delay) infinite;}
+    @keyframes xmasSnow {to{transform:translate(45px,105vh);}}
+    @media(prefers-reduced-motion:reduce) {.xmas-snow{display:none}.xmas-bulb{box-shadow:none}}
+    body.performance-mode .xmas-snow {display:none}
+    .winter-snake {margin:auto;color:#f7eed7;background:#0a211b;border:1px solid #cda85f;border-radius:20px;padding:22px;width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;box-sizing:border-box;box-shadow:0 25px 100px #0008;font:14px system-ui,sans-serif;}
+    .winter-snake::backdrop {background:#000a;backdrop-filter:blur(6px)}
+    .winter-snake header,.snake-stats,.snake-actions {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+    .winter-snake h2 {margin:0;font-size:22px;color:#f5d38e}.winter-snake button {border:1px solid #cda85f70;border-radius:9px;background:#183e30;color:#fff8e7;padding:8px 13px;font:inherit;cursor:pointer;}
+    .winter-snake button:focus-visible,.winter-snake canvas:focus-visible {outline:2px solid #f0ca7e;outline-offset:3px}
+    .winter-snake canvas {display:block;width:min(100%,52dvh);height:auto;aspect-ratio:1;margin:0 auto;border:1px solid #345b42;border-radius:12px;touch-action:none;background:#061610;}
+    .snake-note {color:#b8cdbd;font-size:12px;line-height:1.5;margin:10px 0}.snake-status {min-height:20px;color:#f5d38e;margin:8px 0;text-align:center;}
+    .snake-pad {display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:repeat(2,34px);gap:4px;justify-content:center;margin-top:10px}.snake-pad button{padding:3px}.snake-pad [data-dir=up]{grid-column:2}.snake-pad [data-dir=left]{grid-column:1;grid-row:2}.snake-pad [data-dir=down]{grid-column:2;grid-row:2}.snake-pad [data-dir=right]{grid-column:3;grid-row:2}
+  `;
+  document.head.append(css);
+  const decor=document.createElement('div');decor.className='xmas-decorations';decor.setAttribute('aria-hidden','true');
+  const wire=document.createElement('div');wire.className='xmas-wire';
+  const colors=['#ff7781','#f7cc6e','#71be8d','#fff3ce'];
+  for(let i=0;i<26;i++){const bulb=document.createElement('i');bulb.className='xmas-bulb';bulb.style.setProperty('--bulb',colors[i%4]);bulb.style.setProperty('--tilt',(i%2?12:-12)+'deg');wire.append(bulb);}
+  decor.append(wire);
+  for(let i=0;i<24;i++){const flake=document.createElement('i');flake.className='xmas-snow';flake.style.left=((i*37)%100)+'%';flake.style.setProperty('--size',(2+i%4)+'px');flake.style.setProperty('--duration',(13+i%9)+'s');flake.style.setProperty('--delay',(-i*1.7)+'s');decor.append(flake);}
+  document.body.append(decor);
+  function ensureToggle(){
+    if(document.getElementById('christmasBtn'))return;
+    const anchor=document.getElementById('halloweenBtn')?.closest('.setting-toggle-row')||document.getElementById('performanceModeBtn')?.closest('.setting-toggle-row');
+    if(!anchor)return;
+    const row=document.createElement('div');row.className='setting-toggle-row';
+    const label=document.createElement('span');label.className='setting-toggle-label';label.id='christmasToggleLabel';label.textContent='🎄 Christmas Theme';
+    const button=document.createElement('button');button.id='christmasBtn';button.className='toggle-slider';button.type='button';button.setAttribute('role','switch');button.setAttribute('aria-labelledby',label.id);button.setAttribute('aria-checked',String(enabled));
+    const thumb=document.createElement('span');thumb.className='slider-thumb';button.append(thumb);button.addEventListener('click',()=>setEnabled(!enabled));row.append(label,button);anchor.after(row);
+  }
+  function apply(){
+    if(enabled){halloweenEnabled=false;save('youtify_halloween','off');applyHalloween();}
+    root.classList.toggle('christmas',enabled);
+    document.getElementById('christmasBtn')?.setAttribute('aria-checked',String(enabled));
+    try{ThemeManager.applyAccentInk();}catch{}
+  }
+  function setEnabled(value){enabled=!!value;save('youtify_christmas',enabled?'on':'off');apply();}
+  window.ChristmasTheme={ensureToggle,setEnabled,isEnabled:()=>enabled};
+  ensureToggle();apply();
+
+  let dialog=null,canvas=null,context=null,game=null,timer=null,running=false,restoreFocus=null;
+  const storedBest=Number(read('youtify_snake_best','0'));
+  let best=Number.isFinite(storedBest)?Math.max(0,storedBest):0;
+  const directions={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]};
+  function status(text){dialog.querySelector('.snake-status').textContent=text;}
+  function draw(){
+    if(!context||!game)return;
+    const cell=canvas.width/game.size;
+    context.fillStyle='#061a12';context.fillRect(0,0,canvas.width,canvas.height);
+    context.strokeStyle='#113123';context.lineWidth=1;
+    for(let i=1;i<game.size;i++){context.beginPath();context.moveTo(i*cell,0);context.lineTo(i*cell,canvas.height);context.stroke();context.beginPath();context.moveTo(0,i*cell);context.lineTo(canvas.width,i*cell);context.stroke();}
+    game.body.forEach((part,i)=>{context.fillStyle=i===0?'#f1cd79':'#57b781';context.fillRect(part.x*cell+2,part.y*cell+2,cell-4,cell-4);});
+    if(game.food){context.fillStyle='#ef7282';context.beginPath();context.arc((game.food.x+.5)*cell,(game.food.y+.5)*cell,cell*.32,0,Math.PI*2);context.fill();}
+    dialog.querySelector('[data-score]').textContent=String(game.score);dialog.querySelector('[data-best]').textContent=String(best);
+    dialog.querySelector('[data-pause]').textContent=running?'Pause':'Resume';
+  }
+  function cancelTimer(){clearTimeout(timer);timer=null;}
+  function tick(){
+    cancelTimer();if(!running||!dialog?.open)return;
+    game.step();
+    if(game.score>best){best=game.score;save('youtify_snake_best',best);}
+    if(game.over){running=false;status(game.won?'You filled the whole board. Nice.':'Game over — try another round.');}
+    draw();if(running)timer=setTimeout(tick,Math.max(80,145-game.score*3));
+  }
+  function start(){cancelTimer();game.reset();running=true;status('Collect the berries. Avoid the walls and your tail.');draw();timer=setTimeout(tick,145);canvas.focus();}
+  function pause(){if(!dialog?.open||game.over)return;running=!running;cancelTimer();status(running?'Collect the berries.':'Paused');draw();if(running)timer=setTimeout(tick,Math.max(80,145-game.score*3));}
+  function close(){if(!dialog)return;cancelTimer();running=false;if(dialog.open)dialog.close();if(restoreFocus?.isConnected)restoreFocus.focus();}
+  function open(){
+    if(dialog?.open){canvas.focus();return;}
+    restoreFocus=document.activeElement;
+    if(!dialog){
+      dialog=document.createElement('dialog');dialog.className='winter-snake';dialog.setAttribute('aria-labelledby','winterSnakeTitle');
+      dialog.innerHTML='<header><h2 id="winterSnakeTitle">A little detour 🐍</h2><button type="button" data-close aria-label="Close Snake">✕</button></header><div class="snake-stats"><span>Score <strong data-score>0</strong></span><span>Best <strong data-best>0</strong></span></div><canvas width="480" height="480" tabindex="0" role="img" aria-label="Snake game board"></canvas><div class="snake-status" role="status"></div><div class="snake-actions"><button type="button" data-start>New game</button><button type="button" data-pause>Resume</button></div><p class="snake-note">Arrows or WASD to steer. Space or P pauses. Enter starts a new round. Swipe or use the buttons on touch screens.</p><div class="snake-pad"><button type="button" data-dir="up" aria-label="Move up">↑</button><button type="button" data-dir="left" aria-label="Move left">←</button><button type="button" data-dir="down" aria-label="Move down">↓</button><button type="button" data-dir="right" aria-label="Move right">→</button></div>';
+      document.body.append(dialog);canvas=dialog.querySelector('canvas');context=canvas.getContext('2d');
+      game=new WinterSnakeGame();
+      dialog.querySelector('[data-close]').addEventListener('click',close);dialog.querySelector('[data-start]').addEventListener('click',start);dialog.querySelector('[data-pause]').addEventListener('click',pause);
+      dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('close',()=>{cancelTimer();running=false;});
+      dialog.querySelectorAll('[data-dir]').forEach(button=>button.addEventListener('click',()=>{const d=directions[button.dataset.dir];game.steer(...d);canvas.focus();}));
+      let down=null;
+      canvas.addEventListener('pointerdown',event=>{down={x:event.clientX,y:event.clientY};canvas.setPointerCapture(event.pointerId);});
+      canvas.addEventListener('pointerup',event=>{if(!down)return;const dx=event.clientX-down.x,dy=event.clientY-down.y;down=null;if(Math.max(Math.abs(dx),Math.abs(dy))<12)return;game.steer(...(Math.abs(dx)>Math.abs(dy)?[Math.sign(dx),0]:[0,Math.sign(dy)]));});
+      canvas.addEventListener('pointercancel',()=>{down=null;});
+    }
+    game.reset();running=false;dialog.showModal();status('Secret found. Press New game or Enter to play.');draw();canvas.focus();
+  }
+  window.SnakeEasterEgg={open,close};
+  let clicks=[];
+  document.addEventListener('click',event=>{
+    if(event.shiftKey&&event.target.closest?.('#logo')){event.stopPropagation();open();return;}
+    if(!event.target.closest?.('#brandversion'))return;
+    event.stopPropagation();const now=Date.now();clicks=clicks.filter(time=>now-time<1800);clicks.push(now);if(clicks.length===3){clicks=[];open();}
+  },true);
+  document.addEventListener('keydown',event=>{
+    if(dialog?.open){
+      event.stopImmediatePropagation();
+      if(event.target.closest?.('button')&&(event.key==='Enter'||event.key===' '))return;
+      const key=event.key.toLowerCase(),dir={arrowup:'up',w:'up',arrowdown:'down',s:'down',arrowleft:'left',a:'left',arrowright:'right',d:'right'}[key];
+      if(dir){event.preventDefault();game.steer(...directions[dir]);}
+      else if(key===' '||key==='p'){event.preventDefault();pause();}
+      else if(key==='enter'){event.preventDefault();start();}
+      else if(key==='escape'){event.preventDefault();close();}
+      return;
+    }
+    if(event.altKey&&event.shiftKey&&event.code==='KeyS'&&!event.target.closest?.('input,textarea,select,[contenteditable="true"]')){event.preventDefault();event.stopImmediatePropagation();open();}
+  },true);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)pause();});
 })();
 
 // Keyboard access for the library navigation and both playback timelines.

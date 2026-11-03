@@ -225,5 +225,26 @@ await check('file imports remain playable when persistent storage is unavailable
  assert.equal(context.tracks[1].file,file);assert.equal(context.tracks[1].type,'import');
  context.QueueManager.rebuild=rebuild;document.getElementById=originalGet;
 });
+
+vm.runInContext(section('class WinterSnakeGame {','(function installChristmasAndSnake()')+'\nthis.WinterSnakeGame=WinterSnakeGame;',context);
+await check('Snake advances one cell without growing when no food is eaten',()=>{
+ const game=new context.WinterSnakeGame(()=>0);const x=game.body[0].x;game.step();assert.equal(game.body[0].x,x+1);assert.equal(game.body.length,3);assert.equal(game.score,0);
+});
+await check('Snake rejects reversing and multiple turns within one tick',()=>{
+ const game=new context.WinterSnakeGame(()=>0);assert.equal(game.steer(-1,0),false);assert.equal(game.steer(.5,.5),false);assert(game.steer(0,-1));assert.equal(game.steer(-1,0),false);game.step();assert(game.steer(-1,0));
+});
+await check('Snake food grows the body and respawns away from occupied cells',()=>{
+ const game=new context.WinterSnakeGame(()=>0);game.food={x:game.body[0].x+1,y:game.body[0].y};game.step();assert.equal(game.body.length,4);assert.equal(game.score,1);assert(!game.body.some(p=>p.x===game.food.x&&p.y===game.food.y));
+});
+await check('Snake stops on wall and body collisions',()=>{
+ const game=new context.WinterSnakeGame(()=>0);game.body=[{x:19,y:5},{x:18,y:5},{x:17,y:5}];game.step();assert(game.over);
+ game.reset();game.body=[{x:2,y:2},{x:1,y:2},{x:1,y:3},{x:2,y:3}];game.direction={x:-1,y:0};game.step();assert(game.over);
+});
+await check('Snake permits moving into the tail cell when it moves away',()=>{
+ const game=new context.WinterSnakeGame(()=>0);game.body=[{x:1,y:1},{x:2,y:1},{x:2,y:2},{x:1,y:2}];game.direction={x:0,y:1};game.food={x:0,y:0};game.step();assert.equal(game.over,false);assert.equal(game.body.length,4);
+});
+await check('Snake completes a full board without looping while placing food',()=>{
+ const game=new context.WinterSnakeGame(()=>0,3);game.body=[{x:1,y:0},{x:0,y:0},{x:0,y:1},{x:1,y:1},{x:2,y:1},{x:2,y:2},{x:1,y:2},{x:0,y:2}];game.direction={x:1,y:0};game.food={x:2,y:0};game.step();assert(game.won);assert(game.over);assert.equal(game.food,null);assert.equal(game.body.length,9);
+});
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});
