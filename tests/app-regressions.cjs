@@ -188,5 +188,42 @@ await check('the added accent-color override is removed from lyric markup',()=>{
  const html=fs.readFileSync(require('node:path').join(__dirname,'..','app.html'),'utf8');
  assert(!html.includes('.lyrics-line.active { color: var(--accent); background: color-mix'));
 });
+
+const makeLyricAnimation=()=>({playState:'running',playbackRate:1,currentTime:0,effect:{target:{closest:()=>null},getTiming:()=>({delay:0}),getComputedTiming:()=>({endTime:10000})}});
+const animationManager=(animations,clock)=>{
+ const m=lyricManager();m.amEl={constructor:clock,lyricsContainer:{getAnimations:()=>animations}};return m;
+};
+await check('word-fill animation follows faster and slower media rates',()=>{
+ const wipe=makeLyricAnimation(),clock={wipeClocks:new WeakMap([[wipe,1000]])},m=animationManager([wipe],clock);
+ audio.paused=false;audio.seeking=false;audio.playbackRate=2;m.syncAmAnimationClock(1400);assert.equal(wipe.playbackRate,2);assert.equal(wipe.currentTime,400);
+ audio.playbackRate=.5;m.syncAmAnimationClock(1450);assert.equal(wipe.playbackRate,.5);assert.equal(wipe.currentTime,450);
+ audio.playbackRate=1;m.syncAmAnimationClock(1500);assert.equal(wipe.playbackRate,1);assert.equal(wipe.currentTime,500);
+});
+await check('pause freezes media-driven animation and resume restores the selected speed',()=>{
+ const motion=makeLyricAnimation(),m=animationManager([motion],{normalRiseClocks:new WeakMap([[motion,2000]])});
+ audio.paused=true;audio.playbackRate=1.75;m.syncAmAnimationClock(2400);assert.equal(motion.playbackRate,0);assert.equal(motion.currentTime,400);
+ audio.paused=false;m.syncAmAnimationClock(2400);assert.equal(motion.playbackRate,1.75);assert.equal(motion.currentTime,400);
+});
+await check('small normal clock differences do not restart smooth word animations',()=>{
+ const motion=makeLyricAnimation(),m=animationManager([motion],{wipeClocks:new WeakMap([[motion,1000]])});
+ audio.paused=false;audio.playbackRate=2;motion.playbackRate=2;motion.currentTime=500;m.syncAmAnimationClock(1510);assert.equal(motion.currentTime,500);
+ m.syncAmAnimationClock(1700);assert.equal(motion.currentTime,700);
+});
+await check('playback speed does not affect scrolling or focus animations',()=>{
+ const ui=makeLyricAnimation(),m=animationManager([ui],{});ui.currentTime=123;audio.playbackRate=2.5;m.syncAmAnimationClock(5000);assert.equal(ui.playbackRate,1);assert.equal(ui.currentTime,123);
+});
+await check('character and glow animation clocks follow the same media rate',()=>{
+ const char={},motion=makeLyricAnimation(),glow=makeLyricAnimation();motion.effect.target=char;glow.effect.target=char;glow.animationName='char-glow';
+ const m=animationManager([motion,glow],{characterAnimations:new WeakMap([[char,{animation:motion,start:1000,glowEpoch:150}]])});
+ audio.playbackRate=2;m.syncAmAnimationClock(1600);assert.equal(motion.currentTime,600);assert.equal(glow.currentTime,450);assert.equal(glow.playbackRate,2);
+});
+await check('CSS word wipes retain their own timestamp and animation delay',()=>{
+ const wipe=makeLyricAnimation();wipe.animationName='char-word-wipe';wipe.effect.target.closest=selector=>selector==='.lyrics-syllable'?{dataset:{startTime:'2000'}}:null;
+ wipe.effect.getTiming=()=>({delay:-100});const m=animationManager([wipe],{});audio.playbackRate=1.5;m.syncAmAnimationClock(2500);assert.equal(wipe.currentTime,400);assert.equal(wipe.playbackRate,1.5);
+});
+await check('cancelled and completed animations stay cancelled or complete',()=>{
+ const cancelled=makeLyricAnimation(),finished=makeLyricAnimation();cancelled.playState='idle';finished.playState='finished';
+ const m=animationManager([cancelled,finished],{wipeClocks:new WeakMap([[cancelled,0],[finished,0]])});m.syncAmAnimationClock(5000);assert.equal(cancelled.currentTime,0);assert.equal(finished.currentTime,0);
+});
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});
