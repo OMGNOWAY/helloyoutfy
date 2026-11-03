@@ -8,7 +8,8 @@ const CHANGELOG_DATA = {
     `Refresh now checks the providers again instead of reusing cached responses`,
     `Fixed Next getting stuck on the same song with repeat one enabled`,
     `Fixed am-lyrics not following the current line when it was only partly visible`,
-    `Shift + right-click now saves the line you clicked on unsynced songs`
+    `Shift + right-click now saves the line you clicked on unsynced songs`,
+    `Fixed scroll correction interfering with lyric highlighting and restored the original active-line colors`
   ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
@@ -7379,16 +7380,28 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const el = this.amEl;
         if (!el || !container || !line) return;
         if (!force && (el.isUserScrolling || container.classList.contains('user-scrolling'))) return;
-        if (typeof el.scrollToActiveLineYouLy === 'function') {
-            // Force bypasses the renderer's "already near the bottom" shortcut
-            // and keeps its scroll position / animation state in sync.
-            el.scrollToActiveLineYouLy(line, true);
-            return;
+        if (force) {
+            clearTimeout(el.userScrollTimeoutId);
+            el.userScrollTimeoutId = undefined;
+            if (typeof el.setUserScrolling === 'function') el.setUserScrolling(false);
+            else { container.classList.remove('user-scrolling'); el.isUserScrolling = false; }
         }
-        if (force) { container.classList.remove('user-scrolling'); el.isUserScrolling = false; }
         const cr = container.getBoundingClientRect(), lr = line.getBoundingClientRect();
-        const top = container.scrollTop + lr.top - cr.top - Math.max(0, (container.clientHeight - lr.height) / 2);
-        container.scrollTo({ top: Math.max(0, top), behavior: el.shouldReduceMotion ? 'auto' : 'smooth' });
+        const pad = typeof el.getScrollPaddingTop === 'function' ? el.getScrollPaddingTop() : 8;
+        const top = Math.max(0, Number.isFinite(line.offsetTop) ? line.offsetTop - pad : container.scrollTop + lr.top - cr.top - pad);
+        // scrollToActiveLineYouLy also calls clearPastLineHighlights, which changes
+        // word colors. The lower-level animation only moves the existing lines.
+        el.isProgrammaticScroll = true;
+        clearTimeout(this.amCorrectionTimer);
+        this.amCorrectionTimer = setTimeout(() => {
+            if (this.amEl === el) el.isProgrammaticScroll = false;
+        }, 550);
+        if (typeof el.animateScrollYouLy === 'function') {
+            el.animateScrollYouLy(-top, false, undefined, line);
+        } else {
+            container.scrollTo({ top, behavior: el.shouldReduceMotion ? 'auto' : 'smooth' });
+            el.currentScrollOffset = -top;
+        }
     }
     // Partial visibility isn't enough: keep the whole current line readable.
     updateAmJump() {
@@ -7835,6 +7848,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
     exitAm() {
+        clearTimeout(this.amCorrectionTimer);
+        if (this.amCorrectionTimer && this.amEl) this.amEl.isProgrammaticScroll = false;
+        this.amCorrectionTimer = null;
         this.amLoop = null;
         this.amUiEls().forEach(n => n.remove());
         const wasConnected = !!(this.amEl && this.amEl.isConnected);

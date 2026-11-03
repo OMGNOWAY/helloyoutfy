@@ -125,7 +125,7 @@ await check('settings open without mounting the removed lyrics section',()=>{
  document.querySelector=originalQuery;context.lyricsManager=null;
 });
 
-const lyricViewport={classList:{contains:()=>false},getBoundingClientRect:()=>({top:0,bottom:200,height:200})};
+const lyricViewport={scrollTop:0,classList:{contains:()=>false},getBoundingClientRect:()=>({top:0,bottom:200,height:200})};
 const lyricRect=(top,height=40)=>({getBoundingClientRect:()=>({top,bottom:top+height,height})});
 await check('partly visible current lines at either edge need scrolling',()=>{
  const m=lyricManager();assert(m.amLineNeedsScroll(lyricViewport,lyricRect(-20)));assert(m.amLineNeedsScroll(lyricViewport,lyricRect(190)));
@@ -136,8 +136,8 @@ await check('tall verses only recenter when too little remains readable',()=>{
 });
 await check('automatic follow works without the floating jump button',()=>{
  const m=lyricManager(),calls=[];audio.paused=false;const line=lyricRect(190);
- m.amEl={isConnected:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:(...args)=>calls.push(args)};
- m.getAmCurrentLine=()=>line;m.updateAmJump();assert.equal(calls.length,1);assert.equal(calls[0][0],line);assert.equal(calls[0][1],true);
+ m.amEl={isConnected:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:()=>{throw new Error('Must not clear lyric highlights')},animateScrollYouLy:(...args)=>calls.push(args)};
+ m.getAmCurrentLine=()=>line;m.updateAmJump();assert.equal(calls.length,1);assert.equal(calls[0][0],-182);assert.equal(calls[0][1],false);assert.equal(calls[0][3],line);clearTimeout(m.amCorrectionTimer);
 });
 await check('automatic follow respects manual scroll and unsynced lyrics',()=>{
  const m=lyricManager();let calls=0;m.amEl={isConnected:true,isUserScrolling:true,shadowRoot:{querySelector:()=>lyricViewport},scrollToActiveLineYouLy:()=>calls++};
@@ -168,6 +168,25 @@ await check('line image renderer uses the supplied clicked text rather than the 
 });
 await check('these fixes stay in the 1.4.8 release',()=>{
  assert(source.includes('var version = "1.4.8";'));assert(!source.includes('"Release 1.4.9"'));assert(source.includes('Shift + right-click now saves the line you clicked on unsynced songs'));
+});
+
+await check('scroll corrections do not clear word colors or toggle focus mode',()=>{
+ const m=lyricManager(),line=lyricRect(190),attributes=new Map([['data-yl-focus',true]]);let moved=false;
+ m.amEl={isUserScrolling:false,currentPrimaryActiveLine:line,highlightColor:'#abcdef',
+ scrollToActiveLineYouLy(){throw new Error('This resets highlighting')},clearPastLineHighlights(){throw new Error('Must retain highlighting')},
+ setUserScrolling(){throw new Error('Automatic correction must preserve user focus state')},
+ animateScrollYouLy(){moved=true},toggleAttribute(){throw new Error('Must preserve focus mode')}};
+ const before=m.amEl.currentPrimaryActiveLine;m.scrollAmLineIntoView(lyricViewport,line);
+ assert(moved);assert.equal(m.amEl.currentPrimaryActiveLine,before);assert.equal(m.amEl.highlightColor,'#abcdef');assert.equal(attributes.get('data-yl-focus'),true);clearTimeout(m.amCorrectionTimer);
+});
+await check('the original focus toggle still applies and removes its attribute',()=>{
+ const m=lyricManager(),attributes=new Map();m.amEl={parentElement:{id:'fullLyricsContent'},toggleAttribute:(name,value)=>attributes.set(name,value)};
+ m.amFocus=true;m.amFade=true;m.applyAmFocus();assert.equal(attributes.get('data-yl-focus'),true);
+ m.amFocus=false;m.applyAmFocus();assert.equal(attributes.get('data-yl-focus'),false);
+});
+await check('the added accent-color override is removed from lyric markup',()=>{
+ const html=fs.readFileSync(require('node:path').join(__dirname,'..','app.html'),'utf8');
+ assert(!html.includes('.lyrics-line.active { color: var(--accent); background: color-mix'));
 });
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});
