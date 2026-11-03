@@ -113,7 +113,7 @@ await check('explicit refresh bypasses a saved lyric fallback',async()=>{
  const m=lyricManager(),track={title:'Cached',artist:'Artist'};context.queue=[track];context.currentTrackIndex=0;m.apiKey='';m.tryAm=async()=>false;
  m.cache.set(m.getLyricsTrackId(track),{source:'saved-amlyrics',parsedLines:[{text:'Old',startMs:0}]});await m.fetchLyrics(track,true);assert(m.error);assert.equal(context.window.__freshLyricsRequests,0);
 });
-await check('lyrics settings mount without the missing track-management anchor or optional inputs',()=>{
+await check('settings open without mounting the removed lyrics section',()=>{
  const originalQuery=document.querySelector,container=new Element();let inserted;
  container.insertBefore=(node)=>{inserted=node};document.querySelector=selector=>selector==='#settingsModal .modal'?container:null;
  Element.prototype.querySelector=()=>null;
@@ -121,7 +121,7 @@ await check('lyrics settings mount without the missing track-management anchor o
  context.svgfile='';context.ensureHalloweenToggle=()=>{};context.lyricsManager=lyricManager();context.lyricsManager.apiKey='sensitive-key';
  vm.runInContext(section('function addLyricsSettings() {','function saveLyricsKey()'),context);
  vm.runInContext(section('class SettingsManager {','// Legacy wrappers')+'\nthis.SettingsManager=SettingsManager;',context);
- context.SettingsManager.open();assert.equal(inserted.id,'lyricsSettingsSection');assert(inserted.innerHTML.includes('localLyricsFile'));assert(!inserted.innerHTML.includes('sensitive-key'));
+ context.SettingsManager.open();assert.equal(inserted,undefined);assert.equal(typeof context.lyricsManager.importLyricsFile,'function');assert.equal(typeof context.lyricsManager.refreshAllLyrics,'function');
  document.querySelector=originalQuery;context.lyricsManager=null;
 });
 console.log(`${checks} regression checks passed`);

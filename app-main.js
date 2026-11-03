@@ -7962,25 +7962,8 @@ function addLyricsSettings() {
   const settings = document.createElement('div');
   settings.id = 'lyricsSettingsSection';
   settings.className = 'settings-section';
-  settings.innerHTML = `
-    <div class="settings-section-title">Lyrics (am-lyrics + API fallback)</div>
-    <div class="form-group">
-      <label class="form-label">RapidAPI Key (only used as fallback)</label>
-      <input type="text" class="form-input" id="lyricsApiKey" placeholder="Enter your RapidAPI key...">
-      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn secondary" onclick="saveLyricsKey()">Save Key</button>
-        <button class="btn secondary" onclick="testLyricsKey()">Test</button>
-        <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.clearCache()">Clear Memory Cache</button>
-        <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.clearLyricsDB()">Clear Saved Lyrics</button>
-        <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.refreshAllLyrics()">Refresh All Lyrics</button>
-      </div>
-    </div>
-    <div class="form-group" style="margin-top:12px;">
-      <label class="form-label" for="localLyricsFile">Import lyrics for the current song (.lrc or .txt)</label>
-      <input id="localLyricsFile" type="file" accept=".lrc,.txt,text/plain" onchange="if(this.files[0] && lyricsManager)lyricsManager.importLyricsFile(this.files[0]);this.value=''">
-      <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Timestamped LRC files follow playback. Text files stay readable without guessed timings.</div>
-    </div>
-    <div style="margin-top:12px;"><button class="btn secondary" onclick="handleLyricsButtonClick()">Show lyrics (L)</button></div>`;
+  settings.innerHTML = '';
+  if (!settings.innerHTML.trim()) return;
   container.insertBefore(settings, section || null);
   const keyInput = settings.querySelector('#lyricsApiKey');
   if (keyInput) keyInput.value = lyricsManager ? lyricsManager.getApiKey() : '';
