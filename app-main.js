@@ -12,7 +12,9 @@ const CHANGELOG_DATA = {
     `Fixed scroll correction interfering with lyric highlighting and restored the original active-line colors`,
     `Removed the animation-speed override that interfered with native lyric highlighting and focus visuals`,
     `Fixed scroll corrections touching the lyric renderer animation state`,
-    `Fixed saved unsynced lyrics being treated as timed lyrics`
+    `Fixed saved unsynced lyrics being treated as timed lyrics`,
+    `Fixed imported songs failing to play when browser storage is unavailable`,
+    `Fixed the mini lyrics renderer exceeding the side panel height and cutting off the last lines`
   ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
@@ -6964,7 +6966,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (this.amEl) return this.amEl;
         const el = document.createElement('am-lyrics');
         el.id = 'amLyricsEl';
-        el.style.cssText = 'display:block;width:100%;height:100%;min-height:300px;background:transparent;';
+        el.style.cssText = 'display:block;width:100%;height:100%;min-height:0;max-height:100%;box-sizing:border-box;background:transparent;';
         el.autoScroll = true;
         el.interpolate = true;
         el.noBlur = true;
@@ -8229,11 +8231,16 @@ document.getElementById('fileInput').addEventListener('change', async (event) =>
   for (const file of files) {
     try {
       const track = await TrackManager.processAudioFile(file);
+      // Keep a playable in-memory source even when persistent storage is unavailable.
+      track.file = file;
+      track.type = 'import';
       tracks.push(track);
       if (window.indexedDBManager?.db()) {
         try {
           const idbId = await window.indexedDBManager.saveTrackToDB(track, file);
-          track.idbId = idbId; track.type = 'local'; track.fileSize = file.size;
+          if (idbId !== null && idbId !== undefined) {
+            track.idbId = idbId; track.type = 'local'; track.fileSize = file.size;
+          }
         } catch (e) { console.error('Failed to save to IndexedDB:', e); }
       }
     } catch (error) { console.error('Error processing file:', error); }

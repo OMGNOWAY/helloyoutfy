@@ -211,5 +211,19 @@ await check('unsynced am-lyrics stay untimed when saved and reopened',async()=>{
  const saved=m.cache.get(m.getLyricsTrackId(track));assert.equal(saved.source,'saved-amlyrics-text');
  m.loadCachedLyrics(saved);assert.equal(m.hasSyncedLyrics(),false);assert(m.shouldRefreshSavedLyrics(saved));
 });
+
+await check('file imports remain playable when persistent storage is unavailable or returns no ID',async()=>{
+ let handler;const input={addEventListener:(_,fn)=>handler=fn};const originalGet=document.getElementById;
+ document.getElementById=id=>id==='fileInput'?input:originalGet(id);
+ context.tracks=[];context.TrackManager={processAudioFile:async()=>({file:null,type:'local',src:null})};
+ context.window.indexedDBManager={db:()=>null};
+ const rebuild=context.QueueManager.rebuild;context.QueueManager.rebuild=()=>{};
+ vm.runInContext(section("document.getElementById('fileInput').addEventListener('change'", "document.getElementById('folderInput').addEventListener('change'"),context);
+ const file={name:'test.wav',size:100,type:'audio/wav'};await handler({target:{files:[file],value:'test'}});
+ assert.equal(context.tracks[0].file,file);assert.equal(context.tracks[0].type,'import');
+ context.window.indexedDBManager={db:()=>({}),saveTrackToDB:async()=>null};await handler({target:{files:[file],value:'test'}});
+ assert.equal(context.tracks[1].file,file);assert.equal(context.tracks[1].type,'import');
+ context.QueueManager.rebuild=rebuild;document.getElementById=originalGet;
+});
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});
