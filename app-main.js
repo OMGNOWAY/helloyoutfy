@@ -1,6 +1,13 @@
 /* ===================== changelog.js ===================== */
-var version = "1.4.7";
+var version = "1.4.8";
 const CHANGELOG_DATA = {
+  "Release 1.4.8": [
+    `Lyrics switch songs faster and save a synced copy for revisiting songs`,
+    `You can import .lrc or .txt lyrics for the current song in settings`,
+    `Fixed stale lyrics after clearing the queue, mobile panel toggling and crossfade seeking`,
+    `Refresh now checks the providers again instead of reusing cached responses`,
+    `Fixed Next getting stuck on the same song with repeat one enabled`
+  ],
   "Release 1.4.7": [
     `You can undo removing songs or clearing the queue for 30 seconds`,
     `Search works across titles, artists and albums together, accents included`,
@@ -2762,6 +2769,7 @@ const ThemeSync = (() => {
 
 class PlayerController {
   static toggle() {
+    if (!queue.length) { toast('Add a song before starting playback'); return; }
     if (currentTrackIndex === -1 && queue.length > 0) playTrackAtIndex(0, audio, 0);
     else if (isPlaying1 || isPlaying2) PlayerController.pause();
     else PlayerController.resume();
@@ -2799,14 +2807,14 @@ isPlaying2 = false;
     if (miniBtn) miniBtn.textContent = isPlaying1 || isPlaying2 ? '⏸' : '▶';
   }
 
-  static next(where = 0, isCrossfade = false) {
+  static next(where = 0, isCrossfade = false, fromEnded = false) {
     if (!queue.length) { PlayerController.pause(); return; }
     // Manual next must cancel any crossfade still in flight, or its setInterval keeps
     // running against stale audio elements and clobbers currentTrackIndex a few seconds
     // later. (Crossfade completion does not go through this function — it swaps
     // audio/audio2 directly inside its own setInterval tick — so this is always safe here.)
     PlayerController.cancelCrossfade();
-    if (repeatMode === 'one') { audio.currentTime = 0; audio.play(); return; }
+    if (repeatMode === 'one' && fromEnded) { audio.currentTime = 0; void PlayerController.resume(); return; }
     {
       const uqIdx = uqPeek();
       if (uqIdx !== -1) {
@@ -3666,7 +3674,7 @@ class QueueManager {
     queue.splice(index, 1);
     if (currentTrackIndex === index) {
       if (queue.length > 0) playTrackAtIndex(0, audio, Math.min(index, queue.length - 1));
-      else { currentTrackIndex = -1; PlayerController.pause(); }
+      else { currentTrackIndex = -1; PlayerController.pause(); if (lyricsManager) void lyricsManager.onTrackChange(); }
     } else if (currentTrackIndex > index) {
       currentTrackIndex--;
     }
@@ -3691,6 +3699,7 @@ class QueueManager {
     queue = [];
     currentTrackIndex = -1;
     PlayerController.pause();
+    if (lyricsManager) void lyricsManager.onTrackChange();
     QueueManager.render();
     if (entries.length) QueueManager.rememberRemoval(entries);
   }
@@ -5004,7 +5013,7 @@ function rebindAudioListeners() {
       // the references have been swapped. Only the currently-active element may
       // advance the queue, otherwise a completed fade can immediately skip again.
       if (e.currentTarget === audio && !isCrossfading) {
-        PlayerController.next(0, false);
+        PlayerController.next(0, false, true);
       }
     });
     audio.addEventListener('loadedmetadata', () => {
@@ -5332,9 +5341,11 @@ class SettingsManager {
   static open() {
     document.getElementById('settingsModal').classList.add('active');
     ensureHalloweenToggle();
-    document.getElementById('apiKeyInput').value    = apiKey;
-    document.getElementById('FileURLinput').value    = svgfile;
-    document.getElementById('appTitleInput').value  = document.title;
+    addLyricsSettings();
+    [['apiKeyInput', apiKey], ['FileURLinput', svgfile], ['appTitleInput', document.title]].forEach(([id, value]) => {
+      const input = document.getElementById(id);
+      if (input) input.value = value;
+    });
     const lyricsKeyInput = document.getElementById('lyricsApiKey');
     if (lyricsKeyInput && lyricsManager) lyricsKeyInput.value = lyricsManager.getApiKey();
     if (window.indexedDBManager?.refresh) setTimeout(() => window.indexedDBManager.refresh(), 100);
@@ -5967,7 +5978,7 @@ class ChangelogManager {
       const header = document.createElement('div');
       header.style.cssText = 'margin-top:20px;margin-bottom:10px;border-bottom:1px solid var(--text-primary);padding-bottom:5px;';
       header.innerHTML = `<strong style="color:white;font-size:1.1em;">${ver}</strong>`;
-      if (ver === version) header.innerHTML += ` <span style="font-size:0.7em;background:var(--accent-primary);color:white;padding:2px 6px;border-radius:10px;vertical-align:middle;margin-left:8px;">CURRENT</span>`;
+      if (ver === version || ver === 'Release ' + version) header.innerHTML += ` <span style="font-size:0.7em;background:var(--accent-primary);color:white;padding:2px 6px;border-radius:10px;vertical-align:middle;margin-left:8px;">CURRENT</span>`;
       list.appendChild(header);
 
       const ul = document.createElement('ul');
@@ -6015,10 +6026,10 @@ const AM_LYRICS_URL = 'https://cdn.jsdelivr.net/npm/@uimaxbai/am-lyrics@1.8.7/di
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
-  const dbGet = async key => { const db = await openDb(); return new Promise((res, rej) => { const q = db.transaction(STORE).objectStore(STORE).get(key); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); };
-  const dbPut = async (key, val) => { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(val, key); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); };
+  const dbGet = async key => { const db = await openDb(); return new Promise((res, rej) => { const q = db.transaction(STORE).objectStore(STORE).get(key); q.onsuccess = () => { db.close(); res(q.result); }; q.onerror = () => { db.close(); rej(q.error); }; }); };
+  const dbPut = async (key, val) => { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(val, key); tx.oncomplete = () => { db.close(); res(); }; tx.onerror = () => { db.close(); rej(tx.error); }; }); };
   window.clearLyricsFetchCache = async () => {
-    try { const db = await openDb(); await new Promise(res => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).clear(); tx.oncomplete = res; tx.onerror = res; }); console.log('[lyrics cache] cleared'); } catch (e) {}
+    try { const db = await openDb(); await new Promise(res => { const tx = db.transaction(STORE, 'readwrite'); tx.objectStore(STORE).clear(); tx.oncomplete = res; tx.onerror = res; }); db.close(); console.log('[lyrics cache] cleared'); } catch (e) {}
   };
 
   const realFetch = window.fetch.bind(window);
@@ -6030,11 +6041,14 @@ const AM_LYRICS_URL = 'https://cdn.jsdelivr.net/npm/@uimaxbai/am-lyrics@1.8.7/di
     } catch (e) { return realFetch(input, init); }
     if (method !== 'GET' || !cacheable(url)) return realFetch(input, init);
     try {
-      const hit = await dbGet(url);
+      const signal = init?.signal || input?.signal;
+      signal?.throwIfAborted();
+      const hit = window.__freshLyricsRequests > 0 ? null : await dbGet(url);
+      signal?.throwIfAborted();
       if (hit && Date.now() - hit.ts < MAX_AGE) {
         return new Response(hit.body, { status: hit.status, headers: { 'content-type': hit.type } });
       }
-    } catch (e) {}
+    } catch (e) { if (e.name === 'AbortError') throw e; }
     const res = await realFetch(input, init);
     if (res.ok) {
       const type = res.headers.get('content-type') || '';
@@ -6053,9 +6067,11 @@ const AM_LYRICS_URL = 'https://cdn.jsdelivr.net/npm/@uimaxbai/am-lyrics@1.8.7/di
 let _amLyricsLoad = null;
 function loadAmLyrics() {
   if (!_amLyricsLoad) {
-    _amLyricsLoad = import(AM_LYRICS_URL)
-      .then(() => customElements.whenDefined('am-lyrics'))
-      .catch(e => { _amLyricsLoad = null; throw e; });
+    let timer;
+    _amLyricsLoad = Promise.race([
+      import(AM_LYRICS_URL).then(() => customElements.whenDefined('am-lyrics')),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Lyrics renderer took too long to load')), 10000); })
+    ]).finally(() => clearTimeout(timer)).catch(e => { _amLyricsLoad = null; throw e; });
   }
   return _amLyricsLoad;
 }
@@ -6137,10 +6153,37 @@ class UnifiedLyricsManager {
         return !!current && this.getLyricsTrackId(current) === this.getLyricsTrackId(track);
     }
 
+    cancelLyricsFetch() {
+        this.fetchGeneration = (this.fetchGeneration || 0) + 1;
+        this.lyricsAbort?.abort();
+        this.exitAm();
+        this.isFetching = false; this.isLoading = false; this.pendingTrackChange = false;
+    }
+    hasSyncedLyrics() {
+        return ['amlyrics', 'saved-amlyrics', 'spotify', 'musix', 'imported-lrc'].includes(this.currentSource);
+    }
+    rememberLyrics(track, data) {
+        this.cache.set(this.getLyricsTrackId(track), data);
+        if (this.cache.size > 100) this.cache.delete(this.cache.keys().next().value);
+        return this.saveLyricsToDB(track, data.lyrics, data.source, data.parsedLines)
+            .catch(error => console.warn('Lyrics could not be saved offline', error));
+    }
+    shouldRefreshSavedLyrics(data) {
+        // Preserve word-by-word playback online; saved line timings also work offline.
+        return data.source === 'saved-amlyrics' && (typeof navigator === 'undefined' || navigator.onLine !== false);
+    }
+    loadCachedLyrics(data) {
+        this.currentLyrics = data.lyrics; this.currentSource = data.source;
+        this.parsedLines = data.parsedLines || [];
+        this.currentLineIndex = -1;
+        const track = queue[currentTrackIndex];
+        if (track) this.loadAmOffset(track);
+    }
+
     async saveLyricsToDB(track, lyrics, source, parsedLines) {
         if (!this.db) return;
         const id = this.getLyricsTrackId(track);
-        const data = { id, trackId: track.uid || id, title: track.title, artist: track.artist, lyrics, source, parsedLines, duration: this.songDuration, dateAdded: new Date().toISOString() };
+        const data = { id, trackId: track.uid || id, title: track.title, artist: track.artist, lyrics, source, parsedLines, duration: Number(track.duration) || (this.isCurrentLyricsTrack(track) && Number.isFinite(audio.duration) ? audio.duration : 0), dateAdded: new Date().toISOString() };
         await new Promise((resolve, reject) => {
             const tx = this.db.transaction(['lyrics'], 'readwrite');
             const req = tx.objectStore('lyrics').put(data);
@@ -6186,24 +6229,16 @@ class UnifiedLyricsManager {
           .replace(/\s*\((?:feat\.?|ft\.?)\s+[^)]*\)/gi, '')
           .trim();
       const newId = `${cleanTitle}-${track.artist}`.replace(/[^\w\s&-]/g, '').trim();
-      return new Promise((resolve, reject) => {
-          const store = this.db.transaction(['lyrics'], 'readonly').objectStore('lyrics');
-          const req = store.get(this.getLyricsTrackId(track));
-          req.onsuccess = () => {
-              if (req.result) {
-                  resolve(req.result);
-                  return;
-              }
-              if (newId !== this.getLyricsTrackId(track)) {
-                  const newReq = store.get(newId);
-                  newReq.onsuccess = () => resolve(newReq.result || null);
-                  newReq.onerror = () => reject(newReq.error);
-              } else {
-                  resolve(null);
-              }
-          };
-          req.onerror = () => reject(req.error);
-      });
+      const keys = [...new Set([this.getLyricsTrackId(track), oldId, newId])];
+      for (const key of keys) {
+          const data = await new Promise((resolve, reject) => {
+              const req = this.db.transaction(['lyrics'], 'readonly').objectStore('lyrics').get(key);
+              req.onsuccess = () => resolve(req.result || null);
+              req.onerror = () => reject(req.error);
+          });
+          if (data) return data;
+      }
+      return null;
     }
 
     async clearLyricsDB() {
@@ -6218,6 +6253,7 @@ class UnifiedLyricsManager {
     // current track from scratch, so am-lyrics gets a fresh shot at songs that were saved by the old sources
     async refreshAllLyrics() {
         try {
+            this.cancelLyricsFetch();
             this.cache.clear();
             if (this.db) {
                 await new Promise(resolve => {
@@ -6230,8 +6266,7 @@ class UnifiedLyricsManager {
             toast('All lyrics cleared, rechecking with am-lyrics...');
             const track = queue?.[currentTrackIndex];
             if (this.isOpen && track) {
-                this.isFetching = false;
-                this.exitAm();
+                this.cancelLyricsFetch();
                 this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
                 this.updateFetchButtonVisibility();
                 await this.fetchLyrics(track);
@@ -6266,13 +6301,14 @@ class UnifiedLyricsManager {
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
         setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); } }, 400);
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
-        audio.addEventListener('seeked', () => this.handleTimeUpdate());
-        audio.addEventListener('play', () => this.handleTimeUpdate());
-        audio.addEventListener('loadedmetadata', () => {
-            this.songDuration = audio.duration || 0;
-            if (this.currentSource === 'genius' && this.currentLyrics) { this.parseGeniusLyrics(this.currentLyrics); this.renderLyrics(); }
+        [audio, audio2].forEach(player => {
+            player.addEventListener('seeked', () => { if (player === audio) this.handleTimeUpdate(); });
+            player.addEventListener('play', () => { if (player === audio) this.handleTimeUpdate(); });
+            player.addEventListener('loadedmetadata', () => {
+                if (player === audio) this.songDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
+            });
+            player.dataset.lyricsListenersBound = '1';
         });
-        audio.dataset.lyricsListenersBound = '1';
     }
     async toggle() {
         const panel = document.getElementById('lyricsPanel');
@@ -6285,19 +6321,22 @@ class UnifiedLyricsManager {
             document.body.classList.add('lyrics-open'); if (app) app.classList.add('lyrics-open');
             const track = queue[currentTrackIndex];
             if (track) {
-                const cacheKey = `${track.title}-${track.artist}`;
+                const cacheKey = this.getLyricsTrackId(track);
                 if (this.amActive && this.amEl && this.amTrackKey === cacheKey) { this.placeAm(); return; }
                 if (this.cache.has(cacheKey)) {
                     this.exitAm();
                     const cached = this.cache.get(cacheKey);
-                    this.currentLyrics = cached.lyrics; this.currentSource = cached.source; this.parsedLines = cached.parsedLines || [];
+                    this.loadCachedLyrics(cached);
+                    if (this.shouldRefreshSavedLyrics(cached)) { await this.fetchLyrics(track); return; }
                     this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
                 } else {
                     const dbData = await this.getLyricsFromDB(track).catch(() => null);
                     if (!this.isCurrentLyricsTrack(track)) return;
                     if (dbData) {
-                        this.currentLyrics = dbData.lyrics; this.currentSource = dbData.source; this.parsedLines = dbData.parsedLines || []; this.songDuration = dbData.duration || 0;
-                        this.cache.set(cacheKey, dbData); this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
+                        this.loadCachedLyrics(dbData);
+                        this.cache.set(cacheKey, dbData);
+                        if (this.shouldRefreshSavedLyrics(dbData)) { await this.fetchLyrics(track); return; }
+                        this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
                     } else { await this.fetchLyrics(track); }
                 }
             } else { this.showEmpty(); }
@@ -6307,39 +6346,51 @@ class UnifiedLyricsManager {
         }
     }
     async onTrackChange() {
+        const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
         if (this.isFetching) {
             const t = queue[currentTrackIndex];
-            if (!t || `${t.title}-${t.artist}` !== this.fetchingKey) { this.pendingTrackChange = true; this.amToken++; this.lyricsAbort?.abort(); this.exitAm(); this.currentLyrics = null; this.parsedLines = []; this.currentSource = null; this.showLoading('Loading next song…'); }
-            return;
+            if (t && this.getLyricsTrackId(t) === this.fetchingKey) return;
+            this.cancelLyricsFetch();
         }
         const track = queue[currentTrackIndex];
-        if (!track) { this.exitAm(); this.showEmpty(); return; }
-        if (this.amActive && this.amEl && this.amTrackKey === `${track.title}-${track.artist}`) { this.placeAm(); return; }
+        if (!track) { this.exitAm(); this.currentLyrics = null; this.parsedLines = []; this.currentSource = null; this.currentLineIndex = -1; this.showEmpty(); return; }
+        if (this.amActive && this.amEl && this.amTrackKey === this.getLyricsTrackId(track)) { this.placeAm(); return; }
         this.exitAm();
+        this.songDuration = Number(track.duration) || (Number.isFinite(audio.duration) ? audio.duration : 0);
+        this.loadAmOffset(track);
         this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
         this.updateFetchButtonVisibility();
-        const cacheKey = `${track.title}-${track.artist}`;
+        const cacheKey = this.getLyricsTrackId(track);
         if (this.cache.has(cacheKey)) {
             const cached = this.cache.get(cacheKey);
-            this.currentLyrics = cached.lyrics; this.currentSource = cached.source; this.parsedLines = cached.parsedLines || [];
+            this.loadCachedLyrics(cached);
             this.updateFetchButtonVisibility();
-            if (this.isOpen) this.renderLyrics(); return;
+            if (this.isOpen) {
+                if (this.shouldRefreshSavedLyrics(cached)) await this.fetchLyrics(track); else this.renderLyrics();
+            }
+            return;
         }
         const dbData = await this.getLyricsFromDB(track).catch(() => null);
-        if (!this.isCurrentLyricsTrack(track)) return;
+        if (loadGeneration !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track)) return;
         if (dbData) {
-            this.currentLyrics = dbData.lyrics; this.currentSource = dbData.source; this.parsedLines = dbData.parsedLines || []; this.songDuration = dbData.duration || 0;
+            this.loadCachedLyrics(dbData);
             this.cache.set(cacheKey, dbData); this.updateFetchButtonVisibility();
-            if (this.isOpen) this.renderLyrics(); return;
+            if (this.isOpen) {
+                if (this.shouldRefreshSavedLyrics(dbData)) await this.fetchLyrics(track); else this.renderLyrics();
+            }
+            return;
         }
         if (this.isOpen) {
             this.fetchLyrics(track);
         }
     }
-    async fetchLyrics(track) {
+    async fetchLyrics(track, force = false) {
         if (this.isFetching) return;
+        const generation = this.fetchGeneration = (this.fetchGeneration || 0) + 1;
+        const isFresh = () => generation === this.fetchGeneration && this.isCurrentLyricsTrack(track);
+        if (force) window.__freshLyricsRequests = (window.__freshLyricsRequests || 0) + 1;
         this.isFetching = true;
-        this.fetchingKey = `${track.title}-${track.artist}`;
+        this.fetchingKey = this.getLyricsTrackId(track);
         this.lyricsAbort = new AbortController();
         try {
             this.isLoading = true;
@@ -6347,8 +6398,8 @@ class UnifiedLyricsManager {
             this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
             // 1) am-lyrics first (no API key needed)
             this.showLoading('Loading lyrics...');
-            const amLines = await this.tryAm(track);
-            if (!this.isCurrentLyricsTrack(track)) return;
+            const amLines = await this.tryAm(track, generation);
+            if (!isFresh()) return;
             if (amLines === null) { this.isLoading = false; return; } // superseded by a newer track
             if (amLines) {
                 console.log('✅ Using am-lyrics');
@@ -6356,8 +6407,15 @@ class UnifiedLyricsManager {
                 this.parsedLines = this.amLinesToParsed(amLines);
                 this.currentLyrics = this.parsedLines;
                 this.amTrackKey = this.fetchingKey;
+                const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: 'saved-amlyrics' };
+                void this.rememberLyrics(track, saved);
                 this.isLoading = false;
                 this.updateFetchButtonVisibility();
+                return;
+            }
+            const saved = this.cache.get(this.getLyricsTrackId(track));
+            if (!force && saved?.source === 'saved-amlyrics') {
+                this.exitAm(); this.loadCachedLyrics(saved); this.renderLyrics();
                 return;
             }
             // 2) fallback: RapidAPI chain
@@ -6367,54 +6425,57 @@ class UnifiedLyricsManager {
             this.showLoading('am-lyrics found nothing, searching Musix...');
             try {
                 const musixResult = await this.tryMusix(track);
-                if (!this.isCurrentLyricsTrack(track)) return;
+                if (!isFresh()) return;
                 if (musixResult) { console.log('✅ Using Musix lyrics'); this.currentSource = 'musix'; this.currentLyrics = musixResult; this.parsedLines = musixResult; await this.cacheAndRender(musixResult, 'musix', track); return; }
                 this.showLoading('Musix not found, trying Spotify...');
                 const spotifyResult = await this.trySpotify(track);
-                if (!this.isCurrentLyricsTrack(track)) return;
+                if (!isFresh()) return;
                 if (spotifyResult) { console.log('✅ Using Spotify synced lyrics'); this.currentSource = 'spotify'; await this.cacheAndRender(spotifyResult, 'spotify', track); return; }
                 this.showLoading('Musix not found, trying Genius...');
                 const geniusResult = await this.tryGenius(track);
-                if (!this.isCurrentLyricsTrack(track)) return;
+                if (!isFresh()) return;
                 if (geniusResult) { console.log('✅ Using Genius lyrics'); this.currentSource = 'genius'; this.currentLyrics = geniusResult; this.parseGeniusLyrics(geniusResult); await this.cacheAndRender(geniusResult, 'genius', track); return; }
                 this.showNotFound('No lyrics found on Spotify, Genius, or Musix');
             } catch (error) {
+                if (!isFresh()) return;
                 console.error('❌ Lyrics error:', error);
                 if (error.message.includes('401') || error.message.includes('403')) this.showError('Invalid API Key', 'Please check your RapidAPI key');
                 else if (error.message.includes('429')) this.showError('Rate Limited', 'Too many requests. Please wait');
                 else this.showError('Failed to load lyrics', error.message);
-            } finally { this.isLoading = false; }
+            } finally { if (generation === this.fetchGeneration) this.isLoading = false; }
         } catch (error) {
-            if (this.isCurrentLyricsTrack(track) && error.name !== 'AbortError') this.showError('Could not load lyrics', error.message);
+            if (isFresh() && error.name !== 'AbortError') this.showError('Could not load lyrics', error.message);
         } finally {
+            if (force) window.__freshLyricsRequests = Math.max(0, (window.__freshLyricsRequests || 1) - 1);
+            if (generation !== this.fetchGeneration) return;
             this.isLoading = false;
             this.isFetching = false;
             this.updateFetchButtonVisibility();
             if (this.pendingTrackChange) { this.pendingTrackChange = false; setTimeout(() => this.onTrackChange(), 0); }
         }
     }
-    async trySpotify(track) {
+    async trySpotify(track, signal = this.lyricsAbort?.signal) {
         try {
             this.spotifyErr = null;
             const q = `${track.title.replace(/\(.*?\)/g, '')} ${track.artist.split(', ')[0]}`;
-            const searchData = await this.makeApiRequest(`https://spotify-scraper.p.rapidapi.com/v1/search?term=${encodeURIComponent(q)}&type=track`, 'spotify-scraper.p.rapidapi.com');
+            const searchData = await this.makeApiRequest(`https://spotify-scraper.p.rapidapi.com/v1/search?term=${encodeURIComponent(q)}&type=track`, 'spotify-scraper.p.rapidapi.com', signal);
             if (!searchData?.tracks?.items?.length) return null;
             const bestMatch = this.findBestSpotifyMatch(searchData.tracks.items, track);
             if (!bestMatch) return null;
-            const lyricsData = await this.makeApiRequest(`https://spotify-scraper.p.rapidapi.com/v1/track/lyrics?trackId=${bestMatch.id}&format=json`, 'spotify-scraper.p.rapidapi.com');
+            const lyricsData = await this.makeApiRequest(`https://spotify-scraper.p.rapidapi.com/v1/track/lyrics?trackId=${bestMatch.id}&format=json`, 'spotify-scraper.p.rapidapi.com', signal);
             if (!Array.isArray(lyricsData) || !lyricsData.length) return null;
             const valid = lyricsData.filter(l => l && typeof l.text === 'string' && typeof l.startMs === 'number');
             return valid.length > 0 ? valid : null;
         } catch (error) { console.log('❌ Spotify error:', error.message); this.spotifyErr = error.message; return null; }
     }
-    async tryMusix(track) {
+    async tryMusix(track, signal = this.lyricsAbort?.signal) {
         try {
             this.musixErr = null;
             const t = track.title.replace(/\(.*?\)/g, '').trim();
             const a = track.artist.split(', ')[0].trim();
             const lyrics = await this.makeApiRequest(
                 `https://spotify-web-api3.p.rapidapi.com/v1/social/spotify/musixmatchsearchlyrics?terms=${encodeURIComponent(t)}&artist=${encodeURIComponent(a)}`,
-                'spotify-web-api3.p.rapidapi.com'
+                'spotify-web-api3.p.rapidapi.com', signal
             );
             const lyricsData = lyrics?.data;
             if (!Array.isArray(lyricsData) || !lyricsData.length) return null;
@@ -6438,7 +6499,7 @@ class UnifiedLyricsManager {
             return null;
         }
     }
-    async tryGenius(track) {
+    async tryGenius(track, signal = this.lyricsAbort?.signal) {
         try {
             this.geniusErr = null;
             const title = track.title
@@ -6452,7 +6513,7 @@ class UnifiedLyricsManager {
             console.log(`Searching Genius for: ${q}`);
             const searchData = await this.makeApiRequest(
                 `https://genius-song-lyrics1.p.rapidapi.com/search/?q=${encodeURIComponent(q)}&per_page=10&page=1`,
-                'genius-song-lyrics1.p.rapidapi.com'
+                'genius-song-lyrics1.p.rapidapi.com', signal
             );
             if (!searchData || !Array.isArray(searchData.hits)) {
                 console.log('Genius search returned no hits:', searchData);
@@ -6477,7 +6538,7 @@ class UnifiedLyricsManager {
                     `https://genius-song-lyrics1.p.rapidapi.com/song/lyrics/?id=${result.id}&text_format=plain`;
                 const lyricsData = await this.makeApiRequest(
                     lyricsUrl,
-                    'genius-song-lyrics1.p.rapidapi.com'
+                    'genius-song-lyrics1.p.rapidapi.com', signal
                 );
                 console.log('Genius lyrics response:', lyricsData);
                 lyrics = this.extractGeniusLyrics(lyricsData);
@@ -6513,10 +6574,10 @@ class UnifiedLyricsManager {
             return null;
         }
     }
-    async makeApiRequest(url, host) {
+    async makeApiRequest(url, host, signal = null) {
         const response = await fetch(url, {
             method: 'GET',
-            signal: AbortSignal.any([this.lyricsAbort?.signal || new AbortController().signal, AbortSignal.timeout(12000)]),
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
             headers: {
                 'x-rapidapi-key': this.apiKey,
                 'x-rapidapi-host': host,
@@ -6803,32 +6864,68 @@ class UnifiedLyricsManager {
         if (!lines.length) { this.parsedLines = []; return; }
         this.parsedLines = lines.map((text, index) => ({ text, index, unsynced: true }));
     }
+    parseLocalLyrics(content) {
+        const text = String(content || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+        const offset = Number(text.match(/^\[offset:([+-]?\d+)\]\s*$/im)?.[1] || 0);
+        const timed = [];
+        for (const row of text.split('\n')) {
+            const stamps = [...row.matchAll(/\[(\d+):([0-5]?\d(?:\.\d{1,3})?)\]/g)];
+            if (!stamps.length) continue;
+            const words = row.replace(/\[\d+:[0-5]?\d(?:\.\d{1,3})?\]/g, '')
+                .replace(/<\d+:[0-5]?\d(?:\.\d{1,3})?>/g, '').trim();
+            // Empty timed rows mark an instrumental gap rather than extending the preceding verse.
+            for (const stamp of stamps) timed.push({ text: words || '♪', startMs: Math.max(0, Math.round((Number(stamp[1]) * 60 + Number(stamp[2])) * 1000) - offset) });
+        }
+        if (timed.length > 5000) throw new Error('This file has too many lyric lines (maximum 5000).');
+        if (timed.length) {
+            timed.sort((a, b) => a.startMs - b.startMs);
+            return { source: 'imported-lrc', lines: timed.map((line, index) => ({ ...line, index, durMs: Math.max(1, (timed[index + 1]?.startMs ?? line.startMs + 3000) - line.startMs) })) };
+        }
+        const lines = text.split('\n').map(row => row.trim()).filter(row => row && !/^\[(?:ar|ti|al|by|offset|length):.*\]$/i.test(row));
+        if (!lines.length) throw new Error('The lyrics file is empty.');
+        if (lines.length > 5000) throw new Error('This file has too many lyric lines (maximum 5000).');
+        return { source: 'imported-text', lines: lines.map((text, index) => ({ text, index, unsynced: true })) };
+    }
+    async importLyricsFile(file) {
+        const track = queue[currentTrackIndex];
+        if (!track) { toast('Play a song before importing its lyrics'); return; }
+        if (!file || file.size > 1024 * 1024) { toast('Choose a lyrics file smaller than 1 MB'); return; }
+        try {
+            const imported = this.parseLocalLyrics(await file.text());
+            if (!this.isCurrentLyricsTrack(track)) { toast('The song changed. Import again for the current song.'); return; }
+            this.cancelLyricsFetch();
+            this.currentSource = imported.source; this.parsedLines = imported.lines;
+            this.currentLyrics = imported.lines; this.currentLineIndex = -1;
+            this.isOpen = true;
+            this.loadAmOffset(track);
+            void this.rememberLyrics(track, { lyrics: imported.lines, parsedLines: imported.lines, source: imported.source });
+            this.renderLyrics();
+            toast('Lyrics imported for ' + (track.title || 'this song'));
+        } catch (error) { toast('Could not import lyrics: ' + error.message); }
+    }
+
     async cacheAndRender(lyrics, source, track) {
-        const cacheKey = `${track.title}-${track.artist}`;
         if (source === 'spotify' || source === 'musix') lyrics = lyrics.filter(line => Number.isFinite(line.startMs) && line.startMs >= 0).slice().sort((a, b) => a.startMs - b.startMs);
         const lines = (source === 'spotify' || source === 'musix') ? lyrics : this.parsedLines;
         this.currentLyrics = lyrics;
         const data = { lyrics, source, parsedLines: lines };
-        this.cache.set(cacheKey, data);
-        if (this.cache.size > 100) this.cache.delete(this.cache.keys().next().value);
-        await this.saveLyricsToDB(track, lyrics, source, lines).catch(error => console.warn('Lyrics could not be saved offline', error));
+        void this.rememberLyrics(track, data);
         if (!this.isCurrentLyricsTrack(track)) return;
         if (source === 'spotify' || source === 'musix') this.parsedLines = lyrics;
         this.renderLyrics();
-        toast(`Lyrics saved (${source})`);
     }
     renderLyrics() {
         const container = document.getElementById('lyricsContent');
         if (!container) return;
         if (!this.parsedLines?.length) { this.showNotFound('No lyrics available'); return; }
-        const badge = ['spotify', 'musix'].includes(this.currentSource) ? '<span style="color:var(--accent);font-size:11px;">⚡ Synced</span>' : '<span style="color:var(--text-muted);font-size:11px;"></span>';
+        const badge = this.hasSyncedLyrics() ? '<span style="color:var(--accent);font-size:11px;">⚡ Synced</span>' : '<span style="color:var(--text-muted);font-size:11px;"></span>';
         container.dataset.lyricsRevision = String(this.renderRevision = (this.renderRevision || 0) + 1);
         container.innerHTML = `
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">
-<span style="font-size:12px;color:var(--text-muted);">Source: ${this.currentSource === 'spotify' ? 'Spotify' : this.currentSource === 'musix' ? 'Musix' : "Genius"}</span>${badge}
+<span style="font-size:12px;color:var(--text-muted);">Source: ${({spotify:'Spotify', musix:'Musix', genius:'Genius', 'saved-amlyrics':'am-lyrics (saved)', 'imported-lrc':'Local LRC', 'imported-text':'Local text'})[this.currentSource] || 'Lyrics'}</span>${badge}
 </div>
-<div class="lyrics-tools"><input class="lyrics-find" type="search" placeholder="Find a line…" aria-label="Find a lyric line" oninput="lyricsManager.filterLyrics(this)"><span class="lyrics-mode">${this.currentSource === 'genius' ? 'Plain lyrics · timing unavailable' : 'Synced · click a line to seek'}</span></div>
-${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${idx}" ${this.currentSource === 'genius' ? '' : `role="button" tabindex="0" aria-label="Seek to line ${idx + 1}" onclick="lyricsManager.seekToLine(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lyricsManager.seekToLine(${idx})}"`}><span class="moveitalittle">${this.escapeHtml(line.text)}</span></div>`).join('')}`;
+<div class="lyrics-tools"><input class="lyrics-find" type="search" placeholder="Find a line…" aria-label="Find a lyric line" oninput="lyricsManager.filterLyrics(this)"><span class="lyrics-mode">${this.hasSyncedLyrics() ? 'Synced · click a line to seek' : 'Plain lyrics · timing unavailable'}</span></div>
+${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${idx}" ${!this.hasSyncedLyrics() ? '' : `role="button" tabindex="0" aria-label="Seek to line ${idx + 1}" onclick="lyricsManager.seekToLine(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lyricsManager.seekToLine(${idx})}"`}><span class="moveitalittle">${this.escapeHtml(line.text)}</span></div>`).join('')}`;
         this.currentLineIndex = -1;
         this.handleTimeUpdate();
         this.updateFetchButtonVisibility();
@@ -6838,19 +6935,20 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
       if (this.lyricsSyncRunning) return;
       this.lyricsSyncRunning = true;
       const loop = () => {
-        if (!this.lyricsSyncRunning) return;
-        if (!audio.paused && !document.hidden) this.handleTimeUpdate();
-        requestAnimationFrame(loop);
+          if (!this.lyricsSyncRunning) return;
+          if (audio.paused || document.hidden || !this.isOpen) {
+              this.lyricsIdleTimer = setTimeout(loop, 250);
+              return;
+          }
+          this.handleTimeUpdate();
+          this.lyricsFrame = requestAnimationFrame(loop);
       };
-      requestAnimationFrame(loop);
+      loop();
   }
-
   stopLyricsSync() {
-    this.lyricsSyncRunning = false;
-    if (this.lyricsSyncInterval) {
-        clearInterval(this.lyricsSyncInterval);
-        this.lyricsSyncInterval = null;
-    }
+      this.lyricsSyncRunning = false;
+      clearTimeout(this.lyricsIdleTimer);
+      cancelAnimationFrame(this.lyricsFrame);
   }
 
     // ---------------- am-lyrics integration ----------------
@@ -6955,10 +7053,13 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     // ---- sync offset (per track, remembered) ----
     getOffsetStore() {
-        try { return JSON.parse(localStorage.getItem('youtifiy_lyrics_offsets') || '{}') || {}; } catch (e) { return {}; }
+        try { const value = JSON.parse(localStorage.getItem('youtifiy_lyrics_offsets') || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch (e) { return {}; }
     }
     loadAmOffset(track) {
-        this.amOffsetMs = Number(this.getOffsetStore()[this.getLyricsTrackId(track)]) || 0;
+        const offsets = this.getOffsetStore();
+        const legacyId = `${track.title}-${track.artist}`.replace(/[^\w\s&-]/g, '').trim();
+        const value = Number(offsets[this.getLyricsTrackId(track)] ?? offsets[legacyId]);
+        this.amOffsetMs = Number.isFinite(value) ? Math.max(-10000, Math.min(10000, value)) : 0;
         this._lastAmT = null;
     }
     // delta in ms, positive = lyrics show later, negative = earlier. 0 resets.
@@ -7014,7 +7115,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     // runs one lookup on the shared element. lines[] | false (nothing) | null (superseded)
     async amLookup(el, cand, track, token, timeoutMs) {
-        const dur = Number.isFinite(audio?.duration) && audio.duration > 0 ? audio.duration : (this.songDuration || 0);
+        const dur = Number(track.duration) || (this.isCurrentLyricsTrack(track) && Number.isFinite(audio.duration) ? audio.duration : 0);
         el.ttml = undefined;
         el.musicId = '';
         el.isrc = '';
@@ -7042,7 +7143,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         return lines;
     }
     // resolves to: lines[] (success) | false (nothing found / failed) | null (superseded)
-    async tryAm(track) {
+    async tryAm(track, generation = this.fetchGeneration) {
         this.amErr = null;
         this.amLoop = null;
         this.loadAmOffset(track);
@@ -7054,7 +7155,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             try { el = await this.ensureAm(); }
             catch (e2) { this.amErr = e2?.message || 'am-lyrics failed to load'; console.log('❌ am-lyrics load error:', e2); return false; }
         }
-        if (!this.isCurrentLyricsTrack(track) || this.pendingTrackChange) return null;
+        if (generation !== this.fetchGeneration || !this.isCurrentLyricsTrack(track)) return null;
         const token = ++this.amToken;
         this.amActive = true;
         this.placeAm();
@@ -7595,14 +7696,15 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
 
     // am-lyrics lines -> the app's own {text,startMs,durMs} shape (used by PiP / seek / current line)
     amLinesToParsed(lines) {
-        return lines.filter(l => l && !l.background).map(l => {
-            const text = (l.text || []).map(s => s.text).join('').replace(/\s+/g, ' ').trim();
-            if (!text) return null;
-            const startMs = Number(l.timestamp) || 0;
-            const endMs = Number(l.endtime) || (startMs + 3000);
-            return { text, startMs, durMs: Math.max(500, endMs - startMs) };
-        }).filter(Boolean).map((l, i) => ({ ...l, index: i }));
+        return lines.filter(line => line && !line.background).map(line => {
+            const text = (Array.isArray(line.text) ? line.text.map(word => word?.text || '').join('') : String(line.text || '')).replace(/\s+/g, ' ').trim();
+            const startMs = Number(line.timestamp);
+            if (!text || !Number.isFinite(startMs) || startMs < 0) return null;
+            const endMs = Number(line.endtime);
+            return { text, startMs, durMs: Number.isFinite(endMs) && endMs > startMs ? endMs - startMs : 3000 };
+        }).filter(Boolean).sort((a, b) => a.startMs - b.startMs).map((line, index) => ({ ...line, index }));
     }
+
     getAmHost() {
         const vis = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
         const full = document.getElementById('fullLyricsContent');
@@ -7716,7 +7818,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
 
     handleTimeUpdate() {
-        const off = this.currentSource === 'amlyrics' ? (this.amOffsetMs || 0) : 0;
+        const off = this.hasSyncedLyrics() ? (this.amOffsetMs || 0) : 0;
         if (this.amActive && this.amEl && this.amEl.isConnected) {
             const t = Math.max(0, Math.round(audio.currentTime * 1000 - off));
             if (t !== this._lastAmT) { this._lastAmT = t; this.amEl.currentTime = t; }
@@ -7728,7 +7830,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 else { this.amLoop = null; this.refreshAmBar(); toast('Line loop off'); } // user seeked far away
             }
         }
-        if (!this.isOpen || !this.parsedLines?.length || this.currentSource === 'genius') return;
+        if (!this.isOpen || !this.parsedLines?.length || !this.hasSyncedLyrics()) return;
         const ms = audio.currentTime * 1000 - off;
         // Find the latest timestamp, including after backwards seeks and before verse one.
         let low = 0, high = this.parsedLines.length - 1, newIndex = -1;
@@ -7742,7 +7844,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
 
     highlightLine(index) {
         if (this.currentSource === 'amlyrics') { this.currentLineIndex = index; return; }
-        if (this.currentSource !== 'spotify' && this.currentSource !== 'musix') return;
+        if (!this.hasSyncedLyrics()) return;
         const allLines = document.querySelectorAll('.lyrics-line');
         allLines.forEach(el => {
             const lineIndex = Number(el.dataset.index);
@@ -7796,8 +7898,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         status.textContent = query ? `${found} matching line${found === 1 ? '' : 's'}` : '';
     }
     seekToLine(index) {
-        if (!this.parsedLines[index] || this.currentSource === 'genius') return;
-        const seconds = this.parsedLines[index].startMs / 1000;
+        if (!this.parsedLines[index] || !this.hasSyncedLyrics()) return;
+        const seconds = (this.parsedLines[index].startMs + (this.amOffsetMs || 0)) / 1000;
         if (!Number.isFinite(seconds)) return;
         audio.currentTime = Math.max(0, Number.isFinite(audio.duration) ? Math.min(seconds, audio.duration) : seconds);
         this.highlightLine(index);
@@ -7854,7 +7956,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
 
 function addLyricsSettings() {
   const section = document.getElementById('trackManagementSection');
-  if (!section) return;
+  const container = section?.parentNode || document.querySelector('#settingsModal .modal');
+  if (!container) return;
   document.getElementById('lyricsSettingsSection')?.remove();
   const settings = document.createElement('div');
   settings.id = 'lyricsSettingsSection';
@@ -7863,7 +7966,7 @@ function addLyricsSettings() {
     <div class="settings-section-title">Lyrics (am-lyrics + API fallback)</div>
     <div class="form-group">
       <label class="form-label">RapidAPI Key (only used as fallback)</label>
-      <input type="text" class="form-input" id="lyricsApiKey" placeholder="Enter your RapidAPI key..." value="${lyricsManager ? lyricsManager.getApiKey() : ''}">
+      <input type="text" class="form-input" id="lyricsApiKey" placeholder="Enter your RapidAPI key...">
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn secondary" onclick="saveLyricsKey()">Save Key</button>
         <button class="btn secondary" onclick="testLyricsKey()">Test</button>
@@ -7872,8 +7975,15 @@ function addLyricsSettings() {
         <button class="btn secondary" onclick="if(lyricsManager)lyricsManager.refreshAllLyrics()">Refresh All Lyrics</button>
       </div>
     </div>
-    <div style="margin-top:12px;"><button class="btn secondary" onclick="if(lyricsManager)lyricsManager.toggle()" style="width:100%">${lyricsManager?.isOpen ? 'Close' : 'Open'} Lyrics Panel (L)</button></div>`;
-  section.parentNode.insertBefore(settings, section);
+    <div class="form-group" style="margin-top:12px;">
+      <label class="form-label" for="localLyricsFile">Import lyrics for the current song (.lrc or .txt)</label>
+      <input id="localLyricsFile" type="file" accept=".lrc,.txt,text/plain" onchange="if(this.files[0] && lyricsManager)lyricsManager.importLyricsFile(this.files[0]);this.value=''">
+      <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Timestamped LRC files follow playback. Text files stay readable without guessed timings.</div>
+    </div>
+    <div style="margin-top:12px;"><button class="btn secondary" onclick="handleLyricsButtonClick()">Show lyrics (L)</button></div>`;
+  container.insertBefore(settings, section || null);
+  const keyInput = settings.querySelector('#lyricsApiKey');
+  if (keyInput) keyInput.value = lyricsManager ? lyricsManager.getApiKey() : '';
 }
 
 function saveLyricsKey() {
@@ -7909,12 +8019,7 @@ async function testLyricsKey() {
 }
 
 function toggleLyrics() {
-  const panel = document.getElementById('lyricsPanel');
-  const btn   = document.getElementById('lyricsToggleBtn');
-  const isOpen = panel.classList.contains('open');
-  if (isOpen) { panel.classList.remove('open'); btn.classList.remove('active'); document.body.classList.remove('lyrics-open'); }
-  else { panel.classList.add('open'); btn.classList.add('active'); document.body.classList.add('lyrics-open'); if (!audioContext) AudioEngine.init(); }
-  lyricsManager.toggle();
+  if (lyricsManager) return lyricsManager.toggle();
 }
 
 // ============================================================================
@@ -8147,7 +8252,7 @@ audio.addEventListener('ended', (e) => {
   // Ignore the old physical audio element finishing after a crossfade swap.
   // Its ended event must not advance the queue a second time.
   if (e.currentTarget === audio && !isCrossfading) {
-    PlayerController.next(0, false);
+    PlayerController.next(0, false, true);
   }
 });
 audio.addEventListener('loadedmetadata', () => {
@@ -8819,7 +8924,7 @@ function fetchCurrentTrackLyrics() {
   // now" signal, so arm the manager and go straight to the API regardless
   // of whatever passive auto-fetch state isOpen is currently in.
   lyricsManager.isOpen = true;
-  lyricsManager.fetchLyrics(track);
+  lyricsManager.fetchLyrics(track, true);
 }
 
 function handleLyricsButtonClick() {
@@ -9215,7 +9320,7 @@ const LyricsPopout = (function () {
 
   function hasRealTiming() {
     return typeof lyricsManager !== 'undefined' && lyricsManager
-      && (lyricsManager.currentSource === 'spotify' || lyricsManager.currentSource === 'musix' || lyricsManager.currentSource === 'amlyrics')
+      && lyricsManager.hasSyncedLyrics()
       && !!lyricsManager.parsedLines?.length;
   }
 

@@ -36,5 +36,93 @@ await check('latest YouTube search wins when older request finishes last',async(
 await check('lyrics reset before the first timestamp and recover after seeking',()=>{const m=Object.create(context.UnifiedLyricsManager.prototype);Object.assign(m,{currentSource:'spotify',isOpen:true,currentLineIndex:1,parsedLines:[{startMs:10000},{startMs:20000},{startMs:30000}],highlightLine(index){this.currentLineIndex=index}});audio.currentTime=0;m.handleTimeUpdate();assert.equal(m.currentLineIndex,-1);audio.currentTime=25;m.handleTimeUpdate();assert.equal(m.currentLineIndex,1)});
 await check('metadata probes release temporary URLs and audio sources',async()=>{const q=context.QueueManager;const originalURL=context.URL;let revoked=0,released=0;context.URL={createObjectURL:()=> 'blob:test',revokeObjectURL:()=>revoked++};context.Audio=class{constructor(){this.duration=123}set src(value){queueMicrotask(()=>this.onloadedmetadata?.())}removeAttribute(){released++}load(){}};const method=section('  static getAudioDuration(track) {','  static rebuild()');const Probe=vm.runInContext('(class {'+method+'})',context);assert.equal(await Probe.getAudioDuration({type:'import',file:{}}),123);assert.equal(revoked,1);assert.equal(released,1);context.URL=originalURL});
 await check('mirrored lyric highlights preserve the existing input DOM',()=>{vm.runInContext(section('function mirrorLyricsContent(source, target) {','const FullLyricsPlayer ='),context);const classes=()=>({toggle(name,value){this[name]=value},contains(name){return name==='active'}});const sourceLine={classList:classes()},targetLine={classList:classes()};const a={dataset:{lyricsRevision:'2'},querySelectorAll:()=>[sourceLine]};const b={dataset:{lyricsRevision:'2'},querySelectorAll:()=>[targetLine],set innerHTML(value){throw new Error('Focused input was recreated')}};context.mirrorLyricsContent(a,b);assert.equal(targetLine.classList.active,true)});
+
+context.window = {};
+context.localStorage.getItem = key => store.get(key) ?? null;
+const lyricManager = () => Object.assign(Object.create(context.UnifiedLyricsManager.prototype), {
+ cache: new Map(), parsedLines: [], currentLineIndex: -1, amToken: 0, isOpen: true,
+ exitAm(){this.amActive=false;this.amToken++}, showLoading(){}, showEmpty(){this.empty=true},
+ updateFetchButtonVisibility(){}, renderLyrics(){this.rendered=true}, loadAmOffset(){},
+ showError(title, message){this.error={title,message}}, saveLyricsToDB:async()=>{}
+});
+await check('LRC import handles repeats, fractions, offsets and instrumental gaps',()=>{
+ const m=lyricManager(); const data=m.parseLocalLyrics('[offset:200]\n[00:10.50][01:20.125]Repeated\n[00:15.000]\n[ar:Artist]');
+ assert.equal(data.source,'imported-lrc');assert.equal(data.lines.length,3);
+ assert.equal(data.lines[0].startMs,10300);assert.equal(data.lines[1].text,'♪');assert.equal(data.lines[2].startMs,79925);
+});
+await check('plain lyric import preserves headings without invented timing',()=>{
+ const m=lyricManager(),data=m.parseLocalLyrics('[Chorus]\nSome words');assert.equal(data.source,'imported-text');
+ assert.equal(data.lines[0].text,'[Chorus]');assert.equal(data.lines[1].startMs,undefined);
+ assert.throws(()=>m.parseLocalLyrics('  \n '));assert.throws(()=>m.parseLocalLyrics('[ar:Artist]'));
+});
+await check('am-lyrics normalization accepts word arrays and text, sorts and rejects bad timestamps',()=>{
+ const m=lyricManager(),lines=m.amLinesToParsed([{text:'Later',timestamp:5000},{text:[{text:'First '},{text:'line'}],timestamp:1000},{text:'Invalid',timestamp:'bad'},{text:'Backing',timestamp:0,background:true}]);
+ assert.equal(lines.length,2);assert.equal(lines[0].text,'First line');assert.equal(lines[0].startMs,1000);assert.equal(lines[1].index,1);
+});
+await check('a cancelled old lookup cannot unlock or overwrite the next song',async()=>{
+ const m=lyricManager(),waiting=[];m.tryAm=()=>new Promise(resolve=>waiting.push(resolve));
+ const first={title:'First',artist:'A'},second={title:'Second',artist:'B'};
+ context.queue=[first];context.currentTrackIndex=0;const old=m.fetchLyrics(first,true);
+ assert.equal(context.window.__freshLyricsRequests,1);m.cancelLyricsFetch();context.queue=[second];
+ const next=m.fetchLyrics(second);waiting[0](null);await old;
+ assert.equal(m.isFetching,true);assert.equal(m.isLoading,true);assert.equal(context.window.__freshLyricsRequests,0);
+ waiting[1]([{text:'new',timestamp:1000}]);await next;
+ assert.equal(m.currentSource,'amlyrics');assert.equal(m.parsedLines[0].text,'new');
+ const saved=m.cache.get(m.getLyricsTrackId(second));assert.equal(saved.source,'saved-amlyrics');assert.equal(saved.parsedLines[0].startMs,1000);
+});
+await check('clearing playback removes stale lyric state',async()=>{
+ const m=lyricManager();Object.assign(m,{currentSource:'spotify',currentLyrics:'old',parsedLines:[{text:'old'}]});
+ context.queue=[];context.currentTrackIndex=-1;await m.onTrackChange();assert.equal(m.currentSource,null);assert.equal(m.currentLyrics,null);assert.equal(m.parsedLines.length,0);assert(m.empty);
+});
+await check('returning to a track rejects an earlier storage read of that same song',async()=>{
+ const m=lyricManager(),reads=[];m.getLyricsFromDB=()=>new Promise(resolve=>reads.push(resolve));
+ const a={title:'A',artist:'A'},b={title:'B',artist:'B'};context.currentTrackIndex=0;context.queue=[a];const old=m.onTrackChange();
+ context.queue=[b];const middle=m.onTrackChange();context.queue=[a];const latest=m.onTrackChange();
+ reads[2]({lyrics:'latest',source:'genius',parsedLines:[{text:'latest'}]});await latest;
+ reads[0]({lyrics:'old',source:'genius',parsedLines:[{text:'old'}]});reads[1](null);await Promise.all([old,middle]);assert.equal(m.currentLyrics,'latest');
+});
+await check('legacy featured-artist cache keys are still read',async()=>{
+ const m=lyricManager(),seen=[],track={title:'Song (feat. Guest)',artist:'Artist'};
+ const oldId=`${track.title}-${track.artist}`.replace(/[^\w\s&-]/g,'').trim();
+ m.db={transaction:()=>({objectStore:()=>({get(key){seen.push(key);const req={};queueMicrotask(()=>{req.result=key===oldId?{lyrics:'saved'}:null;req.onsuccess()});return req}})})};
+ const result=await m.getLyricsFromDB(track);assert.equal(result.lyrics,'saved');assert.equal(seen[0],m.getLyricsTrackId(track));assert.equal(seen[1],oldId);
+});
+await check('import does not attach lyrics to a song selected while reading the file',async()=>{
+ const m=lyricManager();context.queue=[{title:'A',artist:'A'}];context.currentTrackIndex=0;
+ let resolve;const task=m.importLyricsFile({size:10,text:()=>new Promise(done=>resolve=done)});
+ context.queue=[{title:'B',artist:'B'}];resolve('[00:01]Wrong song');await task;assert.equal(m.parsedLines.length,0);assert.equal(m.cache.size,0);
+});
+await check('Next advances with repeat one while natural ending repeats the current song',()=>{
+ context.queue=[{uid:'a'},{uid:'b'}];context.currentTrackIndex=0;context.repeatMode='one';context.uqPeek=()=>-1;context.uqReturnIndex=-1;context.isShuffle=false;context.updatePlayerUIWithoutAAB=()=>{};
+ let selected=-1;context.playTrackAtIndex=(_,__,index)=>selected=index;
+ context.PlayerController.next();assert.equal(selected,1);
+ const resume=context.PlayerController.resume;let repeated=false;context.PlayerController.resume=()=>{repeated=true};audio.currentTime=50;
+ context.PlayerController.next(0,false,true);assert.equal(audio.currentTime,0);assert(repeated);context.PlayerController.resume=resume;
+});
+await check('paused lyrics use an idle timer instead of animation frames',()=>{
+ const m=lyricManager();let frames=0;context.requestAnimationFrame=()=>{frames++;return 1};context.cancelAnimationFrame=()=>{};audio.paused=true;
+ m.startLyricsSync();assert.equal(frames,0);assert(m.lyricsIdleTimer);m.stopLyricsSync();assert.equal(m.lyricsSyncRunning,false);
+});
+
+await check('provider failure reuses saved synced lyrics without requiring an API key',async()=>{
+ const m=lyricManager(),track={title:'Cached',artist:'Artist'};context.queue=[track];context.currentTrackIndex=0;
+ m.apiKey='';m.tryAm=async()=>false;const saved={source:'saved-amlyrics',lyrics:[{text:'Saved',startMs:1000}],parsedLines:[{text:'Saved',startMs:1000}]};
+ m.cache.set(m.getLyricsTrackId(track),saved);await m.fetchLyrics(track);assert.equal(m.currentSource,'saved-amlyrics');assert(m.rendered);assert(m.hasSyncedLyrics());
+});
+await check('explicit refresh bypasses a saved lyric fallback',async()=>{
+ const m=lyricManager(),track={title:'Cached',artist:'Artist'};context.queue=[track];context.currentTrackIndex=0;m.apiKey='';m.tryAm=async()=>false;
+ m.cache.set(m.getLyricsTrackId(track),{source:'saved-amlyrics',parsedLines:[{text:'Old',startMs:0}]});await m.fetchLyrics(track,true);assert(m.error);assert.equal(context.window.__freshLyricsRequests,0);
+});
+await check('lyrics settings mount without the missing track-management anchor or optional inputs',()=>{
+ const originalQuery=document.querySelector,container=new Element();let inserted;
+ container.insertBefore=(node)=>{inserted=node};document.querySelector=selector=>selector==='#settingsModal .modal'?container:null;
+ Element.prototype.querySelector=()=>null;
+ const modal=new Element();modal.classList.add=()=>{};elements.set('settingsModal',modal);
+ context.svgfile='';context.ensureHalloweenToggle=()=>{};context.lyricsManager=lyricManager();context.lyricsManager.apiKey='sensitive-key';
+ vm.runInContext(section('function addLyricsSettings() {','function saveLyricsKey()'),context);
+ vm.runInContext(section('class SettingsManager {','// Legacy wrappers')+'\nthis.SettingsManager=SettingsManager;',context);
+ context.SettingsManager.open();assert.equal(inserted.id,'lyricsSettingsSection');assert(inserted.innerHTML.includes('localLyricsFile'));assert(!inserted.innerHTML.includes('sensitive-key'));
+ document.querySelector=originalQuery;context.lyricsManager=null;
+});
 console.log(`${checks} regression checks passed`);
 })().catch(e=>{console.error(e);process.exitCode=1});
