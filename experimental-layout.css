@@ -1,3 +1,9 @@
+/* Keep the original website untouched when Studio is off. */
+body:not(.experimental-layout) .exp-studio-header,
+body:not(.experimental-layout) .exp-feature-grid,
+body:not(.experimental-layout) .exp-sidebar-foot,
+body:not(.experimental-layout) .exp-queue-eyebrow { display: none !important; }
+
 /*
  * Youtifiy / Studio 001
  * Entirely opt-in alternate design. Nothing below affects classic mode.
