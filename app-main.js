@@ -8827,7 +8827,9 @@ const PlayerEmbed = (function () {
   const realLyrics = document.getElementById('lyricsContent');
 
   function isEmbedActive() {
-    return !!embedEl && getComputedStyle(embedEl).display !== 'none';
+    // Hidden parents can leave display as "flex"; the embedded card must
+    // actually be rendered or the lyrics/EQ buttons use their side panels.
+    return !!embedEl && getComputedStyle(embedEl).display !== 'none' && embedEl.getClientRects().length > 0;
   }
 
   // --- Live lyrics mirroring -------------------------------------------
