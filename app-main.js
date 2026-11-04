@@ -8827,7 +8827,9 @@ const PlayerEmbed = (function () {
   const realLyrics = document.getElementById('lyricsContent');
 
   function isEmbedActive() {
-    return !!embedEl && getComputedStyle(embedEl).display !== 'none';
+    // Hidden parents can leave display as "flex"; the embedded card must
+    // actually be rendered or the lyrics/EQ buttons use their side panels.
+    return !!embedEl && getComputedStyle(embedEl).display !== 'none' && embedEl.getClientRects().length > 0;
   }
 
   // --- Live lyrics mirroring -------------------------------------------
@@ -15787,4 +15789,16 @@ class WinterSnakeGame {
             currentVolume + (['ArrowLeft', 'ArrowDown'].includes(event.key) ? -.05 : .05));
     });
     PlayerController.updateVolumeUI();
+})();
+
+
+/* Studio layout is loaded separately so the original music engine stays intact. */
+(function loadExperimentalStudio() {
+  const source = document.currentScript?.src || window.YOUTIFY_GATE?.appJs;
+  if (!source) return;
+  const studio = document.createElement('script');
+  studio.src = new URL('experimental-layout.js', source).href;
+  studio.async = false;
+  studio.onerror = () => console.warn('[studio] optional layout failed to load; classic mode is unaffected');
+  document.head.appendChild(studio);
 })();
