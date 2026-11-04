@@ -35,6 +35,24 @@
       if (enabled && hero.parentNode !== feature) feature.appendChild(hero);
       if (!enabled && hero.parentNode === feature) feature.parentNode.insertBefore(hero, feature);
     }
+    const library = home?.querySelector('.exp-library-grid');
+    const queue = home?.querySelector('.queue-container');
+    const lyricHost = home?.querySelector('.exp-lyrics-card-content');
+    const embed = get('playerEmbed');
+    const player = get('player');
+    if (enabled) {
+      if (library && queue && queue.parentNode !== library) {
+        library.insertBefore(queue, library.querySelector('.exp-lyrics-card'));
+      }
+      if (lyricHost && embed && embed.parentNode !== lyricHost) lyricHost.appendChild(embed);
+    } else {
+      if (library && queue && queue.parentNode === library) library.parentNode.insertBefore(queue, library);
+      if (lyricHost && embed && player && embed.parentNode === lyricHost) {
+        const right = player.querySelector('.player-right');
+        if (right) player.insertBefore(embed, right);
+        else player.appendChild(embed);
+      }
+    }
     document.body.classList.toggle('experimental-layout', Boolean(enabled));
     if (persist) remember(Boolean(enabled));
     syncToggle();
@@ -102,6 +120,15 @@
       </section>`;
     hero.parentNode.insertBefore(feature, hero);
 
+
+    // Reuse the live lyrics / EQ / queue embed beside the music collection.
+    const queue = home.querySelector('.queue-container');
+    if (queue) {
+      const library = document.createElement('div');
+      library.className = 'exp-library-grid';
+      library.innerHTML = '<aside class="exp-lyrics-card" aria-label="Live lyrics and audio controls"><div class="exp-lyrics-card-head"><span>03 / LIVE STATION</span><span>LYRICS · EQ · UP NEXT</span></div><div class="exp-lyrics-card-content"></div></aside>';
+      queue.parentNode.insertBefore(library, queue);
+    }
 
     const sidebar = get('sidebar');
     if (sidebar) {
