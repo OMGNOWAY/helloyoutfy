@@ -26,6 +26,15 @@
   }
 
   function setEnabled(enabled, persist = true) {
+    const home = get('homeView');
+    const hero = home?.querySelector('.ios-home-hero');
+    const feature = home?.querySelector('.exp-feature-grid');
+    // Reparent the real now-playing hero only while Studio is enabled.
+    // Classic mode gets its original direct-child markup back.
+    if (feature && hero) {
+      if (enabled && hero.parentNode !== feature) feature.appendChild(hero);
+      if (!enabled && hero.parentNode === feature) feature.parentNode.insertBefore(hero, feature);
+    }
     document.body.classList.toggle('experimental-layout', Boolean(enabled));
     if (persist) remember(Boolean(enabled));
     syncToggle();
@@ -92,7 +101,7 @@
         <div class="exp-editorial-footer"><span>01 / LISTEN</span><span>YOUR LIBRARY, REIMAGINED</span></div>
       </section>`;
     hero.parentNode.insertBefore(feature, hero);
-    feature.appendChild(hero);
+
 
     const sidebar = get('sidebar');
     if (sidebar) {
