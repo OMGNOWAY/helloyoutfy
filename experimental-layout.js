@@ -93,14 +93,12 @@
     header.className = 'exp-studio-header';
     header.innerHTML = `
       <div class="exp-header-brand">
-        <span class="exp-led" aria-hidden="true"></span>
-        <span class="exp-overline">YOUTIFIY / STUDIO 001</span>
+        <span class="exp-overline">Youtifiy</span>
         <span class="exp-header-rule" aria-hidden="true"></span>
-        <span class="exp-header-section" id="expHeaderSection">LIBRARY</span>
+        <span class="exp-header-section" id="expHeaderSection">Library</span>
       </div>
       <div class="exp-header-tools">
-        <span class="exp-header-online"><span aria-hidden="true">●</span> YOUR PERSONAL SPACE</span>
-        <button type="button" class="exp-head-btn" onclick="openFolderPicker()" title="Import your music">+ ADD MUSIC</button>
+        <button type="button" class="exp-head-btn" onclick="openFolderPicker()" title="Import your music">Add music</button>
         <button type="button" class="exp-head-btn exp-head-settings" onclick="openSettings()" title="Open settings" aria-label="Open settings">⚙</button>
       </div>`;
     main.insertBefore(header, main.firstChild);
@@ -109,14 +107,13 @@
     feature.className = 'exp-feature-grid';
     feature.innerHTML = `
       <section class="exp-editorial" aria-label="Music library">
-        <div class="exp-editorial-label"><span class="exp-lime-dot"></span> YOUR OWN FREQUENCY <span>— 001</span></div>
-        <h1>PLAY IT<br><span>YOUR WAY.</span></h1>
-        <p>No distractions. Just the music you came for.</p>
+        <div class="exp-editorial-label">Your library</div>
+        <h1>Your music</h1>
+        <p>All your tracks in one place.</p>
         <div class="exp-editorial-actions">
-          <button type="button" class="exp-action-main" onclick="togglePlay()">▶ <span>PLAY / PAUSE</span></button>
-          <button type="button" class="exp-action-quiet" onclick="shuffleQueue()">⤨ <span>SHUFFLE LIBRARY</span></button>
+          <button type="button" class="exp-action-main" onclick="togglePlay()"><span aria-hidden="true">▶</span> <span>Play / pause</span></button>
+          <button type="button" class="exp-action-quiet" onclick="shuffleQueue()"><span aria-hidden="true">⤨</span> <span>Shuffle</span></button>
         </div>
-        <div class="exp-editorial-footer"><span>01 / LISTEN</span><span>YOUR LIBRARY, REIMAGINED</span></div>
       </section>`;
     hero.parentNode.insertBefore(feature, hero);
 
@@ -126,16 +123,8 @@
     if (queue) {
       const library = document.createElement('div');
       library.className = 'exp-library-grid';
-      library.innerHTML = '<aside class="exp-lyrics-card" aria-label="Live lyrics and audio controls"><div class="exp-lyrics-card-head"><span>03 / LIVE STATION</span><span>LYRICS · EQ · UP NEXT</span></div><div class="exp-lyrics-card-content"></div></aside>';
+      library.innerHTML = '<aside class="exp-lyrics-card" aria-label="Live lyrics and audio controls"><div class="exp-lyrics-card-head"><span>Lyrics</span><span>Equalizer / Queue</span></div><div class="exp-lyrics-card-content"></div></aside>';
       queue.parentNode.insertBefore(library, queue);
-    }
-
-    const sidebar = get('sidebar');
-    if (sidebar) {
-      const foot = document.createElement('div');
-      foot.className = 'exp-sidebar-foot';
-      foot.innerHTML = '<span class="exp-sidebar-foot-no">01 / STUDIO</span><span>ANOTHER WAY<br>TO LISTEN.</span><span class="exp-sidebar-foot-line" aria-hidden="true"></span>';
-      sidebar.appendChild(foot);
     }
 
     const queueTitle = home.querySelector('.queue-title');
@@ -143,7 +132,7 @@
       const label = document.createElement('span');
       label.id = 'expQueueEyebrow';
       label.className = 'exp-queue-eyebrow';
-      label.textContent = '02 / YOUR COLLECTION';
+      label.textContent = 'Your collection';
       queueTitle.parentNode.insertBefore(label, queueTitle);
     }
 
@@ -151,7 +140,7 @@
       item.addEventListener('click', () => {
         const text = item.querySelector('.nav-text')?.textContent?.trim();
         const section = get('expHeaderSection');
-        if (section && text) section.textContent = text.toUpperCase();
+        if (section && text) section.textContent = text;
       });
     });
     return true;
