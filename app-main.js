@@ -15788,3 +15788,15 @@ class WinterSnakeGame {
     });
     PlayerController.updateVolumeUI();
 })();
+
+
+/* Studio layout is loaded separately so the original music engine stays intact. */
+(function loadExperimentalStudio() {
+  const source = document.currentScript?.src || window.YOUTIFY_GATE?.appJs;
+  if (!source) return;
+  const studio = document.createElement('script');
+  studio.src = new URL('experimental-layout.js', source).href;
+  studio.async = false;
+  studio.onerror = () => console.warn('[studio] optional layout failed to load; classic mode is unaffected');
+  document.head.appendChild(studio);
+})();
