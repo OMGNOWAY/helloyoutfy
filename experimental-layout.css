@@ -961,3 +961,15 @@ body.experimental-layout .exp-lyrics-card-content .lyrics-line {
   body.experimental-layout .exp-library-grid .exp-lyrics-card { display: none !important; }
   body.experimental-layout .exp-library-grid .queue-container { width: 100%; }
 }
+
+/* Reset inherited vertical-player internals for the horizontal Studio transport. */
+body.experimental-layout #app .player-track {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+body.experimental-layout #app .player-info { text-align: left !important; }
+body.experimental-layout #app .player-right {
+  width: auto !important;
+  justify-content: flex-end !important;
+}
