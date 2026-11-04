@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "nodemon ./index.js",
     "ui": "browser-sync start --config bs-config.js",
-    "test": "node tests/app-regressions.cjs"
+    "test": "node tests/app-regressions.cjs && node tests/chat-regressions.cjs"
   },
   "keywords": [],
   "author": "",

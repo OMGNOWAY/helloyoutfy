@@ -5,6 +5,7 @@ const CHANGELOG_DATA = {
     `Improved lyrics loading and saved lyric fallback`,
     `Fixed Next repeating the same song with repeat one enabled`,
     `Fixed partly visible lyrics not following and saving the wrong unsynced line`,
+    `Reduced chat lag from unnecessary message updates`,
     `Added a Christmas theme in settings, with lights and snow`,
     `Hidden a small game somewhere in the app`
   ],
@@ -10958,6 +10959,7 @@ function markThreadRead(uid, ts) {
 /* Called whenever visibility changes — catches "panel was open on a thread but
    the tab was in the background". */
 function markVisibleRead() {
+  renderVisibleChat();
   if (canSee("room")) markRoomRead();
   else if (canSee("announce")) markNewsRead();
   else if (canSee("thread") && state.openThread) markThreadRead(state.openThread.uid);
@@ -11102,7 +11104,7 @@ function mergeThreadPages() {
 
 function paintThreadTop() {
   const box = $("ycThreadScroll");
-  if (!box || !threadPage) return;
+  if (!box || !threadPage || !canSee("thread")) return;
   let el = $("ycThreadTop");
   if (!el) {
     el = document.createElement("div");
@@ -11110,9 +11112,10 @@ function paintThreadTop() {
     el.className = "yc-thread-top";
   }
   if (box.firstElementChild !== el) box.insertBefore(el, box.firstElementChild);
-  el.textContent = threadPage.loading ? "loading older messages…"
-                 : threadPage.hasMore ? "" : "this is the start of your conversation";
-  el.classList.toggle("end", !threadPage.hasMore);
+  const label = threadPage.loading ? "loading older messages…"
+              : threadPage.hasMore ? "" : "this is the start of your conversation";
+  if (el.textContent !== label) el.textContent = label;
+  if (el.classList.contains("end") !== !threadPage.hasMore) el.classList.toggle("end", !threadPage.hasMore);
 }
 
 async function loadOlderThread() {
@@ -12339,6 +12342,10 @@ function msgSignature(m, grouped, pinged, receiptLabel) {
 
 function renderMessages(box, msgs, emptyText, force) {
   if (!box) return;
+  const view = { ycRoomScroll: "room", ycNewsScroll: "announce", ycThreadScroll: "thread" }[box.id];
+  // Listeners still keep messages and unread counts current while the panel is
+  // hidden. Paint the latest snapshot when that conversation becomes visible.
+  if (view && !canSee(view)) return;
 
   // first paint, or the box is hidden (clientHeight 0) -> always pin to bottom
   const first = !box.dataset.rendered || box.clientHeight === 0;
@@ -12347,6 +12354,7 @@ function renderMessages(box, msgs, emptyText, force) {
   const keepScroll = box.scrollTop;
 
   if (!msgs || !msgs.length) {
+    if (box.children.length === 1 && box.firstElementChild.classList.contains("yc-empty") && box.firstElementChild.textContent === emptyText) return;
     box.innerHTML = "";
     box.dataset.rendered = "1";
     box.__rows = new Map();
@@ -12366,6 +12374,13 @@ function renderMessages(box, msgs, emptyText, force) {
   if (isThreadBox) msgs.forEach((m, i) => { if (!m.system && m.uid === state.uid) lastOwnIdx = i; });
 
   const want = [];
+  // Pagination is part of this list. Leaving it out makes every existing row
+  // move past it on every update, then destroys and recreates the marker.
+  if (isThreadBox && threadPage) {
+    paintThreadTop();
+    const top = $("ycThreadTop");
+    if (top) want.push(top);
+  }
   const keep = new Set();
   let prev = null;
 
@@ -12410,17 +12425,30 @@ function renderMessages(box, msgs, emptyText, force) {
 
   cache.forEach((_, k) => { if (!keep.has(k)) cache.delete(k); });
 
-  // patch the list in place; nodes already in the right spot aren't touched
+  // Remove obsolete nodes first so replacing one row doesn't shift every row
+  // after it. Keep unchanged rows (including images and the pagination marker).
+  let changed = false;
+  const wantedNodes = new Set(want);
+  for (const child of Array.from(box.children)) {
+    if (!wantedNodes.has(child)) { box.removeChild(child); changed = true; }
+  }
   for (let i = 0; i < want.length; i++) {
     const cur = box.children[i];
-    if (cur !== want[i]) box.insertBefore(want[i], cur || null);
+    if (cur !== want[i]) { box.insertBefore(want[i], cur || null); changed = true; }
   }
-  while (box.children.length > want.length) box.removeChild(box.lastElementChild);
 
-  box.dataset.rendered = "1";
-  if (box.id === "ycThreadScroll" && threadPage) paintThreadTop();
-  if (stick) scrollToBottom(box);
-  else box.scrollTop = keepScroll;   // don't yank them to the top on a re-render
+  if (box.dataset.rendered !== "1") box.dataset.rendered = "1";
+  if ((changed || force) && stick) scrollToBottom(box);
+  else if (changed) box.scrollTop = keepScroll;
+}
+
+function renderVisibleChat() {
+  if (!panelIsOpen() || document.hidden) return;
+  if (state.view === "room" && lastRoomMsgs) renderMessages($("ycRoomScroll"), lastRoomMsgs, "No messages yet. Say something 👀");
+  else if (state.view === "announce" && lastNewsMsgs) renderMessages($("ycNewsScroll"), lastNewsMsgs, "No announcements yet.");
+  else if (state.view === "thread" && lastThreadMsgs) renderMessages($("ycThreadScroll"), lastThreadMsgs, "No messages yet — say hi.");
+  else if (state.view === "people") renderPeople();
+  else if (state.view === "dms") renderThreads();
 }
 
 function personRow(p) {
@@ -12455,6 +12483,7 @@ function personRow(p) {
 }
 
 function renderPeople() {
+  if (!canSee("people")) return;
   const box = $("ycPeopleList");
   if (!box) return;
   box.innerHTML = "";
@@ -12506,6 +12535,7 @@ function renderPeople() {
 }
 
 function renderThreads() {
+  if (!canSee("dms")) return;
   const box = $("ycDmList");
   if (!box) return;
   box.innerHTML = "";
@@ -13027,6 +13057,7 @@ function showView(v) {
   if (inp) inp.placeholder = v === "thread" ? ("message " + (state.openThread?.name || "")) : "message the room…";
   if (state.openThread?.name === "System") {inp.disabled = true; comp.style.display = "none";} else {inp.disabled = false; comp.style.display = (v === "room" || v === "thread") ? "flex" : "none";}
 
+  renderVisibleChat();
   if (v === "room")   { markRoomRead(); scrollToBottom($("ycRoomScroll")); }
   if (v === "announce") { markNewsRead(); scrollToBottom($("ycNewsScroll"));  }
   // typing is scoped to whichever conversation you're looking at
@@ -13037,8 +13068,6 @@ function showView(v) {
     listenTyping(null);
   }
   if (v === "thread" && state.openThread) { markThreadRead(state.openThread.uid); scrollToBottom($("ycThreadScroll")); } 
-  if (v === "people") renderPeople();
-  if (v === "dms") renderThreads();
   if (v === "me") {
     refreshOwnAvatars();
     paintShareSwitch();
