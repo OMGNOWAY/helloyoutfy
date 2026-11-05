@@ -6108,6 +6108,7 @@ class UnifiedLyricsManager {
     }
 
     cancelLyricsFetch() {
+        this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
         this.fetchGeneration = (this.fetchGeneration || 0) + 1;
         this.lyricsAbort?.abort();
         this.exitAm();
@@ -6285,8 +6286,9 @@ class UnifiedLyricsManager {
                     if (this.shouldRefreshSavedLyrics(cached)) { await this.fetchLyrics(track); return; }
                     this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
                 } else {
+                    const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
                     const dbData = await this.getLyricsFromDB(track).catch(() => null);
-                    if (!this.isCurrentLyricsTrack(track)) return;
+                    if (loadGeneration !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track)) return;
                     if (dbData) {
                         this.loadCachedLyrics(dbData);
                         this.cache.set(cacheKey, dbData);
@@ -6301,12 +6303,12 @@ class UnifiedLyricsManager {
         }
     }
     async onTrackChange() {
-        const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
         if (this.isFetching) {
             const t = queue[currentTrackIndex];
             if (t && this.getLyricsTrackId(t) === this.fetchingKey) return;
             this.cancelLyricsFetch();
         }
+        const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
         const track = queue[currentTrackIndex];
         if (!track) { this.exitAm(); this.currentLyrics = null; this.parsedLines = []; this.currentSource = null; this.currentLineIndex = -1; this.showEmpty(); return; }
         if (this.amActive && this.amEl && this.amTrackKey === this.getLyricsTrackId(track)) { this.placeAm(); return; }
@@ -6341,6 +6343,8 @@ class UnifiedLyricsManager {
     }
     async fetchLyrics(track, force = false) {
         if (this.isFetching) return;
+        // A refresh supersedes pending reads of the saved lyrics for this song.
+        this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
         const generation = this.fetchGeneration = (this.fetchGeneration || 0) + 1;
         const isFresh = () => generation === this.fetchGeneration && this.isCurrentLyricsTrack(track);
         if (force) window.__freshLyricsRequests = (window.__freshLyricsRequests || 0) + 1;
@@ -6919,6 +6923,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const accent = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '').trim();
         el.highlightColor = /^(#|rgb|hsl)/i.test(accent) ? accent : '#ff0000';
         el.addEventListener('line-click', event => {
+            if (el.cachedIsUnsynced) return;
             const clickedLine = event.composedPath?.().find(node =>
                 node instanceof HTMLElement && node.classList.contains('lyrics-line')
             );
@@ -6926,7 +6931,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (!Number.isFinite(timestampMs) || timestampMs < 0) return;
             if (this.amLoop) this.setLoopToTs(timestampMs);
             const duration = Number(audio.duration);
-            const seconds = (timestampMs + (this.amOffsetMs || 0)) / 1000;
+            const seconds = Math.max(0, (timestampMs + (this.amOffsetMs || 0)) / 1000);
             audio.currentTime = Number.isFinite(duration) && duration > 0
                 ? Math.min(seconds, duration)
                 : seconds;
@@ -8708,9 +8713,6 @@ function mirrorLyrics() {
       const track = queue?.[currentTrackIndex];
       if (track) {
         lyricsManager.onTrackChange();
-        if (!lyricsManager.parsedLines?.length && !lyricsManager.isFetching) {
-          lyricsManager.fetchLyrics(track);
-        }
       } else {
         lyricsManager.showEmpty();
       }
@@ -9320,7 +9322,7 @@ const LyricsPopout = (function () {
         }
         return;
       }
-      if (idx === lastShownLineIndex) return;
+      if (idx === lastShownLineIndex && lineEl.textContent === line.text) return;
       lastShownLineIndex = idx;
 
       lineEl.textContent = line.text;
@@ -9334,13 +9336,23 @@ const LyricsPopout = (function () {
     listMode.style.display = 'block';
     lastShownLineIndex = null;
 
+    // am-lyrics renders inside a shadow root, which innerHTML cannot copy.
+    // Use the normalized lines for plain lyrics and keep the pop-out read-only.
+    if (lyricsManager?.parsedLines?.length) {
+      const html = lyricsManager.parsedLines.map(line =>
+        `<div class="lyrics-line">${lyricsManager.escapeHtml(line.text)}</div>`
+      ).join('');
+      if (listMode.innerHTML !== html) listMode.innerHTML = html;
+      return;
+    }
+
     const source = document.getElementById('lyricsContent');
     if (!source || !source.children.length) {
       listMode.innerHTML = '<div class="pip-empty">No lyrics loaded for this track</div>';
       return;
     }
 
-    listMode.innerHTML = source.innerHTML;
+    if (listMode.innerHTML !== source.innerHTML) listMode.innerHTML = source.innerHTML;
     const active = listMode.querySelector('.lyrics-line.active');
     if (active) {
       const containerRect = listMode.getBoundingClientRect();
@@ -9388,7 +9400,7 @@ const LyricsPopout = (function () {
       if (!pipWindow) { clearInterval(pollId); return; }
       syncPlayButton();
       syncSeekBar();
-      if (hasRealTiming()) syncLyrics();
+      syncLyrics();
     }, 250);
 
     pipWindow.addEventListener('pagehide', () => {
