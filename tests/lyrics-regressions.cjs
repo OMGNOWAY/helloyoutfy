@@ -339,3 +339,113 @@ test('pausing a prepared word freezes it before its fill starts', () => {
   ctx.audio.paused = false; ctx.audio.playbackRate = 2; tick(500);
   animation.advance(300); tick(1100); assert.equal(animation.currentTime, 100);
 });
+
+const wordLyrics = () => [{ timestamp: 1000, endtime: 3000, text: [
+  { text: 'Saved ', timestamp: 1000, endtime: 1800 },
+  { text: 'words', timestamp: 1800, endtime: 3000 }
+], backgroundText: [{ text: 'Backing', timestamp: 2000, endtime: 2800 }] }];
+function lyricDB() {
+  const rows = new Map();
+  return { rows, transaction() {
+    const tx = { objectStore: () => ({
+      put(data) { rows.set(data.id, structuredClone(data)); queueMicrotask(() => tx.oncomplete?.()); return {}; },
+      get(key) { const req = {}; queueMicrotask(() => { req.result = structuredClone(rows.get(key)); req.onsuccess(); }); return req; }
+    }) }; return tx;
+  } };
+}
+function cachedRendererFixture() {
+  const f = fixture(); let requests = 0;
+  const el = { lyricsSource: 'Test provider', isConnected: false, cachedIsUnsynced: false,
+    addEventListener() {}, fetchLyrics: async () => { requests++; },
+    onLyricsLoaded: async function() { if (!this.noAutoAlternates) requests++; }, updateComplete: Promise.resolve() };
+  f.ctx.loadAmLyrics = async () => {};
+  f.ctx.document = { body: {}, documentElement: {}, createElement: () => el };
+  f.ctx.getComputedStyle = () => ({ fontFamily: 'inherit', getPropertyValue: () => '#fff' });
+  f.manager.applyAmFocus = () => {};
+  f.manager.hideAmChrome = () => {};
+  f.manager.applyAmbient = () => {};
+  f.manager.placeAm = () => { el.isConnected = true; void el.fetchLyrics(); };
+  f.manager.handleTimeUpdate = () => {};
+  f.manager.pruneLyricsDB = () => {};
+  return { ...f, el, requests: () => requests };
+}
+test('am-lyrics persists the full word and backing-vocal data through an IndexedDB reload', async () => {
+  const first = cachedRendererFixture(), db = lyricDB(); first.manager.db = db;
+  delete first.manager.saveLyricsToDB;
+  first.manager.amEl = first.el;
+  first.manager.tryAm = async () => wordLyrics();
+  await first.manager.fetchLyrics(first.track);
+  const stored = db.rows.get(first.manager.getLyricsTrackId(first.track));
+  assert.deepEqual(JSON.parse(JSON.stringify(stored.amData.lines)), wordLyrics());
+  const next = cachedRendererFixture(); next.manager.db = db;
+  next.manager.tryAm = async () => { throw Error('Saved lyrics must not search providers'); };
+  await next.manager.onTrackChange();
+  assert.equal(next.manager.currentSource, 'amlyrics');
+  assert.deepEqual(JSON.parse(JSON.stringify(next.el.lyrics)), wordLyrics());
+  assert.equal(next.requests(), 0, 'Connecting the cached renderer must not refetch');
+  next.el.lyrics[0].text[0].text = 'Changed renderer word';
+  assert.equal(stored.amData.lines[0].text[0].text, 'Saved ');
+});
+test('old line-only saved lyrics load online without calling a provider', async () => {
+  const { manager: m, track } = fixture(); let searches = 0;
+  m.getLyricsFromDB = async () => ({ source: 'saved-amlyrics', lyrics: [], parsedLines: [{ text: 'Old saved line', startMs: 1000 }] });
+  m.tryAm = async () => { searches++; return false; };
+  await m.onTrackChange(); assert.equal(searches, 0);
+  assert.equal(m.currentSource, 'saved-amlyrics');
+  assert.equal(m.parsedLines[0].text, 'Old saved line');
+});
+test('direct lyric fetches also prefer saved data unless manually refreshed', async () => {
+  const { manager: m, track } = fixture(); let searches = 0;
+  m.getLyricsFromDB = async () => ({ source: 'saved-amlyrics-text', lyrics: [], parsedLines: [{ text: 'Saved plain lyrics' }] });
+  m.tryAm = async () => { searches++; return [{ text: 'Refreshed', timestamp: 1000 }]; };
+  await m.fetchLyrics(track); assert.equal(searches, 0);
+  assert.equal(m.currentSource, 'saved-amlyrics-text');
+  await m.fetchLyrics(track, true); assert.equal(searches, 1);
+  assert.equal(m.parsedLines[0].text, 'Refreshed');
+});
+test('saved word lyrics still show saved lines when the renderer module is unavailable', async () => {
+  const { manager: m, track } = fixture(); let rendered = 0;
+  const saved = { source: 'saved-amlyrics', parsedLines: [{ text: 'Saved words', startMs: 1000 }], amData: { version: 1, lines: wordLyrics() } };
+  m.cache.set(m.getLyricsTrackId(track), saved);
+  m.ensureAm = async () => { throw Error('Renderer CDN unavailable'); };
+  m.tryAm = async () => { throw Error('Must not look up saved lyrics'); };
+  m.renderLyrics = () => rendered++;
+  await m.onTrackChange();
+  assert.equal(rendered, 1); assert.equal(m.currentSource, 'saved-amlyrics');
+});
+test('loading a saved renderer cannot overwrite a song selected while its module loads', async () => {
+  const { ctx, manager: m, track, el } = cachedRendererFixture(); let resolve;
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', parsedLines: [{ text: 'Old saved words', startMs: 1000 }], amData: { version: 1, lines: wordLyrics() } });
+  m.ensureAm = () => new Promise(done => resolve = done);
+  const old = m.onTrackChange();
+  ctx.queue = [{ title: 'New song', artist: 'Artist' }];
+  m.getLyricsFromDB = async () => ({ source: 'genius', lyrics: 'New lyrics', parsedLines: [{ text: 'New lyrics' }] });
+  await m.onTrackChange(); resolve(el); await old;
+  assert.equal(m.currentSource, 'genius'); assert.equal(m.parsedLines[0].text, 'New lyrics');
+  assert.equal(el.isConnected, false);
+});
+test('manual refresh re-enables provider fetches after restoring a saved renderer', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', parsedLines: [{ text: 'Saved words', startMs: 1000 }], amData: { version: 1, lines: wordLyrics() } });
+  await m.onTrackChange(); assert.equal(requests(), 0); assert.equal(el.__amSaved, true);
+  m.amLookup = async () => wordLyrics();
+  await m.fetchLyrics(track, true);
+  assert.equal(el.__amSaved, false); assert.equal(requests(), 1);
+});
+test('saved plain am-lyrics remain unsynced when restored into the renderer', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  const lines = wordLyrics().map(line => ({ ...line, timestamp: 0, endtime: 0, text: line.text.map(word => ({ ...word, timestamp: 0, endtime: 0 })) }));
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics-text', parsedLines: [{ text: 'Saved words', startMs: 0 }], amData: { version: 1, lines } });
+  await m.onTrackChange(); assert.equal(m.hasSyncedLyrics(), false);
+  assert.equal(el.cachedIsUnsynced, true); assert.equal(requests(), 0);
+});
+test('saving waits for IndexedDB to open and for the write transaction to commit', async () => {
+  const { manager: m, track } = fixture(); delete m.saveLyricsToDB;
+  const db = lyricDB(); let open;
+  m.pruneLyricsDB = () => {};
+  m.dbReady = new Promise(resolve => open = () => { m.db = db; resolve(db); });
+  const snapshot = { version: 1, lines: wordLyrics() };
+  const saving = m.rememberLyrics(track, { source: 'saved-amlyrics', lyrics: [], parsedLines: [], amData: snapshot });
+  assert.equal(db.rows.size, 0); open(); await saving;
+  assert.equal(db.rows.get(m.getLyricsTrackId(track)).amData.lines[0].text[1].timestamp, 1800);
+});

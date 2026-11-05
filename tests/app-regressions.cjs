@@ -209,7 +209,7 @@ await check('unsynced am-lyrics stay untimed when saved and reopened',async()=>{
  m.amEl={cachedIsUnsynced:true};m.tryAm=async()=>[{text:'First',timestamp:0},{text:'Second',timestamp:0}];
  await m.fetchLyrics(track);assert.equal(m.hasSyncedLyrics(),false);
  const saved=m.cache.get(m.getLyricsTrackId(track));assert.equal(saved.source,'saved-amlyrics-text');
- m.loadCachedLyrics(saved);assert.equal(m.hasSyncedLyrics(),false);assert(m.shouldRefreshSavedLyrics(saved));
+ m.loadCachedLyrics(saved);assert.equal(m.hasSyncedLyrics(),false);
 });
 
 await check('file imports remain playable when persistent storage is unavailable or returns no ID',async()=>{
