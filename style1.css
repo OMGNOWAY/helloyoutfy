@@ -7631,6 +7631,31 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select
 .lyrics-line[hidden] { display: none !important; }
 .lyrics-line[role="button"] { cursor: pointer; }
 .lyrics-line[role="button"]:hover { background: var(--bg-hover); }
+/* Flat fallback lyrics: performance mode must remove the active-line movement
+   as well as its transition. These hosts contain light-DOM fallback rows only. */
+body.performance-mode :is(#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent) .lyrics-line {
+  background: transparent !important;
+  transform: none !important;
+  color: var(--text-secondary) !important;
+  opacity: 1;
+  font-weight: 600;
+}
+body.performance-mode #fullLyricsContent .lyrics-line {
+  font-weight: 800;
+}
+body.performance-mode :is(#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent) .lyrics-line.active {
+  color: var(--text-primary) !important;
+}
+body.performance-mode :is(#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent) .moveitalittle {
+  transform: none !important;
+}
+/* Keep the sticky search bar opaque while lyrics scroll underneath it. */
+body.performance-mode :is(#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent) .lyrics-tools {
+  background: var(--bg-secondary) !important;
+}
+body.performance-mode :is(#lyricsContent, #fullLyricsContent, #playerEmbedLyricsContent) .lyrics-find {
+  background: var(--bg-primary) !important;
+}
 .lyrics-loading, .lyrics-error, .lyrics-not-found, .lyrics-empty { text-align: center; padding: 32px 20px; line-height: 1.65; }
 @media (max-width: 640px) { .lyrics-header { padding: 12px; } .lyrics-line { padding: 10px 8px; } #app .settings-section { padding: 16px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
