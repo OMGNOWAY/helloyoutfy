@@ -6075,7 +6075,8 @@ class UnifiedLyricsManager {
         this._lastAmT = null;        // last time value pushed into <am-lyrics>, skips redundant updates
         this.fetchingKey = null;
         this.pendingTrackChange = false;
-        this.initDB().catch(error => console.warn('Lyrics storage unavailable', error)).finally(() => this.init());
+        this.dbReady = this.initDB().catch(error => console.warn('Lyrics storage unavailable', error));
+        this.dbReady.finally(() => this.init());
     }
     async initDB() {
         return new Promise((resolve) => {
@@ -6121,12 +6122,8 @@ class UnifiedLyricsManager {
     rememberLyrics(track, data) {
         this.cache.set(this.getLyricsTrackId(track), data);
         if (this.cache.size > 100) this.cache.delete(this.cache.keys().next().value);
-        return this.saveLyricsToDB(track, data.lyrics, data.source, data.parsedLines)
+        return this.saveLyricsToDB(track, data.lyrics, data.source, data.parsedLines, data.amData)
             .catch(error => console.warn('Lyrics could not be saved offline', error));
-    }
-    shouldRefreshSavedLyrics(data) {
-        // Preserve word-by-word playback online; saved line timings also work offline.
-        return ['saved-amlyrics', 'saved-amlyrics-text'].includes(data.source) && (typeof navigator === 'undefined' || navigator.onLine !== false);
     }
     loadCachedLyrics(data) {
         this.currentLyrics = data.lyrics; this.currentSource = data.source;
@@ -6136,10 +6133,55 @@ class UnifiedLyricsManager {
         if (track) this.loadAmOffset(track);
     }
 
-    async saveLyricsToDB(track, lyrics, source, parsedLines) {
+    async renderCachedLyrics(data, track, generation = this.trackLoadGeneration) {
+        const stale = () => generation !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track);
+        const snapshot = data.amData;
+        const valid = snapshot?.version === 1 && Array.isArray(snapshot.lines) && snapshot.lines.length > 0 &&
+            snapshot.lines.every(line => Number.isFinite(line?.timestamp) && Number.isFinite(line.endtime) &&
+                Array.isArray(line.text) && line.text.every(word => typeof word?.text === 'string' &&
+                    Number.isFinite(word.timestamp) && Number.isFinite(word.endtime)));
+        if (stale()) return;
+        // Legacy entries still work as saved line/text lyrics, without a search.
+        if (!valid) { this.renderLyrics(); return; }
+        try {
+            const el = await this.ensureAm();
+            if (stale()) return;
+            el.__amSaved = true;
+            el.fetchAbortController?.abort();
+            el.noAutoAlternates = true;
+            el.isLoading = false;
+            el.lyrics = JSON.parse(JSON.stringify(snapshot.lines));
+            el.lyricsSource = snapshot.source || 'Saved';
+            el.songwriters = snapshot.songwriters || '';
+            el.availableSources = [{ lines: el.lyrics, source: el.lyricsSource }];
+            el.currentSourceIndex = 0;
+            el.hasFetchedAllProviders = true;
+            el.cachedIsUnsynced = data.source === 'saved-amlyrics-text';
+            this.currentSource = 'amlyrics';
+            this.amActive = true;
+            this.amTrackKey = this.getLyricsTrackId(track);
+            this._lastAmT = null;
+            this.amWordTimingStates = new WeakMap();
+            this.placeAm();
+            await el.onLyricsLoaded();
+            await el.updateComplete;
+            if (stale()) return;
+            this.hideAmChrome();
+            this.applyAmbient(track);
+            this.handleTimeUpdate();
+            this.updateFetchButtonVisibility();
+        } catch (error) {
+            if (stale()) return;
+            console.warn('Saved lyric renderer unavailable; using saved lines', error);
+            this.exitAm(); this.loadCachedLyrics(data); this.renderLyrics();
+        }
+    }
+
+    async saveLyricsToDB(track, lyrics, source, parsedLines, amData) {
+        if (!this.db && this.dbReady) await this.dbReady;
         if (!this.db) return;
         const id = this.getLyricsTrackId(track);
-        const data = { id, trackId: track.uid || id, title: track.title, artist: track.artist, lyrics, source, parsedLines, duration: Number(track.duration) || (this.isCurrentLyricsTrack(track) && Number.isFinite(audio.duration) ? audio.duration : 0), dateAdded: new Date().toISOString() };
+        const data = { id, trackId: track.uid || id, title: track.title, artist: track.artist, lyrics, source, parsedLines, amData, duration: Number(track.duration) || (this.isCurrentLyricsTrack(track) && Number.isFinite(audio.duration) ? audio.duration : 0), dateAdded: new Date().toISOString() };
         await new Promise((resolve, reject) => {
             const tx = this.db.transaction(['lyrics'], 'readwrite');
             const req = tx.objectStore('lyrics').put(data);
@@ -6283,10 +6325,11 @@ class UnifiedLyricsManager {
                 if (this.amActive && this.amEl && this.amTrackKey === cacheKey) { this.placeAm(); return; }
                 if (this.cache.has(cacheKey)) {
                     this.exitAm();
+                    const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
                     const cached = this.cache.get(cacheKey);
                     this.loadCachedLyrics(cached);
-                    if (this.shouldRefreshSavedLyrics(cached)) { await this.fetchLyrics(track); return; }
-                    this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
+                    await this.renderCachedLyrics(cached, track, loadGeneration);
+                    this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
                 } else {
                     const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
                     const dbData = await this.getLyricsFromDB(track).catch(() => null);
@@ -6294,8 +6337,8 @@ class UnifiedLyricsManager {
                     if (dbData) {
                         this.loadCachedLyrics(dbData);
                         this.cache.set(cacheKey, dbData);
-                        if (this.shouldRefreshSavedLyrics(dbData)) { await this.fetchLyrics(track); return; }
-                        this.renderLyrics(); this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
+                        await this.renderCachedLyrics(dbData, track, loadGeneration);
+                        this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
                     } else { await this.fetchLyrics(track); }
                 }
             } else { this.showEmpty(); }
@@ -6325,7 +6368,7 @@ class UnifiedLyricsManager {
             this.loadCachedLyrics(cached);
             this.updateFetchButtonVisibility();
             if (this.isOpen) {
-                if (this.shouldRefreshSavedLyrics(cached)) await this.fetchLyrics(track); else this.renderLyrics();
+                await this.renderCachedLyrics(cached, track, loadGeneration);
             }
             return;
         }
@@ -6335,7 +6378,7 @@ class UnifiedLyricsManager {
             this.loadCachedLyrics(dbData);
             this.cache.set(cacheKey, dbData); this.updateFetchButtonVisibility();
             if (this.isOpen) {
-                if (this.shouldRefreshSavedLyrics(dbData)) await this.fetchLyrics(track); else this.renderLyrics();
+                await this.renderCachedLyrics(dbData, track, loadGeneration);
             }
             return;
         }
@@ -6354,6 +6397,17 @@ class UnifiedLyricsManager {
         this.fetchingKey = this.getLyricsTrackId(track);
         this.lyricsAbort = new AbortController();
         try {
+            if (!force) {
+                const saved = this.cache.get(this.fetchingKey) || await this.getLyricsFromDB(track).catch(() => null);
+                if (!isFresh()) return;
+                if (saved) {
+                    this.cache.set(this.fetchingKey, saved);
+                    this.exitAm();
+                    this.loadCachedLyrics(saved);
+                    await this.renderCachedLyrics(saved, track);
+                    return;
+                }
+            }
             this.isLoading = true;
             this.exitAm();
             this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
@@ -6368,8 +6422,10 @@ class UnifiedLyricsManager {
                 this.parsedLines = this.amLinesToParsed(amLines);
                 this.currentLyrics = this.parsedLines;
                 this.amTrackKey = this.fetchingKey;
-                const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: this.amEl?.cachedIsUnsynced ? 'saved-amlyrics-text' : 'saved-amlyrics' };
-                void this.rememberLyrics(track, saved);
+                const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: this.amEl?.cachedIsUnsynced ? 'saved-amlyrics-text' : 'saved-amlyrics',
+                    amData: { version: 1, lines: JSON.parse(JSON.stringify(amLines)), source: this.amEl?.lyricsSource || 'Saved', songwriters: this.amEl?.songwriters || '' } };
+                await this.rememberLyrics(track, saved);
+                if (!isFresh()) return;
                 this.isLoading = false;
                 this.updateFetchButtonVisibility();
                 return;
@@ -6944,7 +7000,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         // only moving the element between hosts, the lyrics are already loaded
         const origFetch = el.fetchLyrics.bind(el);
         el.fetchLyrics = (...args) => {
-            if (el.__amMoving) return Promise.resolve();
+            if (el.__amMoving || el.__amSaved) return Promise.resolve();
             return origFetch(...args);
         };
         this.amEl = el;
@@ -7120,6 +7176,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             catch (e2) { this.amErr = e2?.message || 'am-lyrics failed to load'; console.log('❌ am-lyrics load error:', e2); return false; }
         }
         if (generation !== this.fetchGeneration || !this.isCurrentLyricsTrack(track)) return null;
+        el.__amSaved = false;
+        el.noAutoAlternates = false;
         const token = ++this.amToken;
         this.amActive = true;
         this.placeAm();
