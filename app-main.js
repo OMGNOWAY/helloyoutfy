@@ -2,7 +2,7 @@
 var version = "1.4.8";
 const CHANGELOG_DATA = {
   "Release 1.4.8": [
-    `Title, artist, artwork and lyrics now fade with crossfade`,
+    `Title, artist, artwork and lyrics now blend smoothly with crossfade`,
     `Improved lyrics loading and saved lyric fallback`,
     `Fixed Next repeating the same song with repeat one enabled`,
     `Fixed partly visible lyrics not following and saving the wrong unsynced line`,
@@ -2960,23 +2960,47 @@ isPlaying2 = false;
     return next;
   }
 
-  static fadeCrossfadeVisuals(session, incoming, duration) {
-    session.animations?.forEach(animation => animation.cancel());
-    session.animations = [];
+  static transitionCrossfadeVisuals(session, duration, update) {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced || !document.startViewTransition) { update(); return; }
     const ids = ['playerTitle', 'playerArtist', 'playerImg', 'miniTitle', 'miniArtist', 'miniImg',
       'heroTitle', 'heroArtist', 'heroArt', 'fullLyricsTitle', 'fullLyricsArtist', 'fullLyricsArt',
       'lyricsContent', 'fullLyricsContent', 'playerEmbedLyricsContent'];
-    const nodes = ids.map(id => document.getElementById(id));
-    const pip = window.documentPictureInPicture?.window?.document;
-    if (pip) nodes.push(...['pipTitle', 'pipArtist', 'pipArt', 'pipLyrics', 'pipCurrentLine'].map(id => pip.getElementById(id)));
-    for (const node of nodes) {
-      if (!node?.animate || reduced) continue;
-      session.animations.push(node.animate(
-        [{ opacity: incoming ? 0 : 1 }, { opacity: incoming ? 1 : 0 }],
-        { duration, easing: 'ease-in-out', fill: 'forwards' }
-      ));
+    const names = [], restore = [];
+    for (const id of ids) {
+      const node = document.getElementById(id);
+      if (!node || !node.getClientRects().length) continue;
+      const name = `youtify-crossfade-${id}`;
+      const previous = node.style.viewTransitionName;
+      node.style.viewTransitionName = name;
+      names.push(name);
+      restore.push(() => { node.style.viewTransitionName = previous; });
     }
+    const style = document.createElement('style');
+    // Only song content blends. The rest of the page stays live and unchanged.
+    style.textContent = `
+      ::view-transition { pointer-events: none; }
+      ::view-transition-old(root) { display: none; }
+      ::view-transition-new(root), ::view-transition-group(root) { animation: none; }
+      ${names.map(name => `::view-transition-group(${name}) { animation-duration: ${duration}ms; animation-timing-function: linear; }
+        ::view-transition-old(${name}), ::view-transition-new(${name}) { animation-duration: ${duration}ms; animation-timing-function: linear; }`).join('\n')}
+    `;
+    document.head.appendChild(style);
+    const cleanup = () => { restore.splice(0).forEach(fn => fn()); style.remove(); };
+    session.visualCleanup = cleanup;
+    let applied = false;
+    const apply = () => {
+      if (applied || PlayerController.crossfadeSession !== session) return;
+      applied = true; update();
+    };
+    session.completeVisualUpdate = apply;
+    try {
+      // Browser snapshots include am-lyrics' shadow DOM without cloning its
+      // custom element or starting another lyric fetch. Old and new overlap.
+      const transition = document.startViewTransition(apply);
+      session.transition = transition;
+      transition.finished.then(cleanup, () => { apply(); cleanup(); });
+    } catch (error) { apply(); cleanup(); }
   }
 
   static async startCrossfade(a) {
@@ -3005,7 +3029,7 @@ isPlaying2 = false;
 
     const outChain = AudioEngine.buildChainFor(fadingOut);
     const inChain = AudioEngine.buildChainFor(fadingIn);
-    const session = { animations: [], midpoint: null };
+    const session = { midpoint: null };
     PlayerController.crossfadeSession = session;
     const stale = () => PlayerController.crossfadeSession !== session || !isCrossfading;
 
@@ -3073,25 +3097,25 @@ isPlaying2 = false;
     // Switch ownership at the visual midpoint, so lyrics use the incoming
     // audio clock while both physical players finish their scheduled fade.
     const half = fadeDurationMs / 2;
-    PlayerController.fadeCrossfadeVisuals(session, false, half + 10);
     session.midpoint = setTimeout(() => {
       session.midpoint = null;
       if (stale() || audio !== fadingOut || audio2 !== fadingIn) return;
-      audio = fadingIn;
-      audio2 = fadingOut;
-      audio.volume = currentVolume;
-      audio2.volume = currentVolume;
-      if (!uqTake(nextIndex)) uqReturnIndex = -1;
-      shuffleRecord(nextIndex);
-      currentTrackIndex = nextIndex;
-      lyricsManager?.updateLyricPreloads();
-      rebindAudioListeners();
-      updatePlayerUIWithoutAAB(queue[currentTrackIndex]);
-      FullLyricsPlayer.syncTrackInfo();
-      if (lyricsManager) void lyricsManager.onTrackChange().catch(error => console.warn('Lyrics track change failed', error));
-      PlayerController.highlightCurrentTrack();
-      PlayerController.fadeCrossfadeVisuals(session, true, half);
-      try { document.dispatchEvent(new CustomEvent('youtify:crossfade-swapped')); } catch (e) {}
+      PlayerController.transitionCrossfadeVisuals(session, half, () => {
+        audio = fadingIn;
+        audio2 = fadingOut;
+        audio.volume = currentVolume;
+        audio2.volume = currentVolume;
+        if (!uqTake(nextIndex)) uqReturnIndex = -1;
+        shuffleRecord(nextIndex);
+        currentTrackIndex = nextIndex;
+        lyricsManager?.updateLyricPreloads();
+        rebindAudioListeners();
+        updatePlayerUIWithoutAAB(queue[currentTrackIndex]);
+        FullLyricsPlayer.syncTrackInfo();
+        if (lyricsManager) void lyricsManager.onTrackChange().catch(error => console.warn('Lyrics track change failed', error));
+        PlayerController.highlightCurrentTrack();
+        try { document.dispatchEvent(new CustomEvent('youtify:crossfade-swapped')); } catch (e) {}
+      });
     }, half + 10);
 
     crossfadeTickHandle = setTimeout(() => {
@@ -3100,8 +3124,10 @@ isPlaying2 = false;
       const t = audioContext.currentTime;
       outChain.fadeNode.gain.setValueAtTime(0, t);
       inChain.fadeNode.gain.setValueAtTime(1, t);
+      session.completeVisualUpdate?.();
       fadingOut.pause();
-      session.animations.forEach(animation => animation.cancel());
+      session.transition?.skipTransition();
+      session.visualCleanup?.();
       PlayerController.crossfadeSession = null;
       isCrossfading = false;
     }, fadeDurationMs + 100);
@@ -3118,7 +3144,8 @@ isPlaying2 = false;
     PlayerController.crossfadeSession = null;
     if (session) {
       clearTimeout(session.midpoint);
-      session.animations.forEach(animation => animation.cancel());
+      session.transition?.skipTransition();
+      session.visualCleanup?.();
     }
     if (crossfadeTickHandle !== null) {
       clearTimeout(crossfadeTickHandle);
