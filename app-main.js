@@ -2,6 +2,7 @@
 var version = "1.4.8";
 const CHANGELOG_DATA = {
   "Release 1.4.8": [
+    `Title, artist, artwork and lyrics now fade with crossfade`,
     `Improved lyrics loading and saved lyric fallback`,
     `Fixed Next repeating the same song with repeat one enabled`,
     `Fixed partly visible lyrics not following and saving the wrong unsynced line`,
