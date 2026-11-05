@@ -190,7 +190,7 @@ await check('the added accent-color override is removed from lyric markup',()=>{
 });
 
 
-await check('playback updates leave am-lyrics animation clocks and colors alone',()=>{
+await check('playback timestamps and colors stay valid when no lyric animation container is available',()=>{
  const m=lyricManager();m.amActive=true;m.currentSource='amlyrics';m.parsedLines=[];
  let deliveredTime;const clocks=new Proxy({}, {get(){throw new Error('App must not inspect native animation clocks')}});
  m.amEl={isConnected:true,constructor:clocks,lyricsContainer:{getAnimations(){throw new Error('App must not modify native animations')}},highlightColor:'#abcdef'};
@@ -198,7 +198,7 @@ await check('playback updates leave am-lyrics animation clocks and colors alone'
  m.amOffsetMs=200;audio.currentTime=5;audio.playbackRate=2;audio.paused=false;
  m.handleTimeUpdate();assert.equal(deliveredTime,4800);assert.equal(m.amEl.highlightColor,'#abcdef');
 });
-await check('no custom animation-clock override remains installed',()=>{
+await check('the old global animation-clock override remains absent',()=>{
  assert(!source.includes('syncAmAnimationClock'));
  assert(!source.includes('renderer.wipeClocks'));
  assert(!source.includes('animation.playbackRate = rate'));

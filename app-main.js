@@ -6260,6 +6260,8 @@ class UnifiedLyricsManager {
         [audio, audio2].forEach(player => {
             player.addEventListener('seeked', () => { if (player === audio) this.handleTimeUpdate(); });
             player.addEventListener('play', () => { if (player === audio) this.handleTimeUpdate(); });
+            player.addEventListener('pause', () => { if (player === audio) this.handleTimeUpdate(); });
+            player.addEventListener('ratechange', () => { if (player === audio) this.handleTimeUpdate(); });
             player.addEventListener('loadedmetadata', () => {
                 if (player === audio) this.songDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
             });
@@ -7838,11 +7840,48 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
     }
 
+    syncAmWordTiming(mediaTimeMs) {
+        const el = this.amEl;
+        // The pinned am-lyrics 1.8.7 renderer starts word effects on the browser
+        // timeline at 1x. Its WeakMaps distinguish media-timed effects from UI
+        // animations: never change scroll springs, focus, or highlight classes.
+        const container = el?.shadowRoot?.querySelector('.lyrics-container');
+        if (!container?.getAnimations || el.cachedIsUnsynced || el.rewindingLines?.size) return;
+        const timing = el.constructor;
+        const speed = Number(audio.playbackRate);
+        const rate = audio.paused || audio.ended ? 0 : Number.isFinite(speed) && speed > 0 ? speed : 1;
+        const states = this.amWordTimingStates ||= new WeakMap();
+        for (const animation of container.getAnimations({ subtree: true })) {
+            if (animation.playState === 'idle') continue;
+            let epoch = timing.wipeClocks?.get(animation) ?? timing.normalRiseClocks?.get(animation);
+            if (epoch === undefined) {
+                const target = animation.effect?.target;
+                const char = target?.classList?.contains('char-motion') ? target.querySelector('.char') : target;
+                const motion = char && timing.characterAnimations?.get(char);
+                if (motion?.animation === animation) epoch = motion.start;
+                else if (motion && animation.animationName === 'char-glow') epoch = motion.start + motion.glowEpoch;
+            }
+            if (!Number.isFinite(epoch) || typeof animation.updatePlaybackRate !== 'function') continue;
+            const end = Number(animation.effect?.getComputedTiming().endTime);
+            if (!Number.isFinite(end) || end <= 0) continue;
+            const position = Math.max(0, Math.min(mediaTimeMs - epoch, end));
+            const previous = states.get(animation);
+            const changed = !previous || previous.rate !== rate || previous.epoch !== epoch;
+            if (animation.playbackRate !== rate) animation.updatePlaybackRate(rate);
+            // Set the clock on creation, speed changes and seeks. Let the
+            // browser run smoothly between updates instead of restarting it
+            // every frame; only correct genuine drift (e.g. buffering).
+            if (changed || Math.abs(Number(animation.currentTime) - position) > 80) animation.currentTime = position;
+            if (changed) states.set(animation, { rate, epoch });
+        }
+    }
+
     handleTimeUpdate() {
         const off = this.hasSyncedLyrics() ? (this.amOffsetMs || 0) : 0;
         if (this.amActive && this.amEl && this.amEl.isConnected) {
             const t = Math.max(0, Math.round(audio.currentTime * 1000 - off));
             if (t !== this._lastAmT) { this._lastAmT = t; this.amEl.currentTime = t; }
+            this.syncAmWordTiming(t);
         }
         if (this.amLoop && this.currentSource === 'amlyrics' && !audio.paused) {
             const lms = audio.currentTime * 1000 - off;
