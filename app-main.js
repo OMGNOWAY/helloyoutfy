@@ -6125,12 +6125,13 @@ class UnifiedLyricsManager {
         return this.saveLyricsToDB(track, data.lyrics, data.source, data.parsedLines, data.amData)
             .catch(error => console.warn('Lyrics could not be saved offline', error));
     }
-    loadCachedLyrics(data) {
+    loadCachedLyrics(data, origin) {
         this.currentLyrics = data.lyrics; this.currentSource = data.source;
         this.parsedLines = data.parsedLines || [];
         this.currentLineIndex = -1;
         const track = queue[currentTrackIndex];
         if (track) this.loadAmOffset(track);
+        if (origin) console.log(`[Lyrics] Using ${origin} lyrics: ${track?.title || 'Unknown song'} — ${track?.artist || 'Unknown artist'}`);
     }
 
     toAmDisplayData(data) {
@@ -6383,7 +6384,7 @@ class UnifiedLyricsManager {
                     this.exitAm();
                     const loadGeneration = this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
                     const cached = this.cache.get(cacheKey);
-                    this.loadCachedLyrics(cached);
+                    this.loadCachedLyrics(cached, 'memory cache');
                     await this.renderCachedLyrics(cached, track, loadGeneration);
                     this.updateFetchButtonVisibility(); toast('Lyrics loaded from cache');
                 } else {
@@ -6391,7 +6392,7 @@ class UnifiedLyricsManager {
                     const dbData = await this.getLyricsFromDB(track).catch(() => null);
                     if (loadGeneration !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track)) return;
                     if (dbData) {
-                        this.loadCachedLyrics(dbData);
+                        this.loadCachedLyrics(dbData, 'IndexedDB');
                         this.cache.set(cacheKey, dbData);
                         await this.renderCachedLyrics(dbData, track, loadGeneration);
                         this.updateFetchButtonVisibility(); toast('Lyrics loaded from storage');
@@ -6421,7 +6422,7 @@ class UnifiedLyricsManager {
         const cacheKey = this.getLyricsTrackId(track);
         if (this.cache.has(cacheKey)) {
             const cached = this.cache.get(cacheKey);
-            this.loadCachedLyrics(cached);
+            this.loadCachedLyrics(cached, 'memory cache');
             this.updateFetchButtonVisibility();
             if (this.isOpen) {
                 await this.renderCachedLyrics(cached, track, loadGeneration);
@@ -6431,7 +6432,7 @@ class UnifiedLyricsManager {
         const dbData = await this.getLyricsFromDB(track).catch(() => null);
         if (loadGeneration !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track)) return;
         if (dbData) {
-            this.loadCachedLyrics(dbData);
+            this.loadCachedLyrics(dbData, 'IndexedDB');
             this.cache.set(cacheKey, dbData); this.updateFetchButtonVisibility();
             if (this.isOpen) {
                 await this.renderCachedLyrics(dbData, track, loadGeneration);
@@ -6454,12 +6455,14 @@ class UnifiedLyricsManager {
         this.lyricsAbort = new AbortController();
         try {
             if (!force) {
-                const saved = this.cache.get(this.fetchingKey) || await this.getLyricsFromDB(track).catch(() => null);
+                let saved = this.cache.get(this.fetchingKey);
+                const origin = saved ? 'memory cache' : 'IndexedDB';
+                if (!saved) saved = await this.getLyricsFromDB(track).catch(() => null);
                 if (!isFresh()) return;
                 if (saved) {
                     this.cache.set(this.fetchingKey, saved);
                     this.exitAm();
-                    this.loadCachedLyrics(saved);
+                    this.loadCachedLyrics(saved, origin);
                     await this.renderCachedLyrics(saved, track);
                     return;
                 }
@@ -6468,6 +6471,7 @@ class UnifiedLyricsManager {
             this.exitAm();
             this.currentLyrics = null; this.parsedLines = []; this.currentLineIndex = -1; this.currentSource = null;
             // 1) am-lyrics first (no API key needed)
+            console.log(`[Lyrics] ${force ? 'Manual refresh requested' : 'No saved lyrics available'}; fetching with am-lyrics: ${track.title || 'Unknown song'} — ${track.artist || 'Unknown artist'}`);
             this.showLoading('Loading lyrics...');
             const amLines = await this.tryAm(track, generation);
             if (!isFresh()) return;
