@@ -1098,6 +1098,7 @@ function uqRenderNow() {
   el.innerHTML = t ? `Now playing: <b>${Utils.escapeHtml(t.title || 'Unknown Track')}</b> — ${Utils.escapeHtml(t.artist || 'Unknown Artist')}` : '';
 }
 function uqRender() {
+  lyricsManager?.updateLyricPreloads();
   uqEnsureUI();
   uqCloseMenu();
   const html = uqItemsHTML();
@@ -2769,6 +2770,7 @@ class PlayerController {
   }
 
   static pause() {
+    this.trackRequest = (this.trackRequest || 0) + 1;
     this.resumeRequest = (this.resumeRequest || 0) + 1;
     PlayerController.cancelCrossfade();
     audio.pause();
@@ -2808,40 +2810,10 @@ isPlaying2 = false;
     // audio/audio2 directly inside its own setInterval tick — so this is always safe here.)
     PlayerController.cancelCrossfade();
     if (repeatMode === 'one' && fromEnded) { audio.currentTime = 0; void PlayerController.resume(); return; }
-    {
-      const uqIdx = uqPeek();
-      if (uqIdx !== -1) {
-        uqTake(uqIdx); uqInternal = true;
-        if (isCrossfade) updatePlayerUI(queue[uqIdx]); else updatePlayerUIWithoutAAB(queue[uqIdx]);
-        playTrackAtIndex(where, audio, uqIdx);
-        return;
-      }
-      if (uqReturnIndex >= 0) { currentTrackIndex = Math.min(uqReturnIndex, queue.length - 1); uqReturnIndex = -1; }
-    }
-    let nextIndex;
-    const shuffleFwdIdx = isShuffle ? shuffleForwardIndex() : -1;
-    if (shuffleFwdIdx >= 0) {
-      nextIndex = shuffleFwdIdx; // replay songs we went back from before rolling new ones
-    } else if (isShuffle) {
-      // Previously picked a fully random index every time with no exclusion
-      // of the current track, so with shuffle on the same song could repeat
-      // back-to-back (especially noticeable on small queues). Re-roll to
-      // avoid immediate repeats when there's more than one track to pick from.
-      nextIndex = Math.floor(Math.random() * queue.length);
-      if (queue.length > 1) {
-        let attempts = 0;
-        while (nextIndex === currentTrackIndex && attempts < 10) {
-          nextIndex = Math.floor(Math.random() * queue.length);
-          attempts++;
-        }
-      }
-    } else {
-      nextIndex = currentTrackIndex + 1;
-    }
-    if (nextIndex >= queue.length) {
-      if (repeatMode === 'all') nextIndex = 0;
-      else { PlayerController.pause(); return; }
-    }
+    const nextIndex = PlayerController.getNextIndex(true);
+    if (nextIndex < 0) { PlayerController.pause(); return; }
+    if (uqPeek() !== -1) { uqTake(nextIndex); uqInternal = true; }
+    else uqReturnIndex = -1;
     if (isCrossfade) {
       updatePlayerUI(queue[nextIndex]);
     } else {
@@ -2902,6 +2874,8 @@ isPlaying2 = false;
 
   static toggleShuffle() {
     isShuffle = !isShuffle;
+    this.lyricShufflePick = null;
+    lyricsManager?.updateLyricPreloads();
     const btn = document.getElementById('shuffleBtn');
     if (btn) btn.style.color = isShuffle ? 'var(--accent)' : 'var(--text-secondary)';
     toast(isShuffle ? 'Shuffle on' : 'Shuffle off');
@@ -2910,6 +2884,7 @@ isPlaying2 = false;
   static toggleRepeat() {
     const modes = ['off', 'all', 'one'];
     repeatMode = modes[(modes.indexOf(repeatMode) + 1) % modes.length];
+    lyricsManager?.updateLyricPreloads();
     const btn = document.getElementById('repeatBtn');
     if (!btn) return;
 
@@ -2958,23 +2933,24 @@ isPlaying2 = false;
     });
   }
 
-  static getNextIndex() {
-    if (repeatMode === 'one') return currentTrackIndex;
+  static getNextIndex(manual = false) {
+    if (!queue.length) return -1;
+    if (repeatMode === 'one' && !manual) return currentTrackIndex;
     { const uqIdx = uqPeek(); if (uqIdx !== -1) return uqIdx; }
     let next;
     const shuffleFwdIdx = isShuffle ? shuffleForwardIndex() : -1;
     if (shuffleFwdIdx >= 0) {
       next = shuffleFwdIdx;
     } else if (isShuffle) {
-      // Same fix as PlayerController.next(): avoid picking the currently-playing track
-      // again, which crossfade would otherwise happily fade into itself.
-      next = Math.floor(Math.random() * queue.length);
-      if (queue.length > 1) {
-        let attempts = 0;
-        while (next === currentTrackIndex && attempts < 10) {
-          next = Math.floor(Math.random() * queue.length);
-          attempts++;
-        }
+      // Reserve one choice so preloading, Next and crossfade agree. Use uids
+      // so reordering the queue does not change the reserved song.
+      const from = queue[currentTrackIndex]?.uid;
+      const pick = this.lyricShufflePick;
+      next = pick?.from === from ? queue.findIndex(track => track.uid === pick.to) : -1;
+      if (next < 0 || (next === currentTrackIndex && queue.length > 1)) {
+        const choices = queue.map((_, index) => index).filter(index => index !== currentTrackIndex);
+        next = choices.length ? choices[Math.floor(Math.random() * choices.length)] : currentTrackIndex;
+        this.lyricShufflePick = { from, to: queue[next]?.uid };
       }
     } else {
       next = (uqReturnIndex >= 0 ? uqReturnIndex : currentTrackIndex) + 1;
@@ -3083,6 +3059,7 @@ isPlaying2 = false;
       if (!uqTake(nextIndex)) uqReturnIndex = -1;
       shuffleRecord(nextIndex);
       currentTrackIndex = nextIndex;
+      lyricsManager?.updateLyricPreloads();
       isCrossfading = false;
 
       rebindAudioListeners();
@@ -3190,16 +3167,21 @@ async function playTrackAtIndex(where, a, index) {
   shuffleRecord(index);
   currentTrackIndex = index;
   const track = queue[index];
+  const request = PlayerController.trackRequest = (PlayerController.trackRequest || 0) + 1;
+  const stale = () => request !== PlayerController.trackRequest || queue[currentTrackIndex]?.uid !== track.uid;
+  if (lyricsManager) void lyricsManager.onTrackChange().catch(error => console.warn('Lyrics track change failed', error));
   console.log('playTrackAtIndex called, track:', track?.title);
 
   try {
     if (!a.paused) a.pause();
     a.src = ''; a.load();
     await new Promise(r => setTimeout(r, 50));
+    if (stale()) return;
 
     if (track.type === 'youtube' && !track.src) { toast('Track still loading...'); return; }
     if (!audioContext) AudioEngine.init();
     try { if (audioContext && audioContext.state !== 'running') await audioContext.resume(); } catch (e) {}
+    if (stale()) return;
     if (audioContext) {
       try {
         const chain = AudioEngine.buildChainFor(a);
@@ -3212,12 +3194,14 @@ async function playTrackAtIndex(where, a, index) {
     audio2.playbackRate = playbackSpeed;
 
     const audioSrc = await streamingManager.prepareTrackForPlayback(track);
+    if (stale()) return;
     a.src = audioSrc;
     a.currentTime = where;
     a.playbackRate = playbackSpeed;
     audio.playbackRate = playbackSpeed;
     audio2.playbackRate = playbackSpeed;
     await a.play();
+    if (stale()) return;
     a.playbackRate = playbackSpeed;
     audio.playbackRate = playbackSpeed;
     audio2.playbackRate = playbackSpeed;
@@ -3244,6 +3228,7 @@ isPlaying2 = true;
       artwork: [{ src: img.src || 'data:image/png;base64,', sizes: '512x512', type: 'image/jpeg' }]
     });
   } catch (error) {
+    if (stale()) return;
     console.error('Error playing track:', error);
     if (error.name === 'AbortError') return;
 
@@ -3592,6 +3577,7 @@ class QueueManager {
       currentTrackIndex = nextIndex;
     }
     QueueManager.render();
+    lyricsManager?.updateLyricPreloads();
     if (currentView === 'playlists' && typeof PlaylistManager !== 'undefined') PlaylistManager.refresh();
     /*setStorageInfo();*/
   }
@@ -6108,6 +6094,132 @@ class UnifiedLyricsManager {
         return !!current && this.getLyricsTrackId(current) === this.getLyricsTrackId(track);
     }
 
+    getLyricNeighbors() {
+        if (!queue[currentTrackIndex] || typeof PlayerController === 'undefined' || typeof repeatMode === 'undefined') return [];
+        const next = queue[PlayerController.getNextIndex(true)];
+        let previous;
+        if (typeof isShuffle !== 'undefined' && isShuffle) {
+            for (let i = shuffleBack.length - 1; i >= 0; i--) {
+                previous = queue.find(track => track.uid === shuffleBack[i]);
+                if (previous) break;
+            }
+        } else previous = queue[(currentTrackIndex - 1 + queue.length) % queue.length];
+        const currentKey = this.getLyricsTrackId(queue[currentTrackIndex]);
+        const seen = new Set([currentKey]);
+        return [next, previous].filter(track => {
+            if (!track) return false;
+            const key = this.getLyricsTrackId(track);
+            if (seen.has(key)) return false;
+            seen.add(key); return true;
+        });
+    }
+    updateLyricPreloads() {
+        const jobs = this.lyricPreloads ||= new Map();
+        const current = queue[currentTrackIndex];
+        const neighbors = this.getLyricNeighbors();
+        this.lyricPreloadWindow = new Set([current, ...neighbors].filter(Boolean).map(track => this.getLyricsTrackId(track)));
+        for (const [key, job] of jobs) {
+            if (this.lyricPreloadWindow.has(key)) continue;
+            job.controller.abort(); clearTimeout(job.timer); job.resolve(null); jobs.delete(key);
+        }
+        // Keep only current/previous/next in RAM. Older saves remain in IndexedDB.
+        for (const key of this.cache.keys()) if (!this.lyricPreloadWindow.has(key)) this.cache.delete(key);
+        for (const track of neighbors) {
+            const key = this.getLyricsTrackId(track);
+            if (jobs.has(key) || this.cache.has(key)) continue;
+            const job = { key, track: { ...track }, controller: new AbortController(), started: false };
+            job.promise = new Promise(resolve => { job.resolve = resolve; });
+            jobs.set(key, job);
+            // Debounce rapid skips; stale jobs are cancelled before hitting providers.
+            job.timer = setTimeout(() => this.startLyricPreload(job), 250);
+            job.timer.unref?.();
+        }
+    }
+    waitForLyricPreload(promise, signal) {
+        return new Promise((resolve, reject) => {
+            const abort = () => reject(Object.assign(new Error('Lyric preload cancelled'), { name: 'AbortError' }));
+            if (signal.aborted) { abort(); return; }
+            signal.addEventListener('abort', abort, { once: true });
+            Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+        });
+    }
+    startLyricPreload(job) {
+        if (job.started || job.controller.signal.aborted) return job.promise;
+        job.started = true; clearTimeout(job.timer);
+        const signal = job.controller.signal;
+        const allowed = () => !signal.aborted && this.lyricPreloadWindow?.has(job.key);
+        const timeout = setTimeout(() => job.controller.abort(), 45000);
+        void (async () => {
+            try {
+                let data = this.cache.get(job.key);
+                job.origin = data ? 'memory cache' : 'IndexedDB';
+                if (!data) data = await this.waitForLyricPreload(this.getLyricsFromDB(job.track).catch(() => null), signal);
+                if (!allowed()) return;
+                if (!data) {
+                    job.origin = 'am-lyrics';
+                    console.log(`[Lyrics] No saved lyrics available; preloading with am-lyrics: ${job.track.title} — ${job.track.artist || 'Unknown artist'}`);
+                    data = await this.waitForLyricPreload(this.lookupPreloadedLyrics(job.track, signal), signal);
+                }
+                if (!allowed() || !data) return;
+                await this.rememberLyrics(job.track, data);
+                if (allowed()) {
+                    console.log(`[Lyrics] Preloaded from ${job.origin}: ${job.track.title} — ${job.track.artist || 'Unknown artist'}`);
+                    job.data = data;
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') console.warn('[Lyrics] Preload failed:', job.track.title, error);
+            } finally {
+                clearTimeout(timeout); job.resolve(allowed() ? job.data || null : null);
+            }
+        })();
+        return job.promise;
+    }
+    async lookupPreloadedLyrics(track, signal) {
+        await this.waitForLyricPreload(loadAmLyrics(), signal);
+        signal.throwIfAborted();
+        // Never attach this element to the page: fetch data only, without
+        // touching the current renderer, lyric state, or audio position.
+        const el = document.createElement('am-lyrics');
+        el.noAutoAlternates = true;
+        const stop = () => el.fetchAbortController?.abort();
+        signal.addEventListener('abort', stop);
+        try {
+            for (const candidate of this.amCandidates(track)) {
+                signal.throwIfAborted();
+                el.songTitle = candidate.title; el.songArtist = candidate.artist;
+                el.songAlbum = track.album || '';
+                el.songDurationMs = Number(track.duration) > 0 ? Math.round(Number(track.duration) * 1000) : undefined;
+                el.query = candidate.artist ? `${candidate.title} - ${candidate.artist}` : candidate.title;
+                await this.waitForLyricPreload(el.fetchLyrics(), signal);
+                signal.throwIfAborted();
+                if (!el.lyrics?.length) continue;
+                const lines = this.amLinesToParsed(el.lyrics);
+                if (!lines.length) continue;
+                const unsynced = el.lyrics.every(line => line.timestamp === 0 && line.endtime === 0);
+                return { lyrics: lines, parsedLines: lines, source: unsynced ? 'saved-amlyrics-text' : 'saved-amlyrics',
+                    amData: { version: 1, lines: JSON.parse(JSON.stringify(el.lyrics)), source: el.lyricsSource || 'Saved', songwriters: el.songwriters || '' } };
+            }
+            if (!this.apiKey) return null;
+            // API fallbacks use an isolated worker; their parsing/error state
+            // must not overwrite the currently playing song.
+            const worker = Object.assign(Object.create(Object.getPrototypeOf(this)), { apiKey: this.apiKey, lyricsAbort: { signal }, parsedLines: [], songDuration: Number(track.duration) || 0 });
+            for (const [method, source] of [['tryMusix', 'musix'], ['trySpotify', 'spotify'], ['tryGenius', 'genius']]) {
+                signal.throwIfAborted();
+                const lyrics = await this.waitForLyricPreload(worker[method](track, signal), signal);
+                signal.throwIfAborted();
+                if (!lyrics) continue;
+                if (source === 'genius') worker.parseGeniusLyrics(lyrics);
+                const parsedLines = source === 'genius' ? worker.parsedLines : lyrics.slice().sort((a, b) => a.startMs - b.startMs);
+                const data = { lyrics, parsedLines, source };
+                data.amData = worker.toAmDisplayData(data);
+                return data;
+            }
+            return null;
+        } finally {
+            signal.removeEventListener('abort', stop); stop(); el.remove();
+        }
+    }
+
     cancelLyricsFetch() {
         this.trackLoadGeneration = (this.trackLoadGeneration || 0) + 1;
         this.fetchGeneration = (this.fetchGeneration || 0) + 1;
@@ -6354,7 +6466,11 @@ class UnifiedLyricsManager {
         }, { passive: true });
         this.startLyricsSync();
         // keep the single <am-lyrics> in whichever lyrics view is actually visible
-        setInterval(() => { if (!document.hidden && this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); } }, 400);
+        setInterval(() => {
+            if (document.hidden) return;
+            if (this.isOpen) this.updateLyricPreloads();
+            if (this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); }
+        }, 400);
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
         [audio, audio2].forEach(player => {
             player.addEventListener('seeked', () => { if (player === audio) this.handleTimeUpdate(); });
@@ -6405,6 +6521,7 @@ class UnifiedLyricsManager {
         }
     }
     async onTrackChange() {
+        this.updateLyricPreloads();
         if (this.isFetching) {
             const t = queue[currentTrackIndex];
             if (t && this.getLyricsTrackId(t) === this.fetchingKey) return;
@@ -6454,6 +6571,21 @@ class UnifiedLyricsManager {
         this.fetchingKey = this.getLyricsTrackId(track);
         this.lyricsAbort = new AbortController();
         try {
+            const preload = this.lyricPreloads?.get(this.fetchingKey);
+            if (force && preload) {
+                preload.controller.abort(); clearTimeout(preload.timer); preload.resolve(null);
+                this.lyricPreloads.delete(this.fetchingKey);
+            }
+            if (!force && preload) {
+                this.showLoading('Loading preloaded lyrics...');
+                const data = await this.startLyricPreload(preload);
+                if (!isFresh()) return;
+                if (data) {
+                    this.exitAm(); this.loadCachedLyrics(data, preload.origin === 'IndexedDB' ? 'preloaded IndexedDB' : 'preloaded');
+                    await this.renderCachedLyrics(data, track);
+                    return;
+                }
+            }
             if (!force) {
                 let saved = this.cache.get(this.fetchingKey);
                 const origin = saved ? 'memory cache' : 'IndexedDB';
@@ -7945,6 +8077,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
     exitAm() {
+        this.amEl?.fetchAbortController?.abort();
         this.amScrollUntil = 0;
         this.amLoop = null;
         this.amUiEls().forEach(n => n.remove());

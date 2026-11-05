@@ -550,3 +550,186 @@ test('a line-text snapshot with zero timing stays in the am-lyrics unsynced disp
   assert.equal(el.lyrics[0].endtime, 0); assert.equal(m.hasSyncedLyrics(), false);
 });
 
+function preloadFixture(t) {
+  const f = cachedRendererFixture();
+  f.ctx.queue = Array.from({ length: 6 }, (_, i) => ({ uid: String(i), title: 'Song ' + i, artist: 'Artist' }));
+  f.ctx.currentTrackIndex = 2; f.ctx.repeatMode = 'off'; f.ctx.isShuffle = false;
+  f.ctx.PlayerController = { getNextIndex: () => f.ctx.currentTrackIndex + 1 < f.ctx.queue.length ? f.ctx.currentTrackIndex + 1 : -1 };
+  f.manager.getLyricsFromDB = async () => null;
+  t.after(() => { for (const job of f.manager.lyricPreloads?.values() || []) {
+    job.controller.abort(); clearTimeout(job.timer); job.resolve(null);
+  } });
+  return f;
+}
+const preloadData = title => ({ source: 'saved-amlyrics', lyrics: [], parsedLines: [{ text: title, startMs: 1000 }] });
+test('only previous and next are preloaded and only the three-song window stays in memory', t => {
+  const { ctx, manager: m } = preloadFixture(t);
+  for (const track of ctx.queue) m.cache.set(m.getLyricsTrackId(track), preloadData(track.title));
+  m.updateLyricPreloads();
+  assert.deepEqual([...m.cache.keys()].sort(), [1, 2, 3].map(i => m.getLyricsTrackId(ctx.queue[i])).sort());
+  m.cache.clear(); m.updateLyricPreloads();
+  assert.deepEqual([...m.lyricPreloads.values()].map(job => job.track.uid).sort(), ['1', '3']);
+});
+test('saved neighbor lyrics do not call providers or change the current display', async t => {
+  const { ctx, manager: m } = preloadFixture(t);
+  m.currentLyrics = 'Current display'; m.parsedLines = [{ text: 'Current display' }];
+  m.getLyricsFromDB = async track => preloadData(track.title);
+  m.lookupPreloadedLyrics = async () => { throw Error('Saved lyrics must not search'); };
+  m.updateLyricPreloads();
+  await Promise.all([...m.lyricPreloads.values()].map(job => m.startLyricPreload(job)));
+  assert.equal(m.currentLyrics, 'Current display'); assert.equal(m.parsedLines[0].text, 'Current display');
+  assert(m.cache.has(m.getLyricsTrackId(ctx.queue[3])));
+});
+test('a current song adopts its in-flight preload instead of starting a second lookup', async t => {
+  const { ctx, manager: m } = preloadFixture(t); let finish, began;
+  const started = new Promise(resolve => began = resolve); let lookups = 0;
+  m.lookupPreloadedLyrics = () => { lookups++; began(); return new Promise(resolve => finish = resolve); };
+  m.updateLyricPreloads();
+  const key = m.getLyricsTrackId(ctx.queue[3]), job = m.lyricPreloads.get(key);
+  m.startLyricPreload(job); await started;
+  ctx.currentTrackIndex = 3; m.updateLyricPreloads();
+  m.tryAm = async () => { throw Error('Do not duplicate an active preload'); };
+  const current = m.fetchLyrics(ctx.queue[3]);
+  finish(preloadData('Preloaded song 3')); await current;
+  assert.equal(lookups, 1); assert.equal(m.parsedLines[0].text, 'Preloaded song 3');
+  assert.equal(m.currentSource, 'amlyrics');
+});
+test('rapid skips cancel stale jobs and ignore late results even when returning to the same song', async t => {
+  const { ctx, manager: m } = preloadFixture(t); const finishes = [];
+  m.currentLyrics = 'Keep current';
+  m.lookupPreloadedLyrics = track => new Promise(resolve => finishes.push({ track, resolve }));
+  m.updateLyricPreloads();
+  const old = [...m.lyricPreloads.values()][0]; m.startLyricPreload(old);
+  while (!finishes.length) await Promise.resolve();
+  for (const index of [4, 0, 5, 1, 4, 2, 0, 3, 5, 0]) {
+    ctx.currentTrackIndex = index; m.updateLyricPreloads();
+    assert(m.lyricPreloads.size <= 3);
+    assert(m.cache.size <= 3);
+  }
+  assert(old.controller.signal.aborted);
+  finishes[0].resolve(preloadData('Late old result')); await old.promise;
+  assert.equal(m.currentLyrics, 'Keep current');
+  assert(!m.cache.has(old.key));
+});
+test('emptying the queue cancels preloads and releases their memory', t => {
+  const { ctx, manager: m } = preloadFixture(t);
+  m.updateLyricPreloads(); const jobs = [...m.lyricPreloads.values()];
+  ctx.queue = []; ctx.currentTrackIndex = -1; m.updateLyricPreloads();
+  assert.equal(m.lyricPreloads.size, 0); assert.equal(m.cache.size, 0);
+  assert(jobs.every(job => job.controller.signal.aborted));
+});
+test('manual refresh cancels the promoted preload and performs a fresh lookup', async t => {
+  const { ctx, manager: m } = preloadFixture(t);
+  m.updateLyricPreloads(); const job = [...m.lyricPreloads.values()][0];
+  ctx.currentTrackIndex = Number(job.track.uid); m.updateLyricPreloads();
+  let lookups = 0; m.tryAm = async () => { lookups++; return wordLyrics(); };
+  await m.fetchLyrics(ctx.queue[ctx.currentTrackIndex], true);
+  assert(job.controller.signal.aborted); assert.equal(lookups, 1);
+});
+test('detached preloading reads native lyric data without connecting a renderer', async t => {
+  const { ctx, manager: m, requests } = preloadFixture(t); let connections = 0;
+  const el = { noAutoAlternates: false, lyricsSource: 'Provider',
+    fetchLyrics: async function() { this.fetchAbortController = new AbortController(); this.lyrics = wordLyrics(); },
+    remove() {}, connectedCallback() { connections++; } };
+  ctx.document.createElement = () => el;
+  m.currentSource = 'spotify'; m.parsedLines = [{ text: 'Current' }];
+  const data = await m.lookupPreloadedLyrics(ctx.queue[3], new AbortController().signal);
+  assert.equal(connections, 0); assert.equal(requests(), 0);
+  assert.equal(data.amData.lines[0].text[1].timestamp, 1800);
+  assert.equal(m.currentSource, 'spotify'); assert.equal(m.parsedLines[0].text, 'Current');
+});
+test('cancelling a detached lookup aborts its native provider request', async t => {
+  const { ctx, manager: m } = preloadFixture(t); let native;
+  const started = new Promise(resolve => {
+    ctx.document.createElement = () => ({
+      fetchLyrics() { this.fetchAbortController = native = new AbortController(); resolve(); return new Promise(() => {}); }, remove() {}
+    });
+  });
+  const controller = new AbortController();
+  const lookup = m.lookupPreloadedLyrics(ctx.queue[3], controller.signal);
+  await started; controller.abort();
+  await assert.rejects(lookup, error => error.name === 'AbortError');
+  assert(native.signal.aborted);
+});
+test('background fallback timing never uses the currently playing song duration', async t => {
+  const { ctx, manager: m } = preloadFixture(t);
+  m.apiKey = 'test-key'; m.songDuration = 999;
+  ctx.document.createElement = () => ({ lyrics: [], fetchLyrics: async () => {}, remove() {} });
+  ctx.Manager.prototype.tryMusix = async () => [{ text: 'Background fallback', startMs: 1000 }];
+  const data = await m.lookupPreloadedLyrics(ctx.queue[3], new AbortController().signal);
+  assert.equal(data.amData.lines[0].endtime, 4000);
+  assert.equal(m.songDuration, 999);
+});
+function navigationFixture() {
+  const { ctx } = fixture();
+  vm.runInContext(section('class PlayerController {', '// Legacy global wrappers') + '\nthis.PlayerController = PlayerController;', ctx);
+  ctx.queue = Array.from({ length: 5 }, (_, i) => ({ uid: String(i), title: String(i) }));
+  ctx.currentTrackIndex = 2; ctx.repeatMode = 'off'; ctx.isShuffle = true;
+  ctx.uqReturnIndex = -1; ctx.uqPeek = () => -1; ctx.shuffleForwardIndex = () => -1;
+  ctx.PlayerController.cancelCrossfade = () => {};
+  ctx.updatePlayerUIWithoutAAB = () => {};
+  let selected; ctx.playTrackAtIndex = (_, __, index) => selected = index;
+  return { ctx, selected: () => selected };
+}
+test('shuffle reserves the same next song for preloading, Next, and crossfade', () => {
+  const { ctx, selected } = navigationFixture(); const player = ctx.PlayerController;
+  const next = player.getNextIndex(true);
+  for (let i = 0; i < 30; i++) assert.equal(player.getNextIndex(true), next);
+  assert.notEqual(next, ctx.currentTrackIndex); assert.equal(player.getNextIndex(), next);
+  player.next(); assert.equal(selected(), next);
+});
+test('queued tracks and forward shuffle history override a reserved random pick', () => {
+  const { ctx } = navigationFixture(); const player = ctx.PlayerController;
+  player.getNextIndex(true); ctx.shuffleForwardIndex = () => 1;
+  assert.equal(player.getNextIndex(true), 1);
+  ctx.uqPeek = () => 4; assert.equal(player.getNextIndex(true), 4);
+});
+test('repeat-one still preloads manual Next and queue return order remains correct', () => {
+  const { ctx } = navigationFixture(); const player = ctx.PlayerController;
+  ctx.isShuffle = false; ctx.repeatMode = 'one';
+  assert.equal(player.getNextIndex(), 2); assert.equal(player.getNextIndex(true), 3);
+  ctx.uqReturnIndex = 0; assert.equal(player.getNextIndex(true), 1);
+  ctx.uqReturnIndex = -1; ctx.currentTrackIndex = 4; ctx.repeatMode = 'off';
+  assert.equal(player.getNextIndex(true), -1); ctx.repeatMode = 'all'; assert.equal(player.getNextIndex(true), 0);
+});
+function playbackFixture() {
+  const { ctx } = fixture(); const prepared = [], played = [], displayed = [];
+  ctx.queue = Array.from({ length: 20 }, (_, i) => ({ uid: String(i), title: 'Song ' + i, type: 'local' }));
+  ctx.uqInternal = false; ctx.uqReturnIndex = -1; ctx.shuffleRecord = () => {};
+  ctx.lyricsManager = null;
+  ctx.PlayerController = { trackRequest: 0, cancelCrossfade() {}, updatePlayPauseBtn() {}, highlightCurrentTrack() {} };
+  const player = { paused: true, src: '', load() {}, pause() { this.paused = true; },
+    async play() { played.push(this.src); this.paused = false; } };
+  ctx.audio = player; ctx.audio2 = { ...player }; ctx.playbackSpeed = 1;
+  ctx.audioContext = { state: 'running', currentTime: 0 };
+  ctx.AudioEngine = { buildChain: () => ({ fadeNode: { gain: { cancelScheduledValues() {}, setValueAtTime() {} } } }) };
+  ctx.streamingManager = { prepareTrackForPlayback: track => new Promise((resolve, reject) => prepared.push({ track, resolve, reject })) };
+  ctx.setTimeout = fn => { queueMicrotask(fn); return 0; };
+  ctx.consecutivePlayFailures = 0; ctx.MAX_CONSECUTIVE_PLAY_FAILURES = 3;
+  ctx.recordPlay = () => {}; ctx.waveformData = new Map(ctx.queue.map(track => [track.uid, {}]));
+  ctx.updatePlayerUI = track => displayed.push(track.uid);
+  ctx.document = { getElementById: () => ({ style: {}, innerText: 'Song', src: '' }) };
+  ctx.navigator = { mediaSession: {} }; ctx.MediaMetadata = class { constructor(value) { Object.assign(this, value); } };
+  ctx.nextTrack = () => { throw Error('A stale failure must not advance the queue'); };
+  vm.runInContext(section('async function playTrackAtIndex(', 'function recordPlay(track) {'), ctx);
+  return { ctx, player, prepared, played, displayed };
+}
+test('spamming twenty track changes prepares and plays only the latest request', async () => {
+  const { ctx, player, prepared, played, displayed } = playbackFixture();
+  const tasks = ctx.queue.map((_, index) => ctx.playTrackAtIndex(0, player, index));
+  while (!prepared.length) await Promise.resolve();
+  assert.equal(prepared.length, 1); assert.equal(prepared[0].track.uid, '19');
+  prepared[0].resolve('blob:latest'); await Promise.all(tasks);
+  assert.deepEqual(played, ['blob:latest']); assert.deepEqual(displayed, ['19']);
+});
+test('an old audio preparation cannot replace a newer song after finishing last', async () => {
+  const { ctx, player, prepared, played, displayed } = playbackFixture();
+  const old = ctx.playTrackAtIndex(0, player, 0);
+  while (prepared.length < 1) await Promise.resolve();
+  const latest = ctx.playTrackAtIndex(0, player, 1);
+  while (prepared.length < 2) await Promise.resolve();
+  prepared[1].resolve('blob:new'); await latest;
+  prepared[0].resolve('blob:old'); await old;
+  assert.equal(player.src, 'blob:new'); assert.deepEqual(played, ['blob:new']); assert.deepEqual(displayed, ['1']);
+});
+
