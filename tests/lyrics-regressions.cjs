@@ -418,11 +418,13 @@ test('loading a saved renderer cannot overwrite a song selected while its module
   m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', parsedLines: [{ text: 'Old saved words', startMs: 1000 }], amData: { version: 1, lines: wordLyrics() } });
   m.ensureAm = () => new Promise(done => resolve = done);
   const old = m.onTrackChange();
+  while (!resolve) await Promise.resolve();
+  m.ensureAm = async () => el;
   ctx.queue = [{ title: 'New song', artist: 'Artist' }];
   m.getLyricsFromDB = async () => ({ source: 'genius', lyrics: 'New lyrics', parsedLines: [{ text: 'New lyrics' }] });
   await m.onTrackChange(); resolve(el); await old;
-  assert.equal(m.currentSource, 'genius'); assert.equal(m.parsedLines[0].text, 'New lyrics');
-  assert.equal(el.isConnected, false);
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(m.parsedLines[0].text, 'New lyrics');
+  assert.equal(el.lyrics[0].text[0].text, 'New lyrics');
 });
 test('manual refresh re-enables provider fetches after restoring a saved renderer', async () => {
   const { manager: m, track, el, requests } = cachedRendererFixture();
@@ -449,3 +451,102 @@ test('saving waits for IndexedDB to open and for the write transaction to commit
   assert.equal(db.rows.size, 0); open(); await saving;
   assert.equal(db.rows.get(m.getLyricsTrackId(track)).amData.lines[0].text[1].timestamp, 1800);
 });
+test('legacy saved am-lyrics migrate to the am-lyrics display and persist without a lookup', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture(), db = lyricDB();
+  delete m.saveLyricsToDB; m.db = db;
+  db.rows.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', lyrics: [], parsedLines: [
+    { text: 'First line', startMs: 1000 }, { text: 'Next line', startMs: 5000 }
+  ] });
+  await m.onTrackChange();
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics[0].timestamp, 1000); assert.equal(el.lyrics[0].endtime, 5000);
+  assert.equal(el.lyrics[0].text[0].text, 'First line');
+  assert.equal(el.lyrics[0].text[0].lineSynced, true, 'Do not invent word timing');
+  assert(db.rows.get(m.getLyricsTrackId(track)).amData);
+});
+for (const source of ['spotify', 'musix', 'imported-lrc']) {
+  test(`${source} uses am-lyrics strictly as a line-synced display`, async () => {
+    const { manager: m, track, el, requests } = cachedRendererFixture();
+    m.currentSource = source; m.parsedLines = [{ text: 'Fallback line', startMs: 2000 }, { text: 'Following line', startMs: 6000 }];
+    await m.cacheAndRender(m.parsedLines, source, track);
+    assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+    assert.equal(el.lyrics[0].timestamp, 2000); assert.equal(el.lyrics[0].text[0].lineSynced, true);
+    assert(m.hasSyncedLyrics());
+  });
+}
+for (const source of ['genius', 'imported-text', 'saved-amlyrics-text']) {
+  test(`${source} uses am-lyrics without inventing timing or searching`, async () => {
+    const { manager: m, track, el, requests } = cachedRendererFixture();
+    m.cache.set(m.getLyricsTrackId(track), { source, lyrics: 'First line\nSecond line' });
+    await m.onTrackChange();
+    assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+    assert.equal(el.lyrics.length, 2); assert.equal(el.lyrics[1].text[0].text, 'Second line');
+    assert(el.lyrics.every(line => line.timestamp === 0 && line.endtime === 0));
+    assert.equal(m.hasSyncedLyrics(), false);
+  });
+}
+test('a partial saved snapshot preserves real words and repairs absent end times', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', amData: { version: 1, lines: [
+    { timestamp: 1000, text: [{ text: 'Real ', timestamp: 1000, endtime: 1800 }, { text: 'words', timestamp: 1800, endtime: 3000 }] }
+  ] } });
+  await m.onTrackChange();
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics[0].endtime, 3000); assert.equal(el.lyrics[0].text[1].timestamp, 1800);
+  assert.notEqual(el.lyrics[0].text[1].lineSynced, true);
+});
+test('legacy saves containing raw am-lyrics arrays restore without parsedLines', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', lyrics: wordLyrics() });
+  await m.onTrackChange();
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics[0].text[1].timestamp, 1800); assert.equal(m.parsedLines[0].text, 'Saved words');
+});
+test('saved provider arrays without parsedLines still restore through am-lyrics', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  m.cache.set(m.getLyricsTrackId(track), { source: 'spotify', lyrics: [{ text: 'Stored provider line', startMs: 1000 }] });
+  await m.onTrackChange();
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics[0].text[0].text, 'Stored provider line');
+  assert.equal(el.lyrics[0].timestamp, 1000);
+});
+test('a snapshot with line text instead of word arrays is converted rather than rejected', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', amData: { version: 1, lines: [{ text: 'Saved snapshot line', timestamp: 1000, endtime: 3000 }] } });
+  await m.onTrackChange();
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics[0].text[0].text, 'Saved snapshot line'); assert.equal(el.lyrics[0].endtime, 3000);
+});
+test('a fresh provider fallback uses am-lyrics for display without another am-lyrics lookup', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture(); let amSearches = 0;
+  m.apiKey = 'test-key';
+  m.tryAm = async () => { amSearches++; return false; };
+  m.tryMusix = async () => [{ text: 'Provider result', startMs: 2000 }];
+  await m.fetchLyrics(track, true);
+  assert.equal(amSearches, 1); assert.equal(requests(), 0);
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(el.lyrics[0].text[0].text, 'Provider result');
+});
+test('a fresh Genius fallback uses the am-lyrics plain-text display', async () => {
+  const { manager: m, track, el, requests } = cachedRendererFixture();
+  m.apiKey = 'test-key'; m.tryAm = async () => false;
+  m.tryMusix = async () => null; m.trySpotify = async () => null;
+  m.tryGenius = async () => 'First genius line\nSecond genius line';
+  await m.fetchLyrics(track, true);
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics.length, 2); assert.equal(m.hasSyncedLyrics(), false);
+});
+test('a new LRC import immediately uses am-lyrics display without any provider calls', async () => {
+  const { manager: m, el, requests } = cachedRendererFixture();
+  await m.importLyricsFile({ size: 60, text: async () => '[00:01]First local line\n[00:05]Next local line' });
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(requests(), 0);
+  assert.equal(el.lyrics[0].text[0].text, 'First local line');
+  assert.equal(el.lyrics[1].timestamp, 5000);
+});
+test('a line-text snapshot with zero timing stays in the am-lyrics unsynced display', async () => {
+  const { manager: m, track, el } = cachedRendererFixture();
+  m.cache.set(m.getLyricsTrackId(track), { source: 'saved-amlyrics', amData: { version: 1, lines: [{ text: 'Untimed snapshot', timestamp: 0, endtime: 0 }] } });
+  await m.onTrackChange();
+  assert.equal(m.currentSource, 'amlyrics'); assert.equal(el.cachedIsUnsynced, true);
+  assert.equal(el.lyrics[0].endtime, 0); assert.equal(m.hasSyncedLyrics(), false);
+});
+

@@ -6133,17 +6133,73 @@ class UnifiedLyricsManager {
         if (track) this.loadAmOffset(track);
     }
 
+    toAmDisplayData(data) {
+        const number = value => value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : null;
+        const untimed = ['genius', 'imported-text', 'saved-amlyrics-text'].includes(data.source);
+        const snapshot = data.amData;
+        const candidate = snapshot?.version === 1 && Array.isArray(snapshot.lines) ? snapshot.lines :
+            Array.isArray(data.lyrics) ? data.lyrics : null;
+        const raw = candidate?.some(line => Array.isArray(line?.text)) ? candidate : null;
+        const wordsOf = line => Array.isArray(line?.text) ? line.text.filter(word => typeof word?.text === 'string') :
+            typeof line?.text === 'string' ? [{ text: line.text }] : [];
+        const nextTimes = values => {
+            const times = [...new Set(values.filter(Number.isFinite))].sort((a, b) => a - b);
+            return new Map(times.map((time, index) => [time, times[index + 1]]));
+        };
+        let lines, unsynced;
+        if (raw?.length) {
+            const copy = JSON.parse(JSON.stringify(raw)).filter(line => line && typeof line === 'object');
+            unsynced = untimed || snapshot?.unsynced === true || copy.every(line =>
+                !Number(line.timestamp) && !Number(line.endtime) && wordsOf(line).every(word => !Number(word.timestamp) && !Number(word.endtime)));
+            const starts = copy.map(line => number(line.timestamp) ?? Math.min(...wordsOf(line).map(word => number(word.timestamp) ?? Infinity)));
+            const next = nextTimes(starts);
+            lines = copy.map((line, index) => {
+                const timestamp = unsynced ? 0 : Math.max(0, Number.isFinite(starts[index]) ? starts[index] : 0);
+                const words = wordsOf(line);
+                const wordEnd = Math.max(timestamp, ...words.map(word => number(word.endtime) ?? timestamp));
+                const endtime = unsynced ? 0 : Math.max(timestamp + 1,
+                    Number(line.endtime) > timestamp ? Number(line.endtime) : wordEnd > timestamp ? wordEnd : next.get(timestamp) ?? timestamp + 3000);
+                const hasWordTiming = words.every(word => number(word.timestamp) !== null && number(word.endtime) !== null);
+                return { ...line, timestamp, endtime, text: words.map(word => ({ ...word,
+                    timestamp: unsynced ? 0 : number(word.timestamp) ?? timestamp,
+                    endtime: unsynced ? 0 : number(word.endtime) ?? endtime,
+                    ...(!hasWordTiming ? { lineSynced: true } : {})
+                })) };
+            }).sort((a, b) => a.timestamp - b.timestamp);
+        } else {
+            const saved = data.parsedLines?.length ? data.parsedLines : candidate ||
+                (typeof data.lyrics === 'string' ? data.lyrics.split(/\r?\n/).map(text => ({ text })) : []);
+            const rows = saved.filter(line => typeof line?.text === 'string' && line.text.trim());
+            unsynced = untimed || snapshot?.unsynced === true || !rows.length ||
+                rows.every(line => number(line.timestamp) === 0 && number(line.endtime) === 0) ||
+                rows.some(line => line.unsynced || number(line.startMs ?? line.timestamp) === null);
+            const ordered = unsynced ? rows : rows.slice().sort((a, b) => Number(a.startMs ?? a.timestamp) - Number(b.startMs ?? b.timestamp));
+            const next = nextTimes(ordered.map(line => Number(line.startMs ?? line.timestamp)));
+            lines = ordered.map(line => {
+                const timestamp = unsynced ? 0 : Math.max(0, Number(line.startMs ?? line.timestamp));
+                const duration = number(line.durMs);
+                const songEnd = Number(data.duration || this.songDuration) * 1000;
+                const endtime = unsynced ? 0 : Math.max(timestamp + 1, duration > 0 ? timestamp + duration :
+                    number(line.endMs ?? line.endtime) ?? (next.get(timestamp) ?? (songEnd > timestamp ? songEnd : timestamp + 3000)));
+                return { timestamp, endtime, isWordSynced: false,
+                    text: [{ text: line.text, timestamp, endtime, lineSynced: true }] };
+            });
+        }
+        return { version: 1, lines, unsynced, source: snapshot?.source || ({ spotify: 'Spotify', musix: 'Musix', genius: 'Genius', 'imported-lrc': 'Local LRC', 'imported-text': 'Local text' })[data.source] || 'Saved',
+            songwriters: snapshot?.songwriters || '' };
+    }
+
     async renderCachedLyrics(data, track, generation = this.trackLoadGeneration) {
         const stale = () => generation !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track);
-        const snapshot = data.amData;
-        const valid = snapshot?.version === 1 && Array.isArray(snapshot.lines) && snapshot.lines.length > 0 &&
-            snapshot.lines.every(line => Number.isFinite(line?.timestamp) && Number.isFinite(line.endtime) &&
-                Array.isArray(line.text) && line.text.every(word => typeof word?.text === 'string' &&
-                    Number.isFinite(word.timestamp) && Number.isFinite(word.endtime)));
         if (stale()) return;
-        // Legacy entries still work as saved line/text lyrics, without a search.
-        if (!valid) { this.renderLyrics(); return; }
         try {
+            const snapshot = this.toAmDisplayData(data);
+            if (!snapshot.lines.length) { this.renderLyrics(); return; }
+            // Upgrade old line/text saves locally; no provider search is needed.
+            const upgraded = { ...data, amData: snapshot, parsedLines: this.amLinesToParsed(snapshot.lines) };
+            if (JSON.stringify(data.amData) !== JSON.stringify(snapshot)) await this.rememberLyrics(track, upgraded);
+            if (stale()) return;
+            this.loadCachedLyrics(upgraded);
             const el = await this.ensureAm();
             if (stale()) return;
             el.__amSaved = true;
@@ -6156,7 +6212,7 @@ class UnifiedLyricsManager {
             el.availableSources = [{ lines: el.lyrics, source: el.lyricsSource }];
             el.currentSourceIndex = 0;
             el.hasFetchedAllProviders = true;
-            el.cachedIsUnsynced = data.source === 'saved-amlyrics-text';
+            el.cachedIsUnsynced = snapshot.unsynced;
             this.currentSource = 'amlyrics';
             this.amActive = true;
             this.amTrackKey = this.getLyricsTrackId(track);
@@ -6173,7 +6229,7 @@ class UnifiedLyricsManager {
         } catch (error) {
             if (stale()) return;
             console.warn('Saved lyric renderer unavailable; using saved lines', error);
-            this.exitAm(); this.loadCachedLyrics(data); this.renderLyrics();
+            this.exitAm(); this.loadCachedLyrics(this.cache.get(this.getLyricsTrackId(track)) || data); this.renderLyrics();
         }
     }
 
@@ -6432,7 +6488,7 @@ class UnifiedLyricsManager {
             }
             const saved = this.cache.get(this.getLyricsTrackId(track));
             if (!force && ['saved-amlyrics', 'saved-amlyrics-text'].includes(saved?.source)) {
-                this.exitAm(); this.loadCachedLyrics(saved); this.renderLyrics();
+                this.exitAm(); this.loadCachedLyrics(saved); await this.renderCachedLyrics(saved, track);
                 return;
             }
             // 2) fallback: RapidAPI chain
@@ -6915,21 +6971,22 @@ class UnifiedLyricsManager {
             this.currentLyrics = imported.lines; this.currentLineIndex = -1;
             this.isOpen = true;
             this.loadAmOffset(track);
-            void this.rememberLyrics(track, { lyrics: imported.lines, parsedLines: imported.lines, source: imported.source });
-            this.renderLyrics();
+            await this.renderCachedLyrics({ lyrics: imported.lines, parsedLines: imported.lines, source: imported.source }, track);
             toast('Lyrics imported for ' + (track.title || 'this song'));
         } catch (error) { toast('Could not import lyrics: ' + error.message); }
     }
 
     async cacheAndRender(lyrics, source, track) {
+        const generation = this.trackLoadGeneration;
         if (source === 'spotify' || source === 'musix') lyrics = lyrics.filter(line => Number.isFinite(line.startMs) && line.startMs >= 0).slice().sort((a, b) => a.startMs - b.startMs);
         const lines = (source === 'spotify' || source === 'musix') ? lyrics : this.parsedLines;
         this.currentLyrics = lyrics;
         const data = { lyrics, source, parsedLines: lines };
-        void this.rememberLyrics(track, data);
-        if (!this.isCurrentLyricsTrack(track)) return;
+        data.amData = this.toAmDisplayData(data);
+        await this.rememberLyrics(track, data);
+        if (generation !== this.trackLoadGeneration || !this.isCurrentLyricsTrack(track)) return;
         if (source === 'spotify' || source === 'musix') this.parsedLines = lyrics;
-        this.renderLyrics();
+        await this.renderCachedLyrics(data, track, generation);
     }
     renderLyrics() {
         const container = document.getElementById('lyricsContent');
@@ -15928,3 +15985,4 @@ class WinterSnakeGame {
     });
     PlayerController.updateVolumeUI();
 })();
+
