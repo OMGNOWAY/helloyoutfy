@@ -308,3 +308,34 @@ test('character glow uses its own epoch while unrelated character effects are un
   assert.equal(motion.playbackRate, 0.5); assert.equal(glow.playbackRate, 0.5);
   assert.equal(unrelated.playbackRate, 1); assert.equal(unrelated.currentTime, 0);
 });
+for (const rate of [0.5, 0.75, 1, 1.5, 2]) {
+  test(`upcoming words keep their negative waiting time at ${rate}x without repeated resets`, () => {
+    const { ctx, addAnimation, tick } = speedFixture();
+    const animation = addAnimation(1000); ctx.audio.playbackRate = rate;
+    tick(500);
+    assert.equal(animation.currentTime, -500, 'A prepared word must remain before the start of its fill');
+    for (let wall = 16; wall <= 1600; wall += 16) {
+      animation.advance(16); const mediaTime = 500 + wall * rate; tick(mediaTime);
+      assert(Math.abs(animation.currentTime - (mediaTime - 1000)) <= 1);
+      if (mediaTime < 1000) assert(animation.currentTime < 0, 'Future words must not start filling');
+    }
+    assert.equal(animation.clockWrites, 1, 'The waiting animation must not repeatedly snap back');
+  });
+}
+test('changing speed before a word starts preserves its remaining wait', () => {
+  const { ctx, addAnimation, tick } = speedFixture();
+  const animation = addAnimation(1000); tick(500);
+  ctx.audio.playbackRate = 2; tick(500); animation.advance(100); tick(700);
+  assert.equal(animation.currentTime, -300);
+  ctx.audio.playbackRate = 0.5; tick(700); animation.advance(400); tick(900);
+  assert.equal(animation.currentTime, -100);
+  animation.advance(400); tick(1100); assert.equal(animation.currentTime, 100);
+});
+test('pausing a prepared word freezes it before its fill starts', () => {
+  const { ctx, addAnimation, tick } = speedFixture();
+  const animation = addAnimation(1000); tick(500);
+  ctx.audio.paused = true; tick(500); animation.advance(2000);
+  assert.equal(animation.currentTime, -500);
+  ctx.audio.paused = false; ctx.audio.playbackRate = 2; tick(500);
+  animation.advance(300); tick(1100); assert.equal(animation.currentTime, 100);
+});
