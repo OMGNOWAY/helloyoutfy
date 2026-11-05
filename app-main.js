@@ -3169,6 +3169,7 @@ async function playTrackAtIndex(where, a, index) {
   const track = queue[index];
   const request = PlayerController.trackRequest = (PlayerController.trackRequest || 0) + 1;
   const stale = () => request !== PlayerController.trackRequest || queue[currentTrackIndex]?.uid !== track.uid;
+  lyricsManager?.beginTrackPlayback(track, where, request);
   if (lyricsManager) void lyricsManager.onTrackChange().catch(error => console.warn('Lyrics track change failed', error));
   console.log('playTrackAtIndex called, track:', track?.title);
 
@@ -3197,6 +3198,7 @@ async function playTrackAtIndex(where, a, index) {
     if (stale()) return;
     a.src = audioSrc;
     a.currentTime = where;
+    lyricsManager?.finishTrackPlayback(track, request);
     a.playbackRate = playbackSpeed;
     audio.playbackRate = playbackSpeed;
     audio2.playbackRate = playbackSpeed;
@@ -6094,6 +6096,23 @@ class UnifiedLyricsManager {
         return !!current && this.getLyricsTrackId(current) === this.getLyricsTrackId(track);
     }
 
+    beginTrackPlayback(track, seconds, request) {
+        this.lyricsPlaybackAnchor = { key: this.getLyricsTrackId(track), seconds: Math.max(0, Number(seconds) || 0), request, pending: true };
+    }
+    finishTrackPlayback(track, request) {
+        const anchor = this.lyricsPlaybackAnchor;
+        if (!anchor || anchor.request !== request || anchor.key !== this.getLyricsTrackId(track)) return;
+        anchor.pending = false;
+        if (this.isCurrentLyricsTrack(track)) this.handleTimeUpdate();
+    }
+    getLyricsPlaybackSeconds() {
+        const track = queue[currentTrackIndex], anchor = this.lyricsPlaybackAnchor;
+        // A newly selected song can load from cache before its audio source is
+        // ready. Do not feed it the previous song's currentTime in that gap.
+        if (anchor?.pending && track && anchor.key === this.getLyricsTrackId(track)) return anchor.seconds;
+        return Math.max(0, Number(audio.currentTime) || 0);
+    }
+
     getLyricNeighbors() {
         if (!queue[currentTrackIndex] || typeof PlayerController === 'undefined' || typeof repeatMode === 'undefined') return [];
         const next = queue[PlayerController.getNextIndex(true)];
@@ -6319,6 +6338,7 @@ class UnifiedLyricsManager {
             el.fetchAbortController?.abort();
             el.noAutoAlternates = true;
             el.isLoading = false;
+            el.currentTime = Math.max(0, Math.round(this.getLyricsPlaybackSeconds() * 1000 - (snapshot.unsynced ? 0 : this.amOffsetMs || 0)));
             el.lyrics = JSON.parse(JSON.stringify(snapshot.lines));
             el.lyricsSource = snapshot.source || 'Saved';
             el.songwriters = snapshot.songwriters || '';
@@ -7561,14 +7581,14 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     getAmCurrentLine() {
         const el = this.amEl, root = el?.shadowRoot;
-        if (!root) return null;
+        if (!root || el.cachedIsUnsynced) return null;
         // Several lines can stay highlighted during a duet or an overlap.
         // Follow the same primary line as the renderer, including its lookahead.
         const primary = el.currentPrimaryActiveLine;
         if (primary && root.contains(primary) && primary.classList.contains('lyrics-line')) return primary;
         const active = root.querySelector('.lyrics-line.active');
         if (active) return active;
-        const ms = audio.currentTime * 1000 - (this.amOffsetMs || 0);
+        const ms = this.getLyricsPlaybackSeconds() * 1000 - (this.amOffsetMs || 0);
         let index = -1;
         for (let i = 0; i < (el.lyrics || []).length; i++) {
             const time = Number(el.lyrics[i].timestamp);
@@ -8020,9 +8040,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
     async jumpAmToCurrentLine(force = false) {
         const el = this.amEl;
-        if (!el) return;
+        if (!el || el.cachedIsUnsynced) return;
         const token = this._amJumpToken = (this._amJumpToken || 0) + 1;
-        const stale = () => token !== this._amJumpToken || !this.amActive || this.amEl !== el || !el.isConnected;
+        const trackKey = this.amTrackKey;
+        const stale = () => token !== this._amJumpToken || trackKey !== this.amTrackKey || !this.amActive || this.amEl !== el || !el.isConnected;
         // wait for the reconnect refetch to finish rendering
         const t0 = Date.now();
         while (Date.now() - t0 < 8000) {
@@ -8034,7 +8055,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         try { await el.updateComplete; } catch (e) {}
         let firstSnap = true;
         const snap = () => {
-            if (stale()) return;
+            if (stale() || el.cachedIsUnsynced) return;
             const root = el.shadowRoot;
             const container = root?.querySelector('.lyrics-container');
             if (!container) return;
@@ -8077,18 +8098,26 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-highlight-surface', 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
     }
     exitAm() {
-        this.amEl?.fetchAbortController?.abort();
+        const el = this.amEl;
+        el?.fetchAbortController?.abort();
+        // Dispose between songs instead of reconnecting a renderer whose
+        // word animations, primary line and footer still belong to the old one.
+        this.amEl = null;
+        this._amJumpToken = (this._amJumpToken || 0) + 1;
+        this._lastAmT = null;
+        this.amWordTimingStates = new WeakMap();
+        clearTimeout(this.amBarTimer);
         this.amScrollUntil = 0;
         this.amLoop = null;
         this.amUiEls().forEach(n => n.remove());
-        const wasConnected = !!(this.amEl && this.amEl.isConnected);
+        const wasConnected = !!el?.isConnected;
         this.amActive = false;
         this.amTrackKey = null;
         this.amToken++;
         if (wasConnected) {
-            const host = this.amEl.parentElement;
-            this.amEl.remove();
-            if (host) host.textContent = '';
+            const host = el.parentElement;
+            el.remove();
+            if (host) { host.textContent = ''; host.scrollTop = 0; delete host.dataset.followAfter; }
         }
     }
 
@@ -8132,21 +8161,22 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     }
 
     handleTimeUpdate() {
+        const seconds = this.getLyricsPlaybackSeconds();
         const off = this.hasSyncedLyrics() ? (this.amOffsetMs || 0) : 0;
         if (this.amActive && this.amEl && this.amEl.isConnected) {
-            const t = Math.max(0, Math.round(audio.currentTime * 1000 - off));
+            const t = Math.max(0, Math.round(seconds * 1000 - off));
             if (t !== this._lastAmT) { this._lastAmT = t; this.amEl.currentTime = t; }
             this.syncAmWordTiming(t);
         }
         if (this.amLoop && this.currentSource === 'amlyrics' && !audio.paused) {
-            const lms = audio.currentTime * 1000 - off;
+            const lms = seconds * 1000 - off;
             if (lms >= this.amLoop.end) {
                 if (lms - this.amLoop.end < 1500) audio.currentTime = (this.amLoop.start + off) / 1000;
                 else { this.amLoop = null; this.refreshAmBar(); toast('Line loop off'); } // user seeked far away
             }
         }
         if (!this.isOpen || !this.parsedLines?.length || !this.hasSyncedLyrics()) return;
-        const ms = audio.currentTime * 1000 - off;
+        const ms = seconds * 1000 - off;
         // Find the latest timestamp, including after backwards seeks and before verse one.
         let low = 0, high = this.parsedLines.length - 1, newIndex = -1;
         while (low <= high) {
