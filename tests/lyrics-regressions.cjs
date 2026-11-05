@@ -733,3 +733,93 @@ test('an old audio preparation cannot replace a newer song after finishing last'
   assert.equal(player.src, 'blob:new'); assert.deepEqual(played, ['blob:new']); assert.deepEqual(displayed, ['1']);
 });
 
+test('disposing a song drops its renderer, animation state and saved scroll position', () => {
+  const { ctx, manager: m } = fixture(); delete m.exitAm;
+  const host = { textContent: 'Old lyrics', scrollTop: 900, dataset: { followAfter: '9999999999999' } };
+  const controller = new AbortController(); let removed = false;
+  m.amEl = { isConnected: true, parentElement: host, fetchAbortController: controller, remove() { removed = true; } };
+  m.amActive = true; m.amTrackKey = 'old'; m._amJumpToken = 5;
+  m.amUiEls = () => []; m.amWordTimingStates = new WeakMap(); const clocks = m.amWordTimingStates;
+  m.exitAm();
+  assert.equal(m.amEl, null); assert(removed); assert(controller.signal.aborted);
+  assert.equal(host.scrollTop, 0); assert.equal(host.dataset.followAfter, undefined);
+  assert(m._amJumpToken > 5); assert.notEqual(m.amWordTimingStates, clocks);
+});
+test('upcoming song lyrics never receive the previous audio clock while its source is loading', () => {
+  const { ctx, manager: m, track } = fixture(); ctx.audio.currentTime = 80;
+  m.amActive = true; m.currentSource = 'amlyrics'; m.amOffsetMs = 0;
+  m.amEl = { isConnected: true, currentTime: 0 };
+  m.beginTrackPlayback(track, 0, 1); m.handleTimeUpdate();
+  assert.equal(m.amEl.currentTime, 0);
+  ctx.audio.currentTime = 2; m.finishTrackPlayback(track, 1);
+  assert.equal(m.amEl.currentTime, 2000);
+});
+test('a stale audio completion cannot release a newer song start anchor', () => {
+  const { ctx, manager: m, track } = fixture(); ctx.audio.currentTime = 90;
+  m.beginTrackPlayback(track, 0, 1); m.beginTrackPlayback(track, 10, 2);
+  m.finishTrackPlayback(track, 1); assert.equal(m.getLyricsPlaybackSeconds(), 10);
+  ctx.audio.currentTime = 11; m.finishTrackPlayback(track, 2);
+  assert.equal(m.getLyricsPlaybackSeconds(), 11);
+});
+test('switching word, line and plain lyrics creates fresh renderers instead of carrying old highlights', async () => {
+  const { ctx, manager: m } = cachedRendererFixture(); delete m.exitAm; delete m.handleTimeUpdate;
+  const made = [];
+  ctx.document.createElement = () => {
+    const el = { currentTime: 0, isConnected: false, focusedLine: null, footerActive: false,
+      addEventListener() {}, fetchLyrics: async () => {}, onLyricsLoaded: async () => {}, updateComplete: Promise.resolve(),
+      remove() { this.isConnected = false; } };
+    made.push(el); return el;
+  };
+  m.amUiEls = () => [];
+  m.placeAm = () => { m.amEl.isConnected = true; };
+  const data = [
+    { source: 'saved-amlyrics', amData: { version: 1, lines: wordLyrics() } },
+    { source: 'spotify', parsedLines: [{ text: 'Line timing', startMs: 1000 }] },
+    { source: 'genius', lyrics: 'Plain lyrics' }
+  ];
+  for (let index = 0; index < data.length; index++) {
+    m.exitAm(); ctx.queue = [{ uid: String(index), title: 'Song ' + index, artist: 'Artist' }];
+    ctx.audio.currentTime = 80; m.trackLoadGeneration = index;
+    m.beginTrackPlayback(ctx.queue[0], 0, index);
+    await m.renderCachedLyrics(data[index], ctx.queue[0], index);
+    assert.equal(m.amEl.currentTime, 0); assert.equal(m.amEl.focusedLine, null); assert.equal(m.amEl.footerActive, false);
+    m.amEl.focusedLine = 'old last line'; m.amEl.footerActive = true;
+  }
+  assert.equal(made.length, 3); assert.equal(new Set(made).size, 3);
+  assert.equal(m.hasSyncedLyrics(), false);
+});
+test('scroll callbacks from the disposed song cannot scroll a new renderer', async () => {
+  const { ctx, manager: m } = fixture(); delete m.exitAm;
+  const frames = [], timers = []; ctx.requestAnimationFrame = callback => frames.push(callback);
+  ctx.setTimeout = callback => timers.push(callback);
+  const line = {}, container = {};
+  const old = { isConnected: true, isLoading: false, lyrics: [{}], updateComplete: Promise.resolve(),
+    shadowRoot: { querySelector: selector => selector === '.lyrics-container' ? container : line }, remove() { this.isConnected = false; } };
+  m.amEl = old; m.amActive = true; m.amTrackKey = 'old'; m.amUiEls = () => [];
+  let scrolls = 0; m.getAmCurrentLine = () => line; m.amLineNeedsScroll = () => true; m.scrollAmLineIntoView = () => scrolls++;
+  await m.jumpAmToCurrentLine();
+  m.exitAm(); m.amEl ||= { isConnected: true }; m.amEl.isConnected = true; m.amActive = true; m.amTrackKey = 'new';
+  while (frames.length) frames.shift()(); timers.forEach(callback => callback());
+  assert.equal(scrolls, 0);
+});
+test('untimed lyrics never select the final zero-timestamp line as a scroll target', async () => {
+  const { manager: m } = fixture();
+  m.amEl = { isConnected: true, cachedIsUnsynced: true, lyrics: [{ timestamp: 0 }, { timestamp: 0 }],
+    shadowRoot: { querySelector() { throw Error('Untimed lyrics must not look up an active line'); } } };
+  assert.equal(m.getAmCurrentLine(), null);
+  await m.jumpAmToCurrentLine();
+});
+test('playback anchors lyrics before loading and releases them only after assigning the new source', async () => {
+  const { ctx, player, prepared } = playbackFixture(); const events = [];
+  ctx.lyricsManager = { beginTrackPlayback(track, seconds, request) { events.push(['begin', track.uid, seconds, request]); },
+    async onTrackChange() { events.push(['lyrics']); },
+    finishTrackPlayback(track, request) { events.push(['ready', track.uid, player.src, player.currentTime, request]); } };
+  const playing = ctx.playTrackAtIndex(4, player, 1);
+  while (!prepared.length) await Promise.resolve();
+  assert.equal(events[0][0], 'begin'); assert.equal(events[0][2], 4);
+  assert(!events.some(event => event[0] === 'ready'));
+  prepared[0].resolve('blob:new-source'); await playing;
+  const ready = events.find(event => event[0] === 'ready');
+  assert.equal(ready[2], 'blob:new-source'); assert.equal(ready[3], 4);
+});
+
