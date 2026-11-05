@@ -7259,6 +7259,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const style = document.createElement('style');
         style.id = 'youtifiy-am-lyrics-overrides';
         style.textContent = `
+          .skeleton-line { display: none !important; }
           .lyrics-header { display: none !important; }
           /* NOT display:none: am-lyrics measures the footer's offsetTop to work out how far it can
              scroll, display:none makes that 0 so it can never scroll and every line change snaps to the top */
@@ -8032,6 +8033,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const moving = el.isConnected && !el.isLoading && Array.isArray(el.lyrics) && el.lyrics.length > 0;
         if (moving) el.__amMoving = true;
         try { host.appendChild(el); } finally { el.__amMoving = false; }
+        // Install before the first paint, including while a new song is loading.
+        this.hideAmChrome();
         this.mountAmBar(host);
         if (moving) { this.restoreAmAfterMove(); this.jumpAmToCurrentLine(); return; }
         // moving <am-lyrics> reconnects it, which refetches + resets scroll to the top
