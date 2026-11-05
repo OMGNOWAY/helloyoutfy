@@ -180,3 +180,131 @@ test('large fullscreen scroll padding cannot clip an overlapping group that fits
   m.amScrollUntil = 0; m.updateAmJump();
   assert.equal(container.scrolls, 1);
 });
+
+function speedFixture() {
+  const { ctx, manager: m } = fixture();
+  ctx.audio.paused = false; ctx.audio.playbackRate = 1;
+  const animations = [];
+  class Renderer {}
+  Renderer.wipeClocks = new WeakMap();
+  Renderer.normalRiseClocks = new WeakMap();
+  Renderer.characterAnimations = new WeakMap();
+  const container = { getAnimations: () => animations };
+  m.amEl = { isConnected: true, constructor: Renderer, shadowRoot: { querySelector: () => container },
+    highlightColor: '#abcdef', getAnimations() { throw Error('Do not scan outside the lyrics container'); } };
+  m.amActive = true; m.currentSource = 'amlyrics';
+  const addAnimation = (epoch = 0, clock = Renderer.wipeClocks) => {
+    let clockTime = 0;
+    const animation = { get currentTime() { return clockTime; },
+      set currentTime(value) { clockTime = value; this.clockWrites++; },
+      clockWrites: 0, playbackRate: 1, playState: 'running',
+      effect: { target: {}, getComputedTiming: () => ({ endTime: 4000 }) },
+      rateUpdates: 0,
+      updatePlaybackRate(rate) { this.playbackRate = rate; this.rateUpdates++; },
+      advance(ms) { clockTime += ms * this.playbackRate; },
+      cancel() { throw Error('Do not cancel native lyric effects'); },
+      play() { throw Error('Do not restart native lyric effects'); } };
+    animations.push(animation); clock?.set(animation, epoch);
+    return animation;
+  };
+  const tick = ms => { ctx.audio.currentTime = ms / 1000; m.handleTimeUpdate(); };
+  return { ctx, m, Renderer, animations, addAnimation, tick };
+}
+for (const rate of [0.5, 0.75, 1, 1.5, 2]) {
+  test(`word highlighting follows ${rate}x playback without per-frame jumps`, () => {
+    const { ctx, addAnimation, tick } = speedFixture();
+    const animation = addAnimation(); ctx.audio.playbackRate = rate; tick(0);
+    for (let wall = 16; wall <= 1600; wall += 16) {
+      animation.advance(16); tick(wall * rate);
+      assert(Math.abs(animation.currentTime - wall * rate) <= 1);
+    }
+    assert.equal(animation.rateUpdates, rate === 1 ? 0 : 1);
+    assert.equal(animation.clockWrites, 1, 'Steady playback must not seek the animation every frame');
+  });
+}
+test('changing speed in the middle of a word preserves the song position', () => {
+  const { ctx, addAnimation, tick } = speedFixture();
+  const animation = addAnimation(); tick(0); animation.advance(500); tick(500);
+  ctx.audio.playbackRate = 2; tick(500); assert.equal(animation.currentTime, 500);
+  animation.advance(250); tick(1000); assert.equal(animation.currentTime, 1000);
+  ctx.audio.playbackRate = 0.5; tick(1000); animation.advance(400); tick(1200);
+  assert.equal(animation.currentTime, 1200);
+  ctx.audio.playbackRate = 1; tick(1200); animation.advance(200); tick(1400);
+  assert.equal(animation.currentTime, 1400);
+});
+test('new words inherit the active speed and saved offset without changing lyric timestamps', () => {
+  const { ctx, m, addAnimation, tick } = speedFixture();
+  ctx.audio.playbackRate = 1.5; m.amOffsetMs = 200;
+  const animation = addAnimation(1000); tick(1400);
+  assert.equal(m.amEl.currentTime, 1200); assert.equal(animation.currentTime, 200);
+  assert.equal(animation.playbackRate, 1.5);
+});
+test('word effects freeze on pause and resume at the chosen speed', () => {
+  const { ctx, addAnimation, tick } = speedFixture();
+  const animation = addAnimation(); ctx.audio.playbackRate = 2; tick(300);
+  ctx.audio.paused = true; tick(300); animation.advance(1000);
+  assert.equal(animation.currentTime, 300);
+  ctx.audio.paused = false; tick(300); animation.advance(200); tick(700);
+  assert.equal(animation.currentTime, 700);
+});
+test('seeks and delayed frames rebase word effects to media time', () => {
+  const { addAnimation, tick } = speedFixture();
+  const animation = addAnimation(); tick(200); tick(1700);
+  assert.equal(animation.currentTime, 1700);
+  tick(400); assert.equal(animation.currentTime, 400);
+});
+test('only native word effects are retimed, leaving scrolling and colors alone', () => {
+  const { ctx, m, Renderer, addAnimation, tick } = speedFixture();
+  ctx.audio.playbackRate = 2;
+  const wipe = addAnimation(0), rise = addAnimation(100, Renderer.normalRiseClocks);
+  const scroll = addAnimation(0, null); scroll.currentTime = 75;
+  const character = addAnimation(0, null), char = {};
+  character.effect.target = char;
+  Renderer.characterAnimations.set(char, { animation: character, start: 200, glowEpoch: 50 });
+  tick(600);
+  assert.equal(wipe.currentTime, 600); assert.equal(rise.currentTime, 500);
+  assert.equal(character.currentTime, 400);
+  assert.equal(scroll.currentTime, 75); assert.equal(scroll.playbackRate, 1);
+  assert.equal(m.amEl.highlightColor, '#abcdef');
+});
+test('native rewind effects are left alone until the rewind finishes', () => {
+  const { ctx, m, addAnimation, tick } = speedFixture();
+  const animation = addAnimation(); ctx.audio.playbackRate = 2;
+  m.amEl.rewindingLines = new Set([{}]); tick(500);
+  assert.equal(animation.currentTime, 0);
+  m.amEl.rewindingLines.clear(); tick(500);
+  assert.equal(animation.currentTime, 500);
+});
+test('pause and ratechange events immediately synchronize only the active player', () => {
+  const { ctx, manager: m } = fixture();
+  ctx.MutationObserver = class { observe() {} };
+  ctx.document = { getElementById: () => null, addEventListener() {} };
+  ctx.setInterval = () => 0;
+  const handlers = [new Map(), new Map()];
+  ctx.audio2 = {};
+  [ctx.audio, ctx.audio2].forEach((player, i) => {
+    player.dataset = {}; player.addEventListener = (event, handler) => handlers[i].set(event, handler);
+  });
+  let updates = 0; m.startLyricsSync = () => {}; m.handleTimeUpdate = () => updates++;
+  m.init();
+  handlers[0].get('ratechange')(); handlers[0].get('pause')();
+  assert.equal(updates, 2);
+  handlers[1].get('ratechange')(); handlers[1].get('pause')();
+  assert.equal(updates, 2);
+  // Crossfade swaps which physical player is active.
+  ctx.audio = ctx.audio2; handlers[1].get('ratechange')();
+  assert.equal(updates, 3);
+});
+test('character glow uses its own epoch while unrelated character effects are untouched', () => {
+  const { ctx, Renderer, addAnimation, tick } = speedFixture();
+  ctx.audio.playbackRate = 0.5;
+  const char = {}, motion = addAnimation(0, null), glow = addAnimation(0, null), unrelated = addAnimation(0, null);
+  const wrapper = { classList: { contains: name => name === 'char-motion' }, querySelector: () => char };
+  motion.effect.target = wrapper; glow.effect.target = char; glow.animationName = 'char-glow';
+  unrelated.effect.target = char; unrelated.animationName = 'hover';
+  Renderer.characterAnimations.set(char, { animation: motion, start: 100, glowEpoch: 50 });
+  tick(600);
+  assert.equal(motion.currentTime, 500); assert.equal(glow.currentTime, 450);
+  assert.equal(motion.playbackRate, 0.5); assert.equal(glow.playbackRate, 0.5);
+  assert.equal(unrelated.playbackRate, 1); assert.equal(unrelated.currentTime, 0);
+});
