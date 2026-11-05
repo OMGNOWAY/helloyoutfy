@@ -118,3 +118,65 @@ test('opening full lyrics waits for saved lyrics without starting a competing re
   assert.equal(loads, 1);
   assert.equal(fetches, 0);
 });
+
+function overlapFixture(height = 200) {
+  const { ctx, manager: m } = fixture();
+  const lines = [0, 1].map((index) => ({
+    offsetTop: 100 + index * 60, height: 40,
+    classList: { contains: name => name === 'lyrics-line' || name === 'active' },
+    getBoundingClientRect() { const top = this.offsetTop - container.scrollTop; return { top, bottom: top + this.height, height: this.height }; }
+  }));
+  const container = { scrollTop: 152, classList: { contains: () => false },
+    getBoundingClientRect: () => ({ top: 0, bottom: height, height }),
+    scrollTo({ top }) { this.scrollTop = top; this.scrolls++; }, scrolls: 0 };
+  const root = { contains: line => lines.includes(line),
+    querySelectorAll: () => lines,
+    querySelector: selector => selector === '.lyrics-container' ? container : lines[0] };
+  m.amEl = { shadowRoot: root, currentPrimaryActiveLine: lines[1], isConnected: true,
+    autoScroll: true, getScrollPaddingTop: () => 8 };
+  ctx.audio.paused = false;
+  return { m, lines, container };
+}
+test('overlapping lyrics use the renderer primary line instead of the first active line', () => {
+  const { m, lines } = overlapFixture();
+  assert.equal(m.getAmCurrentLine(), lines[1]);
+});
+test('overlapping lines that fit share one scroll target and stay fully readable', () => {
+  const { m, lines, container } = overlapFixture();
+  m.updateAmJump();
+  for (const line of lines) {
+    const rect = line.getBoundingClientRect();
+    assert(rect.top >= 8 && rect.bottom <= 192);
+  }
+  m.amScrollUntil = 0; m.updateAmJump();
+  assert.equal(container.scrolls, 1);
+});
+test('an oversized overlap never pulls scrolling back to the older highlighted line', () => {
+  const { m, lines, container } = overlapFixture(100);
+  lines[0].offsetTop = 0;
+  // The renderer has already placed the primary line at its own scroll target.
+  m.updateAmJump(); m.amScrollUntil = 0; m.updateAmJump();
+  assert.equal(container.scrolls, 0);
+  assert.equal(container.scrollTop, 152);
+});
+test('follow corrections wait for renderer line animations to settle', () => {
+  const { m, container } = overlapFixture();
+  m.amEl.lineSprings = new Map([['line', {}]]);
+  m.updateAmJump(); assert.equal(container.scrolls, 0);
+  m.amEl.lineSprings.clear(); m.updateAmJump(); assert.equal(container.scrolls, 1);
+});
+test('an old primary element from a previous render is ignored', () => {
+  const { m, lines } = overlapFixture();
+  m.amEl.currentPrimaryActiveLine = { classList: { contains: () => true } };
+  assert.equal(m.getAmCurrentLine(), lines[0]);
+});
+test('large fullscreen scroll padding cannot clip an overlapping group that fits', () => {
+  const { m, lines, container } = overlapFixture();
+  lines[1].offsetTop = 240;
+  m.amEl.getScrollPaddingTop = () => 36;
+  m.updateAmJump();
+  assert(lines[0].getBoundingClientRect().top >= 8);
+  assert(lines[1].getBoundingClientRect().bottom <= 192);
+  m.amScrollUntil = 0; m.updateAmJump();
+  assert.equal(container.scrolls, 1);
+});

@@ -7309,6 +7309,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     getAmCurrentLine() {
         const el = this.amEl, root = el?.shadowRoot;
         if (!root) return null;
+        // Several lines can stay highlighted during a duet or an overlap.
+        // Follow the same primary line as the renderer, including its lookahead.
+        const primary = el.currentPrimaryActiveLine;
+        if (primary && root.contains(primary) && primary.classList.contains('lyrics-line')) return primary;
         const active = root.querySelector('.lyrics-line.active');
         if (active) return active;
         const ms = audio.currentTime * 1000 - (this.amOffsetMs || 0);
@@ -7320,8 +7324,25 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         return index >= 0 ? root.querySelector(`#lyrics-line-${index}`) : null;
     }
+    amFollowBounds(container, line) {
+        const rect = line.getBoundingClientRect();
+        const height = container.getBoundingClientRect().height;
+        const margin = Math.min(8, height * .1);
+        const active = this.amEl?.shadowRoot?.querySelectorAll?.('.lyrics-line.active') || [];
+        let top = rect.top, bottom = rect.bottom;
+        for (const other of active) {
+            const bounds = other.getBoundingClientRect();
+            if (bounds.height <= 0) continue;
+            top = Math.min(top, bounds.top); bottom = Math.max(bottom, bounds.bottom);
+        }
+        // Keep the whole group readable if it fits. Otherwise follow only the
+        // primary line so an older highlighted line cannot pull us backwards.
+        return bottom - top <= height - margin * 2
+            ? { top, bottom, height: bottom - top }
+            : rect;
+    }
     amLineNeedsScroll(container, line) {
-        const viewport = container.getBoundingClientRect(), rect = line.getBoundingClientRect();
+        const viewport = container.getBoundingClientRect(), rect = this.amFollowBounds(container, line);
         if (viewport.height <= 0 || rect.height <= 0) return false;
         const margin = Math.min(8, viewport.height * .1);
         const top = viewport.top + margin, bottom = viewport.bottom - margin;
@@ -7343,8 +7364,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             else { container.classList.remove('user-scrolling'); el.isUserScrolling = false; }
         }
         const cr = container.getBoundingClientRect(), lr = line.getBoundingClientRect();
-        const pad = typeof el.getScrollPaddingTop === 'function' ? el.getScrollPaddingTop() : 8;
-        const top = Math.max(0, Number.isFinite(line.offsetTop) ? line.offsetTop - pad : container.scrollTop + lr.top - cr.top - pad);
+        const bounds = this.amFollowBounds(container, line);
+        const margin = Math.min(8, cr.height * .1);
+        const preferredPad = typeof el.getScrollPaddingTop === 'function' ? el.getScrollPaddingTop() : 8;
+        const pad = Math.max(margin, Math.min(preferredPad, cr.height - margin - bounds.height));
+        const top = Math.max(0, (Number.isFinite(line.offsetTop) ? line.offsetTop : container.scrollTop + lr.top - cr.top) + bounds.top - lr.top - pad);
         // Move only the viewport. Calling renderer animation helpers here can
         // interfere with the focus/highlight state managed by am-lyrics.
         this.amScrollUntil = Date.now() + 550;
@@ -7360,6 +7384,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         jump?.classList.toggle('show', show);
         if (show && Date.now() >= (this.amScrollUntil || 0) && !audio.paused && el.autoScroll !== false && !el.isLoading &&
             !el.isUserScrolling && !el.isClickSeeking && !el.isProgrammaticScroll &&
+            !el.lineSprings?.size &&
             !container.classList.contains('user-scrolling')) {
             this.scrollAmLineIntoView(container, line);
         }
@@ -7761,7 +7786,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             const container = root?.querySelector('.lyrics-container');
             if (!container) return;
             const line = this.getAmCurrentLine();
-            if (line) { this.scrollAmLineIntoView(container, line, force && firstSnap); firstSnap = false; }
+            if (!force && (el.isProgrammaticScroll || el.lineSprings?.size)) return;
+            if (line && ((force && firstSnap) || this.amLineNeedsScroll(container, line))) {
+                this.scrollAmLineIntoView(container, line, force && firstSnap); firstSnap = false;
+            }
         };
         // am-lyrics resets scrollTop itself right after load, so snap a few times
         requestAnimationFrame(() => requestAnimationFrame(snap));
