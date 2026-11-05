@@ -823,3 +823,103 @@ test('playback anchors lyrics before loading and releases them only after assign
   assert.equal(ready[2], 'blob:new-source'); assert.equal(ready[3], 4);
 });
 
+function crossfadeFixture(speed = 1) {
+  let id = 0;
+  const timers = new Map(), animations = [], updates = [], prepared = [], gains = new Map();
+  const player = name => ({ name, duration: 120, currentTime: 100, volume: 1, paused: false,
+    pause() { this.paused = true; }, play: async function() { this.paused = false; }, removeAttribute() {}, load() {} });
+  const outgoing = player('outgoing'), incoming = player('incoming'); incoming.paused = true;
+  const ctx = vm.createContext({ console, Float32Array, window: {}, crossfadeDuration: 4,
+    playbackSpeed: speed, isCrossfading: false, crossfadeTickHandle: null,
+    audio: outgoing, audio2: incoming, currentVolume: 0.7, audioContext: { state: 'running', currentTime: 0 },
+    queue: [{ uid: 'old' }, { uid: 'new' }], currentTrackIndex: 0, uqReturnIndex: -1,
+    uqTake: () => false, shuffleRecord() {}, rebindAudioListeners() {},
+    document: { getElementById: id => ({ animate(frames, options) {
+      const animation = { id, frames, options, cancelled: false, cancel() { this.cancelled = true; } };
+      animations.push(animation); return animation;
+    } }), dispatchEvent() {} }, CustomEvent: class {},
+    updatePlayerUIWithoutAAB(track) { updates.push(['metadata', track.uid]); },
+    FullLyricsPlayer: { syncTrackInfo() {} },
+    lyricsManager: { updateLyricPreloads() {}, async onTrackChange() {
+      updates.push(['lyrics', ctx.queue[ctx.currentTrackIndex].uid, ctx.audio.name, ctx.audio.currentTime]);
+    } },
+    AudioEngine: { buildChainFor(player) {
+      if (!gains.has(player)) gains.set(player, { calls: [], cancelScheduledValues() {},
+        setValueAtTime(value) { this.value = value; }, setValueCurveAtTime(curve, when, duration) { this.calls.push({ duration }); } });
+      return { fadeNode: { gain: gains.get(player) } };
+    } },
+    streamingManager: { prepareTrackForPlayback: () => new Promise(resolve => prepared.push(resolve)) },
+    setTimeout(fn, ms) { const key = ++id; timers.set(key, { fn, ms }); return key; },
+    clearTimeout(key) { timers.delete(key); }
+  });
+  vm.runInContext(section('class PlayerController {', '// Legacy global wrappers') + '\nthis.Player = PlayerController;', ctx);
+  ctx.Player.getNextIndex = () => 1; ctx.Player.highlightCurrentTrack = () => {};
+  const run = key => { const timer = timers.get(key); assert(timer); timers.delete(key); timer.fn(); };
+  const start = async () => {
+    const promise = ctx.Player.startCrossfade(ctx.audio);
+    run([...timers].find(([, timer]) => timer.ms === 20)[0]);
+    await Promise.resolve();
+    return promise;
+  };
+  // Start without awaiting the provider, so tests can cancel while it is pending.
+  const launch = async () => { const promise = start(); await Promise.resolve(); await Promise.resolve(); return { promise }; };
+  return { ctx, outgoing, incoming, timers, animations, updates, prepared, gains, run, launch };
+}
+
+test('crossfade switches metadata and lyric clock at the visual midpoint while audio continues fading', async () => {
+  const f = crossfadeFixture(); const { promise } = await f.launch();
+  f.prepared[0]('new-source'); await promise;
+  const session = f.ctx.Player.crossfadeSession;
+  assert.equal(f.ctx.currentTrackIndex, 0); assert.equal(f.animations[0].frames[1].opacity, 0);
+  f.incoming.currentTime = 2; f.run(session.midpoint);
+  assert.equal(f.ctx.currentTrackIndex, 1); assert.equal(f.ctx.audio, f.incoming);
+  assert.equal(f.outgoing.paused, false); assert.equal(f.ctx.isCrossfading, true);
+  assert.deepEqual(f.updates, [['metadata', 'new'], ['lyrics', 'new', 'incoming', 2]]);
+  assert.equal(f.animations.at(-1).frames[0].opacity, 0);
+  assert.equal(f.animations.at(-1).frames[1].opacity, 1);
+  f.run(f.ctx.crossfadeTickHandle);
+  assert.equal(f.outgoing.paused, true); assert.equal(f.ctx.isCrossfading, false);
+  assert(f.animations.every(animation => animation.cancelled));
+});
+
+test('visual crossfade duration follows playback speed and reduced motion skips animations', async () => {
+  const f = crossfadeFixture(2); const { promise } = await f.launch();
+  f.prepared[0]('new-source'); await promise;
+  assert.equal(f.animations[0].options.duration, 1010);
+  assert.equal(f.gains.get(f.incoming).calls[0].duration, 2);
+  f.ctx.Player.cancelCrossfade();
+  f.ctx.window.matchMedia = () => ({ matches: true });
+  const session = { animations: [] };
+  f.ctx.Player.fadeCrossfadeVisuals(session, false, 1000);
+  assert.equal(session.animations.length, 0);
+});
+
+for (const afterMidpoint of [false, true]) test(`cancelling crossfade ${afterMidpoint ? 'after' : 'before'} midpoint restores visuals and keeps the active song`, async () => {
+  const f = crossfadeFixture(); const { promise } = await f.launch();
+  f.prepared[0]('new-source'); await promise;
+  const session = f.ctx.Player.crossfadeSession;
+  const lateMidpoint = f.timers.get(session.midpoint).fn, lateFinish = f.timers.get(f.ctx.crossfadeTickHandle).fn;
+  if (afterMidpoint) f.run(session.midpoint);
+  f.ctx.Player.cancelCrossfade();
+  assert.equal(f.ctx.audio, afterMidpoint ? f.incoming : f.outgoing);
+  assert.equal(f.ctx.audio2.paused, true);
+  assert.equal(f.gains.get(f.ctx.audio).value, 1);
+  assert(f.animations.every(animation => animation.cancelled));
+  f.ctx.crossfadeTickHandle = 999; // A newer transition owns this timer now.
+  const count = f.updates.length; lateMidpoint(); lateFinish();
+  assert.equal(f.ctx.crossfadeTickHandle, 999);
+  assert.equal(f.updates.length, count); assert.equal(f.ctx.isCrossfading, false);
+});
+
+test('a cancelled preparation cannot replace a newer crossfade or animate its song', async () => {
+  const f = crossfadeFixture(); const first = await f.launch();
+  f.ctx.Player.cancelCrossfade(); const second = await f.launch();
+  const currentSession = f.ctx.Player.crossfadeSession;
+  f.prepared[0]('stale-source'); await first.promise;
+  assert.equal(f.ctx.Player.crossfadeSession, currentSession);
+  assert.notEqual(f.incoming.src, 'stale-source'); assert.equal(f.animations.length, 0);
+  f.prepared[1]('fresh-source'); await second.promise;
+  assert.equal(f.incoming.src, 'fresh-source'); assert(f.animations.length > 0);
+  f.ctx.Player.cancelCrossfade();
+});
+

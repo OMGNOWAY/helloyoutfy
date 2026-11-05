@@ -2959,6 +2959,25 @@ isPlaying2 = false;
     return next;
   }
 
+  static fadeCrossfadeVisuals(session, incoming, duration) {
+    session.animations?.forEach(animation => animation.cancel());
+    session.animations = [];
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const ids = ['playerTitle', 'playerArtist', 'playerImg', 'miniTitle', 'miniArtist', 'miniImg',
+      'heroTitle', 'heroArtist', 'heroArt', 'fullLyricsTitle', 'fullLyricsArtist', 'fullLyricsArt',
+      'lyricsContent', 'fullLyricsContent', 'playerEmbedLyricsContent'];
+    const nodes = ids.map(id => document.getElementById(id));
+    const pip = window.documentPictureInPicture?.window?.document;
+    if (pip) nodes.push(...['pipTitle', 'pipArtist', 'pipArt', 'pipLyrics', 'pipCurrentLine'].map(id => pip.getElementById(id)));
+    for (const node of nodes) {
+      if (!node?.animate || reduced) continue;
+      session.animations.push(node.animate(
+        [{ opacity: incoming ? 0 : 1 }, { opacity: incoming ? 1 : 0 }],
+        { duration, easing: 'ease-in-out', fill: 'forwards' }
+      ));
+    }
+  }
+
   static async startCrossfade(a) {
     if (isCrossfading || Number(crossfadeDuration) <= 0) return;
     try { const j = window.YoutifyChat && window.YoutifyChat.jam; if (j && j.id && !j.host) return; } catch (e) {}
@@ -2985,9 +3004,13 @@ isPlaying2 = false;
 
     const outChain = AudioEngine.buildChainFor(fadingOut);
     const inChain = AudioEngine.buildChainFor(fadingIn);
+    const session = { animations: [], midpoint: null };
+    PlayerController.crossfadeSession = session;
+    const stale = () => PlayerController.crossfadeSession !== session || !isCrossfading;
 
     try {
       if (audioContext.state !== 'running') await audioContext.resume();
+      if (stale()) return;
 
       fadingIn.volume = currentVolume;
       fadingOut.volume = currentVolume;
@@ -3000,16 +3023,19 @@ isPlaying2 = false;
       fadingIn.removeAttribute('src');
       fadingIn.load();
       await new Promise(r => setTimeout(r, 20));
+      if (stale()) return;
 
       const audioSrc = await streamingManager.prepareTrackForPlayback(nextTrack);
-      if (!isCrossfading) return;
+      if (stale()) return;
 
       fadingIn.src = audioSrc;
       fadingIn.currentTime = 0;
       fadingOut.playbackRate = playbackSpeed;
       fadingIn.playbackRate = playbackSpeed;
       await fadingIn.play();
+      if (stale()) return;
     } catch (err) {
+      if (stale()) return;
       console.error('Crossfade start failed:', err);
       try { fadingIn.pause(); } catch (e) {}
       inChain.fadeNode.gain.cancelScheduledValues(audioContext.currentTime);
@@ -3019,6 +3045,7 @@ isPlaying2 = false;
       fadingOut.volume = currentVolume;
       fadingIn.volume = currentVolume;
       isCrossfading = false;
+      PlayerController.crossfadeSession = null;
       return;
     }
 
@@ -3042,30 +3069,40 @@ isPlaying2 = false;
     outChain.fadeNode.gain.setValueCurveAtTime(outCurve, now, fadeDurationSeconds);
     inChain.fadeNode.gain.setValueCurveAtTime(inCurve, now, fadeDurationSeconds);
 
-    // Only use a timer to update JS state after the audio-thread fade is already complete.
-    crossfadeTickHandle = setTimeout(() => {
-      crossfadeTickHandle = null;
-      if (!isCrossfading || audio !== fadingOut || audio2 !== fadingIn) return;
-
-      const t = audioContext.currentTime;
-      outChain.fadeNode.gain.setValueAtTime(0, t);
-      inChain.fadeNode.gain.setValueAtTime(1, t);
-
+    // Switch ownership at the visual midpoint, so lyrics use the incoming
+    // audio clock while both physical players finish their scheduled fade.
+    const half = fadeDurationMs / 2;
+    PlayerController.fadeCrossfadeVisuals(session, false, half + 10);
+    session.midpoint = setTimeout(() => {
+      session.midpoint = null;
+      if (stale() || audio !== fadingOut || audio2 !== fadingIn) return;
       audio = fadingIn;
       audio2 = fadingOut;
       audio.volume = currentVolume;
-      audio2.pause();
       audio2.volume = currentVolume;
       if (!uqTake(nextIndex)) uqReturnIndex = -1;
       shuffleRecord(nextIndex);
       currentTrackIndex = nextIndex;
       lyricsManager?.updateLyricPreloads();
-      isCrossfading = false;
-
       rebindAudioListeners();
       updatePlayerUIWithoutAAB(queue[currentTrackIndex]);
+      FullLyricsPlayer.syncTrackInfo();
+      if (lyricsManager) void lyricsManager.onTrackChange().catch(error => console.warn('Lyrics track change failed', error));
       PlayerController.highlightCurrentTrack();
+      PlayerController.fadeCrossfadeVisuals(session, true, half);
       try { document.dispatchEvent(new CustomEvent('youtify:crossfade-swapped')); } catch (e) {}
+    }, half + 10);
+
+    crossfadeTickHandle = setTimeout(() => {
+      if (stale()) return;
+      crossfadeTickHandle = null;
+      const t = audioContext.currentTime;
+      outChain.fadeNode.gain.setValueAtTime(0, t);
+      inChain.fadeNode.gain.setValueAtTime(1, t);
+      fadingOut.pause();
+      session.animations.forEach(animation => animation.cancel());
+      PlayerController.crossfadeSession = null;
+      isCrossfading = false;
     }, fadeDurationMs + 100);
   }
 
@@ -3076,6 +3113,12 @@ isPlaying2 = false;
   // audio2 and overwrite currentTrackIndex out from under whatever the user just navigated
   // to, several seconds after they moved on.
   static cancelCrossfade() {
+    const session = PlayerController.crossfadeSession;
+    PlayerController.crossfadeSession = null;
+    if (session) {
+      clearTimeout(session.midpoint);
+      session.animations.forEach(animation => animation.cancel());
+    }
     if (crossfadeTickHandle !== null) {
       clearTimeout(crossfadeTickHandle);
       crossfadeTickHandle = null;
