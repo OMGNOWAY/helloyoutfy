@@ -7864,7 +7864,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (!Number.isFinite(epoch) || typeof animation.updatePlaybackRate !== 'function') continue;
             const end = Number(animation.effect?.getComputedTiming().endTime);
             if (!Number.isFinite(end) || end <= 0) continue;
-            const position = Math.max(0, Math.min(mediaTimeMs - epoch, end));
+            // Prepared words use negative time to wait before their fill.
+            // Clamping to zero starts them early and makes drift correction
+            // repeatedly rewind the fill until the word actually starts.
+            const position = Math.min(mediaTimeMs - epoch, end);
             const previous = states.get(animation);
             const changed = !previous || previous.rate !== rate || previous.epoch !== epoch;
             if (animation.playbackRate !== rate) animation.updatePlaybackRate(rate);
