@@ -16138,29 +16138,12 @@ class WinterSnakeGame {
   function pause(){if(!dialog?.open||game.over)return;running=!running;cancelTimer();status(running?'Collect the berries.':'Paused');draw();if(running)timer=setTimeout(tick,Math.max(80,145-game.score*3));}
   function close(){if(!dialog)return;cancelTimer();running=false;if(dialog.open)dialog.close();if(restoreFocus?.isConnected)restoreFocus.focus();}
   function open(){
-    if(dialog?.open){canvas.focus();return;}
-    restoreFocus=document.activeElement;
-    if(!dialog){
-      dialog=document.createElement('dialog');dialog.className='winter-snake';dialog.setAttribute('aria-labelledby','winterSnakeTitle');
-      dialog.innerHTML='<header><h2 id="winterSnakeTitle">A little detour 🐍</h2><button type="button" data-close aria-label="Close Snake">✕</button></header><div class="snake-stats"><span>Score <strong data-score>0</strong></span><span>Best <strong data-best>0</strong></span></div><canvas width="480" height="480" tabindex="0" role="img" aria-label="Snake game board"></canvas><div class="snake-status" role="status"></div><div class="snake-actions"><button type="button" data-start>New game</button><button type="button" data-pause>Resume</button></div><p class="snake-note">Arrows or WASD to steer. Space or P pauses. Enter starts a new round. Swipe or use the buttons on touch screens.</p><div class="snake-pad"><button type="button" data-dir="up" aria-label="Move up">↑</button><button type="button" data-dir="left" aria-label="Move left">←</button><button type="button" data-dir="down" aria-label="Move down">↓</button><button type="button" data-dir="right" aria-label="Move right">→</button></div>';
-      document.body.append(dialog);canvas=dialog.querySelector('canvas');context=canvas.getContext('2d');
-      game=new WinterSnakeGame();
-      dialog.querySelector('[data-close]').addEventListener('click',close);dialog.querySelector('[data-start]').addEventListener('click',start);dialog.querySelector('[data-pause]').addEventListener('click',pause);
-      dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('close',()=>{cancelTimer();running=false;});
-      dialog.querySelectorAll('[data-dir]').forEach(button=>button.addEventListener('click',()=>{const d=directions[button.dataset.dir];game.steer(...d);canvas.focus();}));
-      let down=null;
-      canvas.addEventListener('pointerdown',event=>{down={x:event.clientX,y:event.clientY};canvas.setPointerCapture(event.pointerId);});
-      canvas.addEventListener('pointerup',event=>{if(!down)return;const dx=event.clientX-down.x,dy=event.clientY-down.y;down=null;if(Math.max(Math.abs(dx),Math.abs(dy))<12)return;game.steer(...(Math.abs(dx)>Math.abs(dy)?[Math.sign(dx),0]:[0,Math.sign(dy)]));});
-      canvas.addEventListener('pointercancel',()=>{down=null;});
-    }
-    game.reset();running=false;dialog.showModal();status('Secret found. Press New game or Enter to play.');draw();canvas.focus();
+    
   }
   window.SnakeEasterEgg={open,close};
   let clicks=[];
   document.addEventListener('click',event=>{
-    if(event.shiftKey&&event.target.closest?.('#logo')){event.stopPropagation();open();return;}
-    if(!event.target.closest?.('#brandversion'))return;
-    event.stopPropagation();const now=Date.now();clicks=clicks.filter(time=>now-time<1800);clicks.push(now);if(clicks.length===3){clicks=[];open();}
+    
   },true);
   document.addEventListener('keydown',event=>{
     if(dialog?.open){
