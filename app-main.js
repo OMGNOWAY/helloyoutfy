@@ -1215,9 +1215,7 @@ class YouTubeAPI {
   constructor(keys, hosts) {
     this.keys = [].concat(keys || []).filter(Boolean);   // string or array
     this.hosts = hosts || [
-      'https://thisisatestthing-2.onrender.com',
-      'https://thisisatestthing-1.onrender.com',
-      'https://thisisatestthing.onrender.com',
+      'https://foryoutify.vercel.app',
     ];
     this.keyIdx = 0;
     this.hostIdx = 0;
