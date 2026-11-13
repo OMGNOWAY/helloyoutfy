@@ -10298,7 +10298,7 @@ function applyMuted(on) {
     if (blocked) { i.value = ""; i.placeholder = state.kicked ? "You've been removed…" : "You've been muted…"; }
     else i.placeholder = state.view === "thread" ? ("message " + (state.openThread?.name || "")) : "message the room…";
   }
-  const pb = $("ycPictureBtn"); if (pb) pb.disabled = blocked;
+  const pb = $("ycPictureBtn"); if (pb) pb.disabled = blocked || state.sending;
   const shb = $("ycShareBtn"); if (shb) shb.disabled = blocked;
   const eb = $("ycEmojiBtn");    if (eb) eb.disabled = blocked;
   const sb = $("ycSendBtn");    if (sb) sb.disabled = blocked;
@@ -10351,6 +10351,12 @@ function ensureSession() {
 function endSessionLocal() {
   if (!sessionStarted) return;
   sessionStarted = false;
+  chatSession++;
+  pictureDestination = null;
+  chatDrafts.clear();
+  chatWrites.clear();
+  threadPreviews.clear();
+  restoreChatDraft(null);
   try { if (jam.id && jam.host) endJam(); else if (jam.id) leaveJam(); } catch (e) {}
   try { stopTyping(); } catch (e) {}
   try { if (meRef) dbfns.remove(meRef); } catch (e) {}
@@ -11591,9 +11597,9 @@ async function loadOlderThread() {
 
 function openThread(uid, name) {
   const { ref, query, limitToLast, onValue } = dbfns;
-  // a reply/edit belongs to the conversation it was started in
-  cancelCompose();
-  closeMentionPop();
+  const previous = chatDestination();
+  rememberChatDraft(previous);
+  closeChatPopups();
   stopTyping();                                   // retract it from the old thread
   state.openThread = { uid, name };
   listenTyping(threadId(state.uid, uid));
@@ -11626,7 +11632,7 @@ function openThread(uid, name) {
      are fetched once, on demand, when you scroll up. */
   threadPage = { tid, uid, older: [], live: [], loading: false, hasMore: true };
   openThreadSynced(tid, uid);
-  showView("thread");
+  showView("thread", previous, true);
 }
 
 /* Works out how much actually needs downloading, then attaches the listener. */
@@ -12063,15 +12069,23 @@ function myMentionRegex() {
 
 /* Works out which uids a message actually mentions. Done at send time so the
    list is stored on the message and stays right even if someone renames. */
+
 function findMentions(text) {
-  const str = String(text || "");
-  const hits = [];
-  mentionCandidates().forEach((c) => {
-    const re = new RegExp("(^|[^\\w@])@" + escapeRe(c.name) + "(?![\\w])", "i");
-    if (re.test(str)) hits.push(c.uid);
-  });
-  if (/(^|[^\w@])@(everyone|here)(?![\w])/i.test(str)) hits.push("@everyone");
-  return [...new Set(hits)];
+  const candidates = new Map();
+  for (const { uid, name } of mentionCandidates()) {
+    const key = name.toLowerCase();
+    if (!candidates.has(key)) candidates.set(key, []);
+    candidates.get(key).push(uid);
+  }
+  const names = ["everyone", "here", ...candidates.keys()].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_@])@(${names.map(escapeRe).join("|")})(?![\\p{L}\\p{N}_])`, "giu");
+  const hits = new Set();
+  for (const match of String(text || "").replace(CHAT_CODE, chunk => chunk.startsWith("`") ? " " : chunk).matchAll(pattern)) {
+    const key = match[2].toLowerCase();
+    if (key === "everyone" || key === "here") hits.add("@everyone");
+    else for (const uid of candidates.get(key) || []) hits.add(uid);
+  }
+  return [...hits];
 }
 
 function mentionsMe(m) {
@@ -12517,15 +12531,23 @@ function openLightbox(src) {
   img.src = src;
   if (dl) {
     dl.href = src;
-    const isGif = /^data:image\/gif/i.test(src) || /\.gif(\?|#|$)/i.test(src) || /giphy\.com|tenor\.com/i.test(src);
-    dl.setAttribute("download", isGif ? "youtify-image.gif" : "youtify-image.jpg");
+    const formats = { jpeg: "jpg", jpg: "jpg", png: "png", webp: "webp", gif: "gif", bmp: "bmp", avif: "avif" };
+    const format = /^data:image\/([a-z]+)[;,]/i.exec(src)?.[1] ||
+      /\.(jpe?g|png|webp|gif|bmp|avif)(?:[?#]|$)/i.exec(src)?.[1] ||
+      (looksLikeGifUrl(src) ? "gif" : "");
+    const extension = Object.hasOwn(formats, format.toLowerCase()) ? formats[format.toLowerCase()] : "";
+    dl.setAttribute("download", extension ? `youtify-image.${extension}` : "youtify-image");
   }
   box.classList.add("show");
 }
 function closeLightbox(e) {
   if (e && e.target && e.target.id === "ycLightboxImg") return;
   const box = $("ycLightbox");
-  if (box) { box.classList.remove("show"); $("ycLightboxImg").src = ""; }
+  if (box) {
+    box.classList.remove("show");
+    $("ycLightboxImg")?.removeAttribute("src");
+    $("ycLightboxDl")?.removeAttribute("href");
+  }
 }
 
 /* ---------- rendering ---------- */
@@ -13182,10 +13204,56 @@ function groupGone(gid) {
   if (state.view === "dms") renderThreads();
 }
 
-/* newest-message preview shown in everyone's list */
-function touchGroup(gid, preview, ts) {
-  return dbfns.update(dbfns.ref(db, `${ROOT}/groups/${gid}/info/last`), {
-    text: preview, ts, from: state.uid, name: state.name
+
+/* A preview write can fail after the message is already stored. Keep it separate
+   and retry only the newest preview for that conversation. */
+const threadPreviews = new Map();
+
+function queueThreadPreview(destination, write) {
+  const { tid } = destination;
+  const busy = threadPreviews.has(tid);
+  const entry = { write };
+  threadPreviews.set(tid, entry);
+  if (!busy) flushThreadPreview(destination, entry);
+}
+
+async function flushThreadPreview(destination, entry) {
+  const { tid } = destination;
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!sameChatSession(destination) || threadPreviews.get(tid) !== entry) return;
+      try {
+        await entry.write();
+        return;
+      } catch (err) {
+        console.warn("[chat] preview update failed", err);
+        if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 750));
+      }
+    }
+  } finally {
+    const latest = threadPreviews.get(tid);
+    if (latest === entry) threadPreviews.delete(tid);
+    else if (latest && sameChatSession(destination)) flushThreadPreview(destination, latest);
+  }
+}
+
+function updateThreadPreview(destination, payload, text) {
+  const { other, uid, name, otherName } = destination;
+  const { ref, update } = dbfns;
+  const root = ref(db, ROOT);
+  const preview = isGroupId(other) ? {
+    [`groups/${other}/info/last/text`]: text,
+    [`groups/${other}/info/last/ts`]: payload.ts,
+    [`groups/${other}/info/last/from`]: uid,
+    [`groups/${other}/info/last/name`]: name
+  } : Object.fromEntries([[uid, other, otherName], [other, uid, name]].flatMap(([owner, peer, label]) => {
+    const index = `dmIndex/${owner}/${peer}`;
+    return Object.entries({ name: label, lastText: text, lastTs: payload.ts, lastFrom: uid })
+      .map(([field, value]) => [`${index}/${field}`, value]);
+  }));
+  queueThreadPreview(destination, () => {
+    if ((allThreads()[other]?.lastTs || 0) > payload.ts) return;
+    return update(root, preview);
   });
 }
 
@@ -13454,14 +13522,18 @@ function markLoaded() {
 }
 
 /* ---------- views ---------- */
-function showView(v) {
-  // Retract typing before anything clears the scope we'd be retracting from.
-  if (v !== state.view) stopTyping();
+function showView(v, previous = chatDestination(), draftSaved = false) {
+  const changed = v !== state.view;
+  if (changed) {
+    if (!draftSaved) rememberChatDraft(previous);
+    stopTyping();
+    closeChatPopups();
+  }
 
   // Leaving a DM for good? stop listening, otherwise its messages keep
   // arriving in the background and getting silently marked as read.
-  if ((state.view === "thread" || state.view === "group") && v !== "thread" && v !== "profile" && v !== "group" && state.unsubThread) {
-    try { state.unsubThread(); } catch (e) {}
+  if (v !== "thread" && v !== "profile" && v !== "group" && v !== "me" && state.openThread) {
+    try { state.unsubThread?.(); } catch (e) {}
     if (state.unsubReads) { try { state.unsubReads(); } catch (e) {} }
     state.unsubThread = null;
     state.unsubReads = null;
@@ -13469,10 +13541,11 @@ function showView(v) {
     state.openThread = null;
     threadPage = null;
   }
-  if (v !== state.view) { cancelCompose(); closeMentionPop(); closeEmoji(); }
   closeReactPicker();
   if (v !== "me" && v !== "profile") state.lastView = v;
   state.view = v;
+  const destination = chatDestination();
+  if (changed || previous?.path !== destination?.path) restoreChatDraft(destination);
   const map = {
     gate: "ycViewGate", room: "ycViewRoom", announce: "ycViewNews", dms: "ycViewDms",
     thread: "ycViewThread", people: "ycViewPeople", me: "ycViewMe",
@@ -13488,14 +13561,16 @@ function showView(v) {
   });
 
   const comp = $("ycComposer");
-  if (comp) comp.style.display = (v === "room" || v === "thread") ? "flex" : "none";
+  if (comp) comp.style.display = destination ? "flex" : "none";
   const inp = $("ycInput");
-  if (inp) inp.placeholder = v === "thread" ? ("message " + (state.openThread?.name || "")) : "message the room…";
-  if (state.openThread?.name === "System") {inp.disabled = true; comp.style.display = "none";} else {inp.disabled = false; comp.style.display = (v === "room" || v === "thread") ? "flex" : "none";}
+  if (inp) {
+    inp.disabled = !destination || state.muted || state.kicked;
+    inp.placeholder = v === "thread" ? ("message " + (state.openThread?.name || "")) : "message the room…";
+  }
 
   renderVisibleChat();
-  if (v === "room")   { markRoomRead(); scrollToBottom($("ycRoomScroll")); }
-  if (v === "announce") { markNewsRead(); scrollToBottom($("ycNewsScroll"));  }
+  if (v === "room")   { if (canSee("room")) markRoomRead(); scrollToBottom($("ycRoomScroll")); }
+  if (v === "announce") { if (canSee("announce")) markNewsRead(); scrollToBottom($("ycNewsScroll")); }
   // typing is scoped to whichever conversation you're looking at
   if (v === "room" || v === "thread") {
     const scope = v === "room" ? "room" : (state.openThread && threadId(state.uid, state.openThread.uid));
@@ -13503,7 +13578,7 @@ function showView(v) {
   } else if (state.typingScope) {
     listenTyping(null);
   }
-  if (v === "thread" && state.openThread) { markThreadRead(state.openThread.uid); scrollToBottom($("ycThreadScroll")); } 
+  if (v === "thread" && state.openThread) { if (canSee("thread")) markThreadRead(state.openThread.uid); scrollToBottom($("ycThreadScroll")); }
   if (v === "me") {
     refreshOwnAvatars();
     paintShareSwitch();
@@ -13645,14 +13720,19 @@ async function saveProfile() {
   showView(state.lastView);
 }
 
+
 /* ---------- sending pictures ---------- */
+let pictureDestination = null;
 function sendPicture() {
-  if (!state.ready || !state.name) return;
-  if (!sessionStarted) { say("You need to log in to chat."); return; }
-  if (state.kicked) { say("You've been removed from the chat."); return; }
-  if (state.muted)  { say("You're muted in chat."); return; }
+  const destination = chatDestination();
+  if (!canWriteChat(destination) || chatWrites.has(destination.path)) return;
+  if (compose.mode === "edit") { say("Finish or cancel your edit first."); return; }
   const el = $("ycPictureInput");
-  if (el) { el.value = ""; el.click(); }   // reset first so the same file can be picked twice
+  if (el) {
+    pictureDestination = { destination, replyTo: replyPayload(), draft: readChatDraft() };
+    el.value = "";
+    el.click();
+  }
 }
 
 function setUploading(on, text) {
@@ -13661,88 +13741,131 @@ function setUploading(on, text) {
   if (bar) bar.classList.toggle("on", !!on);
   const t = $("ycUploadingText");
   if (t && text) t.textContent = text;
-  const b = $("ycPictureBtn"); if (b) b.disabled = !!on;
-  const shb2 = $("ycShareBtn"); if (shb2) shb2.disabled = !!on;
-  const s = $("ycSendBtn");    if (s) s.disabled = !!on;
+  const b = $("ycPictureBtn"); if (b) b.disabled = !!on || state.muted || state.kicked;
 }
 
-async function handlePictureFile(file) {
+async function handlePictureFile(file, selection) {
   if (!file) return;
-  if (state.sending) { say("Hang on, still sending the last one."); return; }
-  if (!state.ready || !state.name) return;
-  if (!sessionStarted) { say("You need to log in to chat."); return; }
-  if (state.kicked) { say("You've been removed from the chat."); return; }
-  if (state.muted)  { say("You're muted in chat."); return; }
+  const destination = selection ? selection.destination : chatDestination();
+  if (!canWriteChat(destination)) return;
+  if (!selection && compose.mode === "edit") { say("Finish or cancel your edit first."); return; }
+  if (state.sending || chatWrites.has(destination.path)) {
+    say("Hang on, still sending the last one.");
+    return;
+  }
 
-  const target = (state.view === "thread" && state.openThread) ? { ...state.openThread } : null;
-
-  /* Pictures used to ignore an open reply entirely: you'd hit Reply, attach an
-     image, and it would post as a plain message. Snapshot it now because the
-     resize/upload is async. */
-  const replyTarget = (compose.mode === "reply" && compose.target) ? {
-    key:  compose.target.key,
-    uid:  compose.target.uid || null,
-    name: compose.target.name || nameFor(compose.target.uid) || "someone",
-    text: excerptOf(compose.target)
-  } : null;
-
+  const replyTo = selection ? selection.replyTo : replyPayload();
+  const draft = selection ? selection.draft : readChatDraft();
+  const write = {};
+  chatWrites.set(destination.path, write);
   setUploading(true, "resizing picture…");
   try {
     const { dataUrl: image, gif } = await prepareImage(file, {
       maxDim: IMG_MAX_DIM, maxBytes: IMG_MAX_BYTES, gifMaxBytes: GIF_MAX_BYTES
     });
+    if (!canWriteChat(destination)) return;
     setUploading(true, gif ? "sending GIF…" : "sending picture…");
-
-    const { ref, push, update } = dbfns;
     const payload = {
-      uid: state.uid,
-      name: state.name,
-      kind: "image",
-      image,
-      gif: !!gif,
-      text: "",
-      ts: Date.now()
+      uid: destination.uid, name: destination.name, kind: "image", image, gif: !!gif, text: "", ts: Date.now()
     };
-    if (replyTarget) payload.replyTo = replyTarget;
-
-    if (target) {
-      const tid = threadId(state.uid, target.uid);
-      const pushed = await push(ref(db, `${msgsPath(tid)}`), payload);
-      bumpThreadMeta(tid, pushed && pushed.key);   // tells other clients their cache is stale
-      const preview = gif ? "GIF" : "📷 Picture";
-      if (isGroupId(target.uid)) {
-        await touchGroup(target.uid, preview, payload.ts);
-      } else {
-        await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${target.uid}`), {
-          name: target.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-        });
-        await update(ref(db, `${ROOT}/dmIndex/${target.uid}/${state.uid}`), {
-          name: state.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-        });
-      }
-      markThreadRead(target.uid, payload.ts);
-    } else {
-      await push(ref(db, `${ROOT}/room`), payload);
-    }
-    if (replyTarget && compose.mode === "reply") cancelCompose();
+    if (replyTo) payload.replyTo = replyTo;
+    await postChatMessage(destination, payload, gif ? "GIF" : "📷 Picture");
+    if (replyTo) finishChatDraft(destination, draft, false);
   } catch (err) {
     console.error("[chat] picture failed", err);
-    say(err && err.message ? "Picture didn't send — " + err.message : "Picture didn't send.");
+    if (sameChatSession(destination)) say(err?.message ? "Picture didn't send — " + err.message : "Picture didn't send.");
   } finally {
+    if (chatWrites.get(destination.path) === write) chatWrites.delete(destination.path);
     setUploading(false);
-    const el = $("ycPictureInput"); if (el) el.value = "";
   }
 }
 
-/* ---------- reply & edit ---------- */
-/* compose.mode is null, "reply" or "edit" */
+/* ---------- reply, edit and drafts ---------- */
 const compose = { mode: null, target: null };
+const chatDrafts = new Map();
+const chatWrites = new Map();
+let chatSession = 0;
 
-function msgPath(key) {
-  if (state.view === "thread" && state.openThread) {
-    return `${msgsPath(threadId(state.uid, state.openThread.uid))}/${key}`;
+function chatDestination() {
+  const { uid, name, authUid, view, openThread } = state;
+  if (view === "room") return { uid, name, authUid, session: chatSession, path: `${ROOT}/room` };
+  if (view !== "thread" || !openThread || openThread.uid === "system" || openThread.name === "System") return null;
+  const tid = threadId(uid, openThread.uid);
+  return { uid, name, authUid, session: chatSession, tid, other: openThread.uid, otherName: openThread.name || nameFor(openThread.uid), path: msgsPath(tid) };
+}
+
+function sameChatSession(destination) {
+  return sessionStarted && destination?.session === chatSession &&
+    destination.uid === state.uid && destination.authUid === state.authUid;
+}
+
+function canWriteChat(destination) {
+  if (!destination) { say("Open the Room, a DM, or a group first."); return false; }
+  if (!state.ready || !state.name) return false;
+  if (!sameChatSession(destination)) { say("You need to log in to chat."); return false; }
+  if (state.kicked) { say("You've been removed from the chat."); return false; }
+  if (state.muted) { say("You're muted in chat."); return false; }
+  if (destination.other && isGroupId(destination.other) && !state.groups[destination.other]) {
+    say("This group chat is no longer available.");
+    return false;
   }
-  return `${ROOT}/room/${key}`;
+  return true;
+}
+
+function isCurrentChat(destination) {
+  return sameChatSession(destination) && chatDestination()?.path === destination.path;
+}
+
+function readChatDraft() {
+  return { value: $("ycInput")?.value || "", mode: compose.mode, target: compose.target };
+}
+
+function rememberChatDraft(destination) {
+  if (!destination) return;
+  const draft = readChatDraft();
+  if (draft.value || draft.mode) chatDrafts.set(destination.path, draft);
+  else chatDrafts.delete(destination.path);
+}
+
+function restoreChatDraft(destination) {
+  const draft = chatDrafts.get(destination?.path);
+  const input = $("ycInput");
+  if (input) input.value = draft?.value || "";
+  compose.mode = draft?.mode || null;
+  compose.target = draft?.target || null;
+  paintComposeChip();
+  autoGrow();
+}
+
+function finishChatDraft(destination, sent, clearText) {
+  if (!sent || !sameChatSession(destination)) return;
+  const current = isCurrentChat(destination);
+  const draft = current ? readChatDraft() : chatDrafts.get(destination.path);
+  if (!draft || draft.mode !== sent.mode || draft.target !== sent.target || (clearText && draft.value !== sent.value)) return;
+  const value = clearText ? "" : draft.value;
+  if (value) chatDrafts.set(destination.path, { value, mode: null, target: null });
+  else chatDrafts.delete(destination.path);
+  if (current) {
+    restoreChatDraft(destination);
+    if (!value) stopTyping();
+  }
+}
+
+function replyPayload() {
+  const target = compose.mode === "reply" && compose.target;
+  return target ? {
+    key: target.key, uid: target.uid || null,
+    name: target.name || nameFor(target.uid) || "someone", text: excerptOf(target)
+  } : null;
+}
+
+async function postChatMessage(destination, payload, preview) {
+  const { ref, push } = dbfns;
+  const pushed = await push(ref(db, destination.path), payload);
+  if (!destination.tid || !sameChatSession(destination)) return;
+  bumpThreadMeta(destination.tid, pushed?.key);
+  updateThreadPreview(destination, payload, preview);
+  if (isCurrentChat(destination) && canSee("thread")) markThreadRead(destination.other, payload.ts);
 }
 
 function excerptOf(m) {
@@ -13790,36 +13913,29 @@ function cancelCompose() {
   if (i && wasEdit) { i.value = ""; autoGrow(); i.focus(); }
 }
 
-async function saveEdit(text) {
-  const m = compose.target;
+
+async function saveEdit(destination, message, text) {
   const { ref, update } = dbfns;
   const mentions = findMentions(text);
-  try {
-    await update(ref(db, msgPath(m.key)), {
-      text,
-      edited: Date.now(),
-      mentions: mentions.length ? mentions : null
-    });
-    bumpOpenThreadMeta();
-    // keep the DM list preview honest if this was the newest message
-    if (state.view === "thread" && state.openThread) {
-      const other = state.openThread.uid;
-      const t = allThreads()[other];
-      if (t && Math.abs((t.lastTs || 0) - (m.ts || 0)) < 1000) {
-        const preview = text.slice(0, 60);
-        if (isGroupId(other)) {
-          await update(ref(db, `${ROOT}/groups/${other}/info/last`), { text: preview });
-        } else {
-          await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${other}`), { lastText: preview });
-          await update(ref(db, `${ROOT}/dmIndex/${other}/${state.uid}`), { lastText: preview });
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[chat] edit failed", err);
-    say("Couldn't save that edit.");
-  }
-  cancelCompose();
+  await update(ref(db, `${destination.path}/${message.key}`), {
+    text, edited: Date.now(), mentions: mentions.length ? mentions : null
+  });
+  const { tid, other, uid } = destination;
+  if (!tid || !sameChatSession(destination)) return;
+  bumpThreadMeta(tid);
+  const currentPreview = () => {
+    const thread = allThreads()[other];
+    return !!thread && thread.lastTs === message.ts && thread.lastFrom === uid;
+  };
+  if (!currentPreview()) return;
+  const preview = text.slice(0, 60);
+  const patch = isGroupId(other) ? { [`groups/${other}/info/last/text`]: preview } : {
+    [`dmIndex/${uid}/${other}/lastText`]: preview,
+    [`dmIndex/${other}/${uid}/lastText`]: preview
+  };
+  queueThreadPreview(destination, () => {
+    if (currentPreview()) return update(ref(db, ROOT), patch);
+  });
 }
 
 function jumpToMessage(key) {
@@ -13885,6 +14001,8 @@ function rememberEmoji(ch) {
 /* A completed :shortcode: becomes the emoji even if the popup was never used.
    Typing the closing colon makes the popup let go (it tracks the last colon),
    so without this ":eyes:" went out as literal text. */
+const CHAT_CODE = /\\.|`{3}[\s\S]*?(?:`{3}|$)|(`{1,2})(?!`)[^\n]*?(?:\1(?!`)|(?=\n|$))/g;
+const CHAT_CODE_OR_SHORTCODE = new RegExp(CHAT_CODE.source + "|:([A-Za-z0-9_+-]{2,}):", "g");
 let shortcodeMap = null;
 function shortcodeToEmoji(text) {
   const str = String(text || "");
@@ -13901,7 +14019,7 @@ function shortcodeToEmoji(text) {
       });
     } catch (e) { shortcodeMap = new Map(); }
   }
-  return str.replace(/:([A-Za-z0-9_+-]{2,}):/g, (whole, name) => shortcodeMap.get(slugEmoji(name)) || whole);
+  return str.replace(CHAT_CODE_OR_SHORTCODE, (whole, ticks, name) => name ? shortcodeMap.get(slugEmoji(name)) || whole : whole);
 }
 
 /* Char -> official name, built from the picker's dataset the first time a
@@ -13942,11 +14060,14 @@ function buildEmoji() {
 
 function emojiSetView() {
   const q = (($("ycEmojiSearch") && $("ycEmojiSearch").value) || "").trim().toLowerCase();
-  if (q) {
-    // straight scan over ~1900 short strings — under a millisecond
+  const glyph = value => value.replace(/\uFE0F/g, "");
+  const exact = q ? emojiState.all.filter(item => glyph(item.c) === glyph(q)) : [];
+  if (exact.length || /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20E3]/u.test(q)) {
+    emojiState.view = [...new Map(exact.map(item => [glyph(item.c), item])).values()];
+  } else if (q) {
     const needle = slugEmoji(q);
     const starts = [], contains = [];
-    for (const e of emojiState.all) {
+    for (const e of needle ? emojiState.all : []) {
       const hay = e.q || slugEmoji(e.n);
       if (hay.startsWith(needle) || hay.includes("_" + needle) || (" " + hay).includes(" " + needle)) starts.push(e);
       else if (hay.includes(needle)) contains.push(e);
@@ -13990,7 +14111,7 @@ function renderEmojiGrid() {
   const box = $("ycEmojiScroll"), layer = $("ycEmojiLayer");
   if (!box || !layer) return;
 
-  const cols = Math.max(6, Math.floor((box.clientWidth || 300) / EMOJI_CELL));
+  const cols = Math.max(1, Math.floor((layer.clientWidth || box.clientWidth || 300) / EMOJI_CELL));
   emojiState.cols = cols;
 
   const n = emojiState.view.length;
@@ -14035,15 +14156,37 @@ function renderEmojiGrid() {
   if (empty) empty.textContent = n + (n === 1 ? " emoji" : " emoji");
 }
 
+function replaceChatInput(inp, text, start, end) {
+  if (inp.maxLength >= 0 && inp.value.length - (end - start) + text.length > inp.maxLength) {
+    say(`Messages can be up to ${inp.maxLength} characters.`);
+    return false;
+  }
+  inp.setRangeText(text, start, end, "end");
+  autoGrow();
+  return true;
+}
+
 function insertEmojiIntoComposer(ch) {
   const inp = $("ycInput");
-  if (!inp) return;
-  const at = inp.selectionStart ?? inp.value.length;
-  inp.value = inp.value.slice(0, at) + ch + inp.value.slice(inp.selectionEnd ?? at);
-  const caret = at + ch.length;
-  inp.setSelectionRange(caret, caret);
-  autoGrow();
+  if (!inp || !chatDestination()) return false;
+  const ok = replaceChatInput(inp, ch, inp.selectionStart, inp.selectionEnd);
   inp.focus();
+  return ok;
+}
+
+function fitEmojiPicker() {
+  const panel = $("ycPanel"), pop = $("ycEmojiPop"), grid = $("ycEmojiScroll");
+  if (!panel || !pop?.classList.contains("open") || !grid) return;
+  const viewport = window.visualViewport;
+  const panelTop = panel.offsetTop, panelBottom = panelTop + panel.offsetHeight;
+  const top = Math.max(panelTop, viewport?.offsetTop || 0);
+  const bottom = Math.min(panelBottom, viewport ? viewport.offsetTop + viewport.height : window.innerHeight);
+  const chrome = pop.offsetHeight - grid.offsetHeight;
+  const below = Math.max(0, panelBottom - bottom);
+  const offset = below || (bottom - top < chrome + 76 + EMOJI_CELL) ? below + 8 : 76;
+  pop.style.bottom = offset === 76 ? "" : offset + "px";
+  grid.style.maxHeight = Math.max(0, panelBottom - offset - top - chrome - 8) + "px";
+  renderEmojiGrid();
 }
 
 function openEmoji(onPick) {
@@ -14054,14 +14197,30 @@ function openEmoji(onPick) {
   const si = $("ycEmojiSearch");
   if (si) si.value = "";
   if (emojiState.cat === "recent" && !emojiRecents().length) emojiState.cat = "smileys";
+  closeShare();
+  closeMentionPop();
   pop.classList.add("open");
   emojiSetView();
-  if (si) setTimeout(() => si.focus(), 30);
+  fitEmojiPicker();
+  if (si) si.focus({ preventScroll: true });
 }
 function closeEmoji() {
   const pop = $("ycEmojiPop");
-  if (pop) pop.classList.remove("open");
+  if (pop) {
+    pop.classList.remove("open");
+    pop.style.bottom = "";
+  }
+  const grid = $("ycEmojiScroll");
+  if (grid) grid.style.maxHeight = "";
   emojiState.onPick = null;
+}
+
+function closeChatPopups() {
+  closeEmoji();
+  closeReactPicker();
+  closeShare();
+  closeMentionPop();
+  closeLightbox();
 }
 function toggleEmoji(e) {
   if (e) e.stopPropagation();
@@ -14082,31 +14241,23 @@ function reactorsOf(m, emoji) {
   return Object.keys(bag).filter((u) => bag[u]);
 }
 
-/* Any change to a thread — not just a new message — has to move the revision,
-   otherwise someone's cached copy keeps showing the old reaction or text. */
-function bumpOpenThreadMeta() {
-  if (state.view === "thread" && state.openThread) {
-    const tid = threadId(state.uid, state.openThread.uid);
-    const newest = (lastThreadMsgs && lastThreadMsgs.length) ? lastThreadMsgs[lastThreadMsgs.length - 1].key : "";
-    bumpThreadMeta(tid, newest);
-  }
-}
 
-async function toggleReaction(m, emoji) {
-  if (!m || !m.key || !state.ready || !state.name || !sessionStarted) return;
-  if (state.kicked) { say("You've been removed from the chat."); return; }
-  if (state.muted)  { say("You're muted in chat."); return; }
-
+const reactionWrites = new Set();
+async function toggleReaction(m, emoji, destination = chatDestination()) {
+  if (!m?.key || !canWriteChat(destination)) return;
   const { ref, set, remove } = dbfns;
-  const path = `${msgPath(m.key)}/reactions/${emoji}/${state.uid}`;
-  const mine = reactorsOf(m, emoji).includes(state.uid);
+  const path = `${destination.path}/${m.key}/reactions/${emoji}/${destination.uid}`;
+  if (reactionWrites.has(path)) return;
+  reactionWrites.add(path);
   try {
-    if (mine) await remove(ref(db, path));
+    if (reactorsOf(m, emoji).includes(destination.uid)) await remove(ref(db, path));
     else await set(ref(db, path), true);
-    bumpOpenThreadMeta();
+    if (destination.tid && sameChatSession(destination)) bumpThreadMeta(destination.tid);
   } catch (err) {
     console.error("[chat] reaction failed", err);
-    say("Couldn't save that reaction.");
+    if (sameChatSession(destination)) say("Couldn't save that reaction.");
+  } finally {
+    reactionWrites.delete(path);
   }
 }
 
@@ -14116,6 +14267,8 @@ function closeReactPicker() {
 }
 
 function openReactPicker(m, anchor) {
+  const destination = chatDestination();
+  if (!destination) return;
   const pop = $("ycReactPicker");
   const panel = $("ycPanel");
   if (!pop || !panel) return;
@@ -14126,7 +14279,7 @@ function openReactPicker(m, anchor) {
     setEmoji(b, emoji);
     b.title = emoji;
     if (reactorsOf(m, emoji).includes(state.uid)) b.classList.add("mine");
-    b.onclick = (e) => { e.stopPropagation(); closeReactPicker(); toggleReaction(m, emoji); };
+    b.onclick = (e) => { e.stopPropagation(); closeReactPicker(); toggleReaction(m, emoji, destination); };
     pop.appendChild(b);
   });
   const more = document.createElement("button");
@@ -14135,7 +14288,7 @@ function openReactPicker(m, anchor) {
   more.onclick = (e) => {
     e.stopPropagation();
     closeReactPicker();
-    openEmoji((ch) => toggleReaction(m, ch));
+    openEmoji((ch) => toggleReaction(m, ch, destination));
   };
   pop.appendChild(more);
 
@@ -14208,6 +14361,11 @@ function updateMentionPop() {
   if (!inp || !pop) return;
 
   const upto = inp.value.slice(0, inp.selectionStart);
+  const atEnd = [...upto.matchAll(CHAT_CODE)].at(-1);
+  if (atEnd && atEnd.index + atEnd[0].length === upto.length && atEnd[0].startsWith("`") && !atEnd[0].endsWith("`")) {
+    closeMentionPop();
+    return;
+  }
 
   /* :shortcode: lookup, sharing the mention popup. Typing ":cry" offers the
      matching emoji; picking one inserts the actual character, so nothing
@@ -14335,84 +14493,49 @@ function pickMention(i) {
 
   const inp = $("ycInput");
   if (!inp) return;
-  const before = inp.value.slice(0, mention.start);
-  const after  = inp.value.slice(inp.selectionStart);
-  // a shortcode pick inserts the emoji itself, not "@name "
   const insert = c.emoji ? c.emoji : ("@" + c.name + " ");
-  if (c.emoji) rememberEmoji(c.emoji);
-  inp.value = before + insert + after;
-  const caret = (before + insert).length;
-  inp.setSelectionRange(caret, caret);
+  if (replaceChatInput(inp, insert, mention.start, inp.selectionEnd) && c.emoji) rememberEmoji(c.emoji);
   closeMentionPop();
-  autoGrow();
   inp.focus();
 }
 
 /* ---------- sending text ---------- */
+
 async function send(override) {
-  const inp = $("ycInput");
-  if (!inp) return;
-  const isCard = typeof override === "string";   // share cards skip the composer box entirely
-  const text = isCard ? override : shortcodeToEmoji(inp.value.trim());
-  if (!text || !state.ready || !state.name) return;
-  if (!sessionStarted) { say("You need to log in to chat."); return; }
-  if (state.kicked) { say("You've been removed from the chat."); return; }
-  if (state.muted)  { say("You're muted in chat."); return; }
-
-  if (isCard && compose.mode === "edit") { say("Finish or cancel your edit first."); return; }
-
-  if (!isCard) {
-    inp.value = "";
-    autoGrow();
-    closeMentionPop();
-    stopTyping();
+  const destination = chatDestination();
+  if (!canWriteChat(destination) || chatWrites.has(destination.path)) return;
+  const draft = readChatDraft();
+  const isCard = typeof override === "string";
+  const text = isCard ? override : shortcodeToEmoji(draft.value.trim());
+  if (!text) return;
+  const input = $("ycInput");
+  if (!isCard && input?.maxLength >= 0 && text.length > input.maxLength) {
+    say(`Messages can be up to ${input.maxLength} characters.`);
+    return;
   }
+  if (isCard && draft.mode === "edit") { say("Finish or cancel your edit first."); return; }
 
-  if (compose.mode === "edit") { await saveEdit(text); return; }
-
-  const { ref, push, update } = dbfns;
-  const mentions = isCard ? [] : findMentions(text);
-  const payload = { uid: state.uid, name: state.name, text, ts: Date.now() };
-  if (mentions.length) payload.mentions = mentions;
-  if (compose.mode === "reply" && compose.target) {
-    payload.replyTo = {
-      key:  compose.target.key,
-      uid:  compose.target.uid || null,
-      name: compose.target.name || nameFor(compose.target.uid) || "someone",
-      text: excerptOf(compose.target)
-    };
-  }
-  const wasReply = compose.mode === "reply";
-
+  const write = {};
+  chatWrites.set(destination.path, write);
+  closeMentionPop();
+  stopTyping();
   try {
-    if (state.view === "thread" && state.openThread) {
-      const other = state.openThread.uid;
-      const tid = threadId(state.uid, other);
-      const pushed = await push(ref(db, `${msgsPath(tid)}`), payload);
-      bumpThreadMeta(tid, pushed && pushed.key);   // tells other clients their cache is stale
-      const preview = previewText(text).slice(0, 60);
-      if (isGroupId(other)) {
-        await touchGroup(other, preview, payload.ts);
-      } else {
-        await update(ref(db, `${ROOT}/dmIndex/${state.uid}/${other}`), {
-          name: state.openThread.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-        });
-        await update(ref(db, `${ROOT}/dmIndex/${other}/${state.uid}`), {
-          name: state.name, lastText: preview, lastTs: payload.ts, lastFrom: state.uid
-        });
-      }
-      markThreadRead(other, payload.ts);
+    if (draft.mode === "edit") {
+      await saveEdit(destination, draft.target, text);
     } else {
-      await push(ref(db, `${ROOT}/room`), payload);
+      const payload = { uid: destination.uid, name: destination.name, text, ts: Date.now() };
+      const mentions = isCard ? [] : findMentions(text);
+      const replyTo = replyPayload();
+      if (mentions.length) payload.mentions = mentions;
+      if (replyTo) payload.replyTo = replyTo;
+      await postChatMessage(destination, payload, previewText(text).slice(0, 60));
     }
-    if (wasReply) cancelCompose();
+    if (!isCard || draft.mode === "reply") finishChatDraft(destination, draft, !isCard);
   } catch (err) {
-    console.error("[chat] send failed", err);
-    if (!isCard) {
-      inp.value = text;   // don't eat the message
-      autoGrow();
-    }
-    say("Message didn't send — check your Firebase rules.");
+    console.error("[chat] write failed", err);
+    if (sameChatSession(destination)) say(draft.mode === "edit" ? "Couldn't save that edit." : "Message didn't send. Try again.");
+  } finally {
+    if (chatWrites.get(destination.path) === write) chatWrites.delete(destination.path);
   }
 }
 
@@ -15527,6 +15650,7 @@ function open() {
 function close() {
   $("ycPanel").classList.remove("open");
   document.body.classList.remove("yc-chat-open");
+  closeChatPopups();
   stopTyping();
   recountUnread();
 }
@@ -15833,20 +15957,18 @@ document.addEventListener("DOMContentLoaded", () => {
     inp.addEventListener("input", autoGrow);
     /* Swap a completed :shortcode: for the emoji as soon as the closing colon
        is typed, so you can see it worked instead of finding out on send. */
-    inp.addEventListener("input", () => {
+    inp.addEventListener("input", (event) => {
+      if (event.isComposing) return;
       const at = inp.selectionStart;
       if (at < 3 || inp.value[at - 1] !== ":") return;
       const before = inp.value.slice(0, at);
       const m = before.match(/:([A-Za-z0-9_+-]{2,}):$/);
       if (!m) return;
+      const start = at - m[0].length;
+      const inCode = [...before.matchAll(CHAT_CODE)].some(match => match[0].startsWith("`") && match.index + match[0].length > start);
+      if (inCode) return;
       const swapped = shortcodeToEmoji(m[0]);
-      if (swapped === m[0]) return;
-      const head = before.slice(0, before.length - m[0].length);
-      inp.value = head + swapped + inp.value.slice(at);
-      const caret = (head + swapped).length;
-      inp.setSelectionRange(caret, caret);
-      closeMentionPop();
-      autoGrow();
+      if (swapped !== m[0] && replaceChatInput(inp, swapped, start, at)) closeMentionPop();
     });
 
     inp.addEventListener("input", updateMentionPop);
@@ -15859,6 +15981,7 @@ document.addEventListener("DOMContentLoaded", () => {
     inp.addEventListener("blur", () => setTimeout(closeMentionPop, 120));
 
     inp.addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; }
       if (mention.open) {
         if (e.key === "ArrowDown") { e.preventDefault(); mention.sel = (mention.sel + 1) % mention.items.length; updateMentionPop(); e.stopPropagation(); return; }
         if (e.key === "ArrowUp")   { e.preventDefault(); mention.sel = (mention.sel - 1 + mention.items.length) % mention.items.length; updateMentionPop(); e.stopPropagation(); return; }
@@ -15931,7 +16054,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }, { passive: true });
 
   const eScroll = $("ycEmojiScroll");
-  if (eScroll) eScroll.addEventListener("scroll", () => renderEmojiGrid(), { passive: true });
+  if (eScroll) eScroll.addEventListener("scroll", renderEmojiGrid, { passive: true });
+  window.addEventListener("resize", fitEmojiPicker);
+  window.visualViewport?.addEventListener("resize", fitEmojiPicker);
 
   const eLayer = $("ycEmojiLayer");
   if (eLayer) eLayer.addEventListener("click", (e) => {
@@ -15939,10 +16064,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!b || !b.dataset.ch) return;
     e.stopPropagation();
     const ch = b.dataset.ch;
-    rememberEmoji(ch);
     const fn = emojiState.onPick || insertEmojiIntoComposer;
     closeEmoji();
-    try { fn(ch); } catch (err) { console.error("[chat] emoji pick failed", err); }
+    try { if (fn(ch) !== false) rememberEmoji(ch); } catch (err) { console.error("[chat] emoji pick failed", err); }
   });
 
   const eSearch = $("ycEmojiSearch");
@@ -15955,7 +16079,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const picInput = $("ycPictureInput");
   if (picInput) picInput.addEventListener("change", (e) => {
     const f = e.target.files && e.target.files[0];
-    handlePictureFile(f);
+    const selection = pictureDestination;
+    pictureDestination = null;
+    handlePictureFile(f, selection);
+    e.target.value = "";
   });
 
   const avInput = $("ycAvatarInput");
@@ -15976,7 +16103,10 @@ document.addEventListener("DOMContentLoaded", () => {
     panel.addEventListener("dragover", (e) => { e.preventDefault(); });
     panel.addEventListener("drop", (e) => {
       const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f && /^image\//.test(f.type)) { e.preventDefault(); handlePictureFile(f); }
+      if (f) {
+        e.preventDefault();
+        if (/^image\//.test(f.type)) handlePictureFile(f);
+      }
     });
   }
 
@@ -15986,7 +16116,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", (e) => {
     // Ctrl/Cmd + Shift + C toggles the chat
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === "KeyC") { e.preventDefault(); toggle(); }
-    if (e.key === "Escape") { closeReactPicker(); closeEmoji(); closeShare(); }
+    if (e.key === "Escape" && !$("ycEmojiPop")?.contains(e.target)) { closeReactPicker(); closeEmoji(); closeShare(); }
     if (e.key === "Escape" && $("ycLightbox") && $("ycLightbox").classList.contains("show")) {
       e.preventDefault();
       e.stopPropagation();

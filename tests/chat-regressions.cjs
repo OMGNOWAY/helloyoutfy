@@ -153,3 +153,144 @@ check('people and DM lists refresh when reopening their panel', () => {
 });
 
 console.log(passed + ' chat regression checks passed');
+
+function writeFixture() {
+  const input = {
+    value: '', maxLength: 1000, selectionStart: 0, selectionEnd: 0,
+    setRangeText(text, start, end) { this.value = this.value.slice(0, start) + text + this.value.slice(end); },
+    focus() {}
+  };
+  const notices = [], writes = [], previews = [], revisions = [];
+  const context = vm.createContext({
+    ROOT: 'chat', db: {}, sessionStarted: true, candVersion: 0,
+    state: { ready: true, uid: 'me', authUid: 'auth', name: 'Me', view: 'thread', openThread: { uid: 'a', name: 'First DM' }, groups: {}, people: { a: { uid: 'a', name: 'Sam' }, b: { uid: 'b', name: 'Sam Smith' } } },
+    dbfns: {
+      ref: (_, path) => path,
+      push: async (path, payload) => { writes.push({ path, payload }); return { key: 'new' }; },
+      update: async (path, patch) => previews.push({ path, patch }),
+      set: async (path, value) => writes.push({ path, value })
+    },
+    $: id => id === 'ycInput' ? input : null,
+    threadId: (_, other) => other, msgsPath: id => 'chat/dm/' + id,
+    isGroupId: id => id.startsWith('g_'), allThreads: () => ({}),
+    say: message => notices.push(message), bumpThreadMeta: id => revisions.push(id),
+    closeMentionPop() {}, stopTyping() {}, autoGrow() {}, markThreadRead() {},
+    canSee: () => true, previewText: text => text,
+    renderEmojiGrid() {}, nameFor: uid => uid, imageSrcOf: () => null, cardOf: () => null,
+    reactorsOf: () => [], console: { warn() {}, error() {} },
+    setTimeout: callback => { queueMicrotask(callback); return 0; }
+  });
+  for (const [start, end] of [
+    ['function escapeRe(', 'function paintMentions('],
+    ['/* A preview write can fail', 'function paintGroupHead('],
+    ['/* ---------- sending pictures ---------- */', 'function jumpToMessage('],
+    ['const YC_EMOJI_TAGS =', 'function paintEmojiCats('],
+    ['function replaceChatInput(', 'function fitEmojiPicker('],
+    ['const reactionWrites =', 'function closeReactPicker('],
+    ['async function send(override)', 'function autoGrow()']
+  ]) vm.runInContext(section(start, end), context);
+  context.paintEmojiCats = () => {};
+  const evaluate = code => vm.runInContext(code, context);
+  const switchTo = (uid, name) => {
+    evaluate('rememberChatDraft(chatDestination())');
+    context.state.openThread = { uid, name };
+    evaluate('restoreChatDraft(chatDestination())');
+  };
+  return { input, notices, writes, previews, revisions, context, evaluate, switchTo };
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+(async () => {
+  const delayed = writeFixture();
+  const push = deferred();
+  delayed.context.dbfns.push = () => push.promise;
+  delayed.input.value = 'first draft';
+  const sent = delayed.context.send();
+  delayed.switchTo('b', 'Second DM');
+  delayed.input.value = 'second draft';
+  push.resolve({ key: 'new' });
+  await sent;
+  assert.equal(delayed.previews[0].patch['dmIndex/me/a/name'], 'First DM');
+  assert.equal(delayed.input.value, 'second draft');
+  delayed.switchTo('a', 'First DM');
+  assert.equal(delayed.input.value, '');
+
+  const failed = writeFixture();
+  const rejection = deferred();
+  failed.context.dbfns.push = () => rejection.promise;
+  failed.input.value = 'keep this';
+  const attempt = failed.context.send();
+  failed.switchTo('b', 'Second DM');
+  failed.input.value = 'new draft';
+  rejection.reject(Error('offline'));
+  await attempt;
+  assert.equal(failed.input.value, 'new draft');
+  failed.switchTo('a', 'First DM');
+  assert.equal(failed.input.value, 'keep this');
+
+  const retry = writeFixture();
+  let updates = 0;
+  retry.context.dbfns.update = async () => { if (++updates === 1) throw Error('offline'); };
+  retry.input.value = 'stored once';
+  await retry.context.send();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(retry.writes.length, 1);
+  assert.equal(updates, 2);
+  assert.equal(retry.input.value, '');
+  assert.deepEqual(retry.notices, []);
+
+  const edits = writeFixture();
+  const save = deferred();
+  edits.context.dbfns.update = () => save.promise;
+  edits.evaluate('startEdit({ uid: "me", key: "edit-a", text: "original" })');
+  edits.input.value = 'edited a';
+  const edit = edits.context.send();
+  edits.switchTo('b', 'Second DM');
+  edits.evaluate('startEdit({ uid: "me", key: "edit-b", text: "untouched" })');
+  save.resolve();
+  await edit;
+  assert.equal(edits.input.value, 'untouched');
+  assert.equal(edits.evaluate('compose.target.key'), 'edit-b');
+  assert.deepEqual(edits.revisions, ['a']);
+  assert.deepEqual(edits.notices, []);
+  edits.context.dbfns.update = async () => { throw Error('offline'); };
+  edits.input.value = 'keep this edit';
+  await edits.context.send();
+  assert.equal(edits.evaluate('compose.target.key'), 'edit-b');
+  assert.equal(edits.input.value, 'keep this edit');
+
+  const reactions = writeFixture();
+  const reaction = deferred();
+  reactions.context.dbfns.set = () => reaction.promise;
+  const react = reactions.context.toggleReaction({ key: 'msg' }, '🎵');
+  reactions.switchTo('b', 'Second DM');
+  reaction.resolve();
+  await react;
+  assert.deepEqual(reactions.revisions, ['a']);
+
+  const tools = writeFixture();
+  assert.deepEqual([...tools.context.findMentions('@Sam Smith, not `@Sam`')], ['b']);
+  assert.equal(tools.context.shortcodeToEmoji(':eyes: `:eyes:`'), '👀 `:eyes:`');
+  assert.equal(tools.context.shortcodeToEmoji('```js\n:eyes:\n```'), '```js\n:eyes:\n```');
+  tools.input.value = 'x'.repeat(1000);
+  tools.input.selectionStart = tools.input.selectionEnd = 1000;
+  assert.equal(tools.context.insertEmojiIntoComposer('🎵'), false);
+  assert.equal(tools.input.value.length, 1000);
+  tools.input.selectionStart = 998;
+  assert.equal(tools.context.insertEmojiIntoComposer('🎵'), true);
+  assert.equal(tools.input.value.slice(-2), '🎵');
+  tools.evaluate('buildEmoji()');
+  tools.context.$ = id => id === 'ycEmojiSearch' ? { value: '🎵' } : null;
+  tools.context.emojiSetView();
+  assert.deepEqual([...tools.evaluate('emojiState.view.map(item => item.c)')], ['🎵']);
+  tools.context.state.view = 'people';
+  await tools.context.send('sample');
+  await tools.context.handlePictureFile({ type: 'image/webp' });
+  assert.deepEqual(tools.writes, []);
+  console.log('PASS chat writes, drafts, preview retries, reactions, mentions, and emoji edge cases');
+})().catch(error => { console.error(error); process.exitCode = 1; });
