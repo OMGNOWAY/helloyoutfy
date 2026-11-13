@@ -9539,6 +9539,96 @@ const LyricsPopout = (function () {
     body.pip-compact .pip-controls-wrap {
       position: static; background: none; padding: 8px 16px 26px;
     }
+
+    /* Spicy Lyrics-style picture-in-picture: the lyrics fill the window. */
+    .pip-backdrop {
+      position: fixed; inset: -50px; z-index: 0; pointer-events: none;
+      background-position: center; background-size: cover;
+      filter: blur(48px) brightness(.38) saturate(1.3); opacity: .9;
+      transform: scale(1.1);
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: linear-gradient(180deg, rgba(9,10,16,.55), rgba(9,10,16,.1) 40%, rgba(9,10,16,.72));
+    }
+    .pip-header, .pip-body { position: relative; z-index: 1; }
+    .pip-header {
+      padding: 13px 18px 9px; gap: 11px;
+      background: linear-gradient(180deg, rgba(0,0,0,.25), transparent);
+    }
+    .pip-art { width: 44px; height: 44px; border-radius: 8px; }
+    .pip-body { overflow: hidden; }
+    .pip-line-mode { display: none !important; }
+    .pip-list-mode {
+      display: block !important; top: 0; bottom: 91px;
+      padding: min(15vh, 68px) 22px 35%;
+      scroll-behavior: auto; overscroll-behavior: contain;
+      -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 75%, transparent 99%);
+      mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 75%, transparent 99%);
+    }
+    .pip-list-mode .lyrics-line {
+      display: block; padding: 9px 5px; margin-bottom: 9px;
+      font-size: clamp(19px, 5.8vw, 35px); line-height: 1.35;
+      letter-spacing: -.035em; font-weight: 750;
+      color: rgba(255,255,255,.42);
+      opacity: .7; transform: none;
+      transition: color .22s ease, opacity .22s ease, filter .22s ease, transform .22s ease;
+      white-space: pre-wrap;
+    }
+    .pip-list-mode .lyrics-line.active {
+      color: #fff; opacity: 1; transform: translateX(2px);
+      text-shadow: 0 2px 18px rgba(255,255,255,.08);
+    }
+    .pip-list-mode .lyrics-line.passed { opacity: .4; }
+    .pip-list-mode .lyrics-line.pip-seekable { cursor: pointer; }
+    .pip-list-mode .lyrics-line.pip-seekable:hover { opacity: 1; }
+    .pip-list-mode .pip-word {
+      color: inherit;
+    }
+    .pip-list-mode .lyrics-line.active .pip-word {
+      color: transparent;
+      background-image: linear-gradient(to right,
+        #fff 0%, #fff var(--pip-fill, 0%),
+        rgba(255,255,255,.4) var(--pip-fill, 0%), rgba(255,255,255,.4) 100%);
+      -webkit-background-clip: text; background-clip: text;
+    }
+    .pip-backing {
+      display: block; font-size: .67em; font-weight: 600;
+      color: rgba(255,255,255,.5); margin-top: 3px;
+    }
+    .pip-resume {
+      display: none; position: absolute; z-index: 4;
+      bottom: 111px; left: 50%; transform: translateX(-50%);
+      color: #fff; background: rgba(22,22,30,.86);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 22px; padding: 9px 13px;
+      font: 600 12px system-ui, sans-serif; cursor: pointer;
+      box-shadow: 0 6px 24px rgba(0,0,0,.4);
+      backdrop-filter: blur(14px); white-space: nowrap;
+    }
+    .pip-resume.show { display: block; }
+    .pip-controls-wrap {
+      z-index: 3; padding: 18px 16px 14px;
+      background: linear-gradient(0deg, rgba(9,10,16,.95), rgba(9,10,16,.74) 65%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    body.pip-compact .pip-header {
+      flex-direction: row; text-align: left; padding: 9px 12px;
+    }
+    body.pip-compact .pip-art { width: 34px; height: 34px; margin: 0; }
+    body.pip-compact .pip-title { font-size: 12px; }
+    body.pip-compact .pip-artist { font-size: 10px; }
+    body.pip-compact .pip-list-mode {
+      display: block !important; bottom: 77px; padding: 24px 13px 40%;
+    }
+    body.pip-compact .pip-list-mode .lyrics-line { font-size: clamp(16px, 5.7vw, 23px); }
+    body.pip-compact .pip-controls-wrap { position: absolute; padding: 7px 8px 9px; }
+    body.pip-compact .pip-resume { bottom: 89px; }
+    body.pip-compact .pip-controls { gap: 10px; }
+    body.pip-compact .pip-ctrl-btn.play-pause { width: 34px; height: 34px; }
+    @media (prefers-reduced-motion: reduce) {
+      .pip-list-mode .lyrics-line { transition: none; }
+    }
   `;
 
   const ICONS = {
@@ -9562,6 +9652,7 @@ const LyricsPopout = (function () {
 
     win.document.title = 'Lyrics';
     win.document.body.innerHTML = `
+      <div class="pip-backdrop" id="pipBackdrop"></div>
       <div class="pip-header">
         <div class="pip-art" id="pipArt"></div>
         <div class="pip-meta">
@@ -9574,6 +9665,7 @@ const LyricsPopout = (function () {
           <div class="pip-current-line" id="pipCurrentLine"></div>
         </div>
         <div class="pip-list-mode" id="pipLyrics"><div class="pip-empty">No lyrics loaded for this track</div></div>
+        <button class="pip-resume" id="pipResume" type="button">↓ Resume sync</button>
         <div class="pip-controls-wrap">
           <div class="pip-seek-row">
             <span class="pip-seek-time" id="pipSeekCurrent">0:00</span>
@@ -9712,7 +9804,15 @@ const LyricsPopout = (function () {
     if (pa) pa.textContent = artist;
     if (part) {
       part.style.backgroundImage = (img && img.src && img.style.display !== 'none')
-        ? `url("${img.src}")` : 'none';
+        ? 'url(' + JSON.stringify(img.src) + ')' : 'none';
+    }
+    const backdrop = pipWindow.document.getElementById('pipBackdrop');
+    if (backdrop) {
+      const artwork = img && img.src && img.style.display !== 'none' ? img.src : '';
+      if (backdrop.dataset.art !== artwork) {
+        backdrop.dataset.art = artwork;
+        backdrop.style.backgroundImage = artwork ? 'url(' + JSON.stringify(artwork) + ')' : 'none';
+      }
     }
   }
 
@@ -9722,81 +9822,222 @@ const LyricsPopout = (function () {
       && !!lyricsManager.parsedLines?.length;
   }
 
-  let lastShownLineIndex = null;
+  let pipTrackKey = null;
+  let pipSourceRef = null;
+  let pipRows = [];
+  let pipActiveIndex = -2;
+  let pipSyncPaused = false;
+  let pipSynced = false;
+
+  // Take the real am-lyrics word/syllable data whenever it's available.
+  // Do not mount another am-lyrics custom element or start a second lyric fetch.
+  function getPipSnapshot() {
+    const manager = typeof lyricsManager !== 'undefined' ? lyricsManager : null;
+    const track = typeof queue !== 'undefined' ? queue?.[currentTrackIndex] : null;
+    const key = manager && track ? manager.getLyricsTrackId(track) : null;
+    if (!key || !manager || (manager.amActive && manager.amTrackKey && manager.amTrackKey !== key)) {
+      return { key: key || '', source: null, synced: false, loading: !!manager?.isFetching };
+    }
+    const live = manager.amActive && manager.amTrackKey === key
+      && Array.isArray(manager.amEl?.lyrics) && manager.amEl.lyrics.length
+      ? manager.amEl.lyrics : null;
+    const saved = manager.cache?.get(key)?.amData?.lines;
+    const raw = live || (manager.currentSource === 'amlyrics' &&
+      Array.isArray(saved) && saved.length && manager.parsedLines?.length ? saved : null);
+    return {
+      key,
+      source: raw || manager.parsedLines || null,
+      raw: !!raw,
+      synced: !!manager.hasSyncedLyrics(),
+      loading: !!manager.isFetching
+    };
+  }
+
+  function makePipRows(snapshot) {
+    if (!Array.isArray(snapshot.source)) return [];
+    return snapshot.source.filter(line => line && !line.background).map(line => {
+      const parts = Array.isArray(line.text) ? line.text : null;
+      const text = parts ? parts.map(s => s?.text || '').join('') : String(line.text || '');
+      if (!text.trim()) return null;
+      const begin = Number(snapshot.raw ? line.timestamp : line.startMs);
+      const end = Number(snapshot.raw ? line.endtime : begin + Number(line.durMs || 3000));
+      const wordSynced = !!(snapshot.raw && parts && parts.length > 1 &&
+        (line.isWordSynced === true ||
+          (line.isWordSynced !== false && parts.some(p => Number(p?.timestamp) > 0) &&
+            !parts.every(p => p?.lineSynced))));
+      const words = wordSynced ? parts.map(p => ({
+        text: String(p?.text || ''),
+        start: Number(p?.timestamp),
+        end: Number(p?.endtime)
+      })) : null;
+      const backing = snapshot.raw && Array.isArray(line.backgroundText)
+        ? line.backgroundText.map(p => p?.text || '').join('').trim() : '';
+      return {
+        text, start: Number.isFinite(begin) ? begin : 0,
+        end: Number.isFinite(end) ? end : 0, words, backing,
+        element: null, wordElements: []
+      };
+    }).filter(Boolean);
+  }
+
+  function centerPipLine(force) {
+    if (!pipWindow || pipSyncPaused || !pipSynced || pipActiveIndex < 0) return;
+    const list = pipWindow.document.getElementById('pipLyrics');
+    const line = pipRows[pipActiveIndex]?.element;
+    if (!list || !line) return;
+    const target = Math.max(0, line.offsetTop - (list.clientHeight - line.offsetHeight) / 2);
+    if (!force && Math.abs(list.scrollTop - target) < Math.max(22, list.clientHeight * .14)) return;
+    const reduceMotion = pipWindow.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    list.scrollTo({ top: target, behavior: (force || reduceMotion) ? 'auto' : 'smooth' });
+  }
 
   function syncLyrics() {
     if (!pipWindow) return;
-    const lineMode = pipWindow.document.getElementById('pipLineMode');
-    const listMode = pipWindow.document.getElementById('pipLyrics');
-    if (!lineMode || !listMode) return;
-
-    if (hasRealTiming()) {
-      lineMode.style.display = 'flex';
-      listMode.style.display = 'none';
-
-      const idx = lyricsManager.currentLineIndex;
-      const line = (idx != null && idx >= 0) ? lyricsManager.parsedLines[idx] : null;
-      const lineEl = pipWindow.document.getElementById('pipCurrentLine');
-      if (!lineEl) return;
-
-      if (!line) {
-        if (lastShownLineIndex !== -1) {
-          lineEl.textContent = '♪';
-          lastShownLineIndex = -1;
+    const doc = pipWindow.document;
+    const list = doc.getElementById('pipLyrics');
+    const single = doc.getElementById('pipLineMode');
+    if (!list) return;
+    if (single) single.style.display = 'none';
+    const snapshot = getPipSnapshot();
+    if (snapshot.key !== pipTrackKey || snapshot.source !== pipSourceRef) {
+      const changedTrack = snapshot.key !== pipTrackKey;
+      pipTrackKey = snapshot.key;
+      pipSourceRef = snapshot.source;
+      pipSynced = snapshot.synced;
+      pipRows = makePipRows(snapshot);
+      pipActiveIndex = -2;
+      if (changedTrack) pipSyncPaused = false;
+      const fragment = doc.createDocumentFragment();
+      for (let i = 0; i < pipRows.length; i++) {
+        const row = pipRows[i];
+        const element = doc.createElement('div');
+        element.className = 'lyrics-line';
+        element.dataset.index = String(i);
+        if (snapshot.synced) {
+          element.classList.add('pip-seekable');
+          element.title = 'Click to seek';
         }
-        return;
+        if (row.words) {
+          for (const word of row.words) {
+            const span = doc.createElement('span');
+            span.className = 'pip-word';
+            span.textContent = word.text;
+            element.appendChild(span);
+            row.wordElements.push(span);
+          }
+        } else {
+          element.textContent = row.text;
+        }
+        if (row.backing) {
+          const backing = doc.createElement('small');
+          backing.className = 'pip-backing';
+          backing.textContent = row.backing;
+          element.appendChild(backing);
+        }
+        row.element = element;
+        fragment.appendChild(element);
       }
-      if (idx === lastShownLineIndex && lineEl.textContent === line.text) return;
-      lastShownLineIndex = idx;
-
-      lineEl.textContent = line.text;
-      lineEl.classList.remove('animate-in');
-      void lineEl.offsetWidth;
-      lineEl.classList.add('animate-in');
-      return;
+      if (!pipRows.length) {
+        const empty = doc.createElement('div');
+        empty.className = 'pip-empty';
+        empty.textContent = snapshot.loading ? 'Loading lyrics...' : 'No lyrics loaded for this track';
+        fragment.appendChild(empty);
+      }
+      list.replaceChildren(fragment);
+      if (changedTrack) list.scrollTop = 0;
+      doc.getElementById('pipResume')?.classList.toggle('show', pipSyncPaused);
     }
-
-    lineMode.style.display = 'none';
-    listMode.style.display = 'block';
-    lastShownLineIndex = null;
-
-    // am-lyrics renders inside a shadow root, which innerHTML cannot copy.
-    // Use the normalized lines for plain lyrics and keep the pop-out read-only.
-    if (lyricsManager?.parsedLines?.length) {
-      const html = lyricsManager.parsedLines.map(line =>
-        `<div class="lyrics-line">${lyricsManager.escapeHtml(line.text)}</div>`
-      ).join('');
-      if (listMode.innerHTML !== html) listMode.innerHTML = html;
-      return;
+    // Loading may finish with no result and no change to the parsed array.
+    if (!pipRows.length) {
+      const empty = list.querySelector('.pip-empty');
+      if (empty) empty.textContent = snapshot.loading ? 'Loading lyrics...' : 'No lyrics loaded for this track';
     }
+    pipSynced = snapshot.synced;
+    syncWordTiming();
+  }
 
-    const source = document.getElementById('lyricsContent');
-    if (!source || !source.children.length) {
-      listMode.innerHTML = '<div class="pip-empty">No lyrics loaded for this track</div>';
-      return;
+  function syncWordTiming() {
+    if (!pipWindow || !pipRows.length) return;
+    const manager = typeof lyricsManager !== 'undefined' ? lyricsManager : null;
+    if (!manager) return;
+    const offset = pipSynced ? (Number(manager.amOffsetMs) || 0) : 0;
+    const ms = Math.max(0, Number(manager.getLyricsPlaybackSeconds()) * 1000 - offset);
+    if (!Number.isFinite(ms)) return;
+    let index = -1;
+    if (pipSynced) {
+      let lo = 0, hi = pipRows.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >>> 1;
+        if (pipRows[mid].start <= ms) { index = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
     }
+    if (index !== pipActiveIndex) {
+      pipActiveIndex = index;
+      for (let i = 0; i < pipRows.length; i++) {
+        pipRows[i].element?.classList.toggle('active', i === index);
+        pipRows[i].element?.classList.toggle('passed', index >= 0 && i < index);
+      }
+      centerPipLine(false);
+    }
+    const active = pipRows[index];
+    if (!active?.words?.length) return;
+    active.words.forEach((word, i) => {
+      const el = active.wordElements[i];
+      if (!el) return;
+      const duration = Number(word.end) - Number(word.start);
+      const fill = !Number.isFinite(word.start) ? 0 :
+        duration > 0 ? Math.max(0, Math.min(100, (ms - word.start) / duration * 100)) :
+        ms >= word.start ? 100 : 0;
+      const percent = fill.toFixed(1) + '%';
+      if (el.style.getPropertyValue('--pip-fill') !== percent) el.style.setProperty('--pip-fill', percent);
+    });
+  }
 
-    if (listMode.innerHTML !== source.innerHTML) listMode.innerHTML = source.innerHTML;
-    const active = listMode.querySelector('.lyrics-line.active');
-    if (active) {
-      const containerRect = listMode.getBoundingClientRect();
-      const lineRect = active.getBoundingClientRect();
-      const targetScroll = listMode.scrollTop + (lineRect.top - containerRect.top)
-        - (listMode.clientHeight / 2) + (lineRect.height / 2);
-      listMode.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+  function initPipLyricsInteractions(win) {
+    const list = win.document.getElementById('pipLyrics');
+    const resume = win.document.getElementById('pipResume');
+    if (!list || !resume) return;
+    function pauseFollow() {
+      if (!pipSynced) return;
+      pipSyncPaused = true;
+      resume.classList.add('show');
     }
+    list.addEventListener('wheel', pauseFollow, { passive: true });
+    list.addEventListener('touchstart', pauseFollow, { passive: true });
+    list.addEventListener('pointerdown', pauseFollow);
+    list.addEventListener('click', e => {
+      const line = e.target.closest('.lyrics-line[data-index]');
+      if (!line || !pipSynced) return;
+      const manager = typeof lyricsManager !== 'undefined' ? lyricsManager : null;
+      const row = pipRows[Number(line.dataset.index)];
+      if (!row || !manager || typeof audio === 'undefined') return;
+      const time = Math.max(0, (row.start + (Number(manager.amOffsetMs) || 0)) / 1000);
+      audio.currentTime = Number.isFinite(audio.duration) ? Math.min(time, audio.duration) : time;
+      pipSyncPaused = false;
+      resume.classList.remove('show');
+      syncWordTiming();
+      centerPipLine(true);
+    });
+    resume.addEventListener('click', () => {
+      pipSyncPaused = false;
+      resume.classList.remove('show');
+      syncWordTiming();
+      centerPipLine(true);
+    });
   }
 
   async function open() {
-    if (pipWindow) { pipWindow.focus(); return; }
+    if (pipWindow) { pipWindow.focus(); return true; }
 
     if (!('documentPictureInPicture' in window)) {
       toast('Pop-out lyrics needs a Chromium browser (Chrome/Edge)');
-      return;
+      return false;
     }
 
-    pipWindow = await documentPictureInPicture.requestWindow({ width: 360, height: 480 });
+    pipWindow = await documentPictureInPicture.requestWindow({ width: 420, height: 560 });
     buildDocument(pipWindow);
+    initPipLyricsInteractions(pipWindow);
     syncTrackInfo();
     syncLyrics();
     syncPlayButton();
@@ -9820,23 +10061,36 @@ const LyricsPopout = (function () {
     themeObserver = new MutationObserver(syncTheme);
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style'] });
 
-    const pollId = setInterval(() => {
-      if (!pipWindow) { clearInterval(pollId); return; }
-      syncPlayButton();
+    let pipFrameId = 0;
+    let lastLyricsTick = 0;
+    const frame = timestamp => {
+      if (!pipWindow) return;
+      if (timestamp - lastLyricsTick > 150) {
+        lastLyricsTick = timestamp;
+        syncLyrics();
+        syncPlayButton();
+      } else {
+        syncWordTiming();
+      }
       syncSeekBar();
-      syncLyrics();
-    }, 250);
+      pipFrameId = pipWindow.requestAnimationFrame(frame);
+    };
+    pipFrameId = pipWindow.requestAnimationFrame(frame);
 
     pipWindow.addEventListener('pagehide', () => {
       lyricsObserver?.disconnect();
       trackObserver?.disconnect();
       themeObserver?.disconnect();
-      clearInterval(pollId);
+      pipWindow.cancelAnimationFrame(pipFrameId);
       pipWindow.removeEventListener('resize', updateLayoutMode);
       lyricsObserver = null;
       trackObserver = null;
       themeObserver = null;
-      lastShownLineIndex = null;
+      pipTrackKey = null;
+      pipSourceRef = null;
+      pipRows = [];
+      pipActiveIndex = -2;
+      pipSyncPaused = false;
       pipWindow = null;
       document.querySelectorAll('.lyrics-popout-btn').forEach(btn => { btn.style.display = ''; });
     }, { once: true });
@@ -9848,17 +10102,20 @@ const LyricsPopout = (function () {
         lyricsManager.fetchLyrics(track);
       }
     }
+    return true;
   }
 
   return { open };
 })();
 
-function openLyricsPopout() {
+async function openLyricsPopout() {
   try {
-    LyricsPopout.open();
-    document.querySelectorAll('.lyrics-popout-btn').forEach(btn => { btn.style.display = 'none'; });
+    if (await LyricsPopout.open()) {
+      document.querySelectorAll('.lyrics-popout-btn').forEach(btn => { btn.style.display = 'none'; });
+    }
   } catch (e) {
-    console.log(e);
+    console.error('Could not open lyrics popout:', e);
+    toast('Could not open the lyrics popout');
   }
 }
 
