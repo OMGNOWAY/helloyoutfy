@@ -9947,6 +9947,11 @@ const LyricsPopout = (function () {
       if (changedTrack) list.scrollTop = 0;
       doc.getElementById('pipResume')?.classList.toggle('show', pipSyncPaused);
     }
+    // Loading may finish with no result and no change to the parsed array.
+    if (!pipRows.length) {
+      const empty = list.querySelector('.pip-empty');
+      if (empty) empty.textContent = snapshot.loading ? 'Loading lyrics...' : 'No lyrics loaded for this track';
+    }
     pipSynced = snapshot.synced;
     syncWordTiming();
   }
@@ -10023,11 +10028,11 @@ const LyricsPopout = (function () {
   }
 
   async function open() {
-    if (pipWindow) { pipWindow.focus(); return; }
+    if (pipWindow) { pipWindow.focus(); return true; }
 
     if (!('documentPictureInPicture' in window)) {
       toast('Pop-out lyrics needs a Chromium browser (Chrome/Edge)');
-      return;
+      return false;
     }
 
     pipWindow = await documentPictureInPicture.requestWindow({ width: 420, height: 560 });
@@ -10097,17 +10102,20 @@ const LyricsPopout = (function () {
         lyricsManager.fetchLyrics(track);
       }
     }
+    return true;
   }
 
   return { open };
 })();
 
-function openLyricsPopout() {
+async function openLyricsPopout() {
   try {
-    LyricsPopout.open();
-    document.querySelectorAll('.lyrics-popout-btn').forEach(btn => { btn.style.display = 'none'; });
+    if (await LyricsPopout.open()) {
+      document.querySelectorAll('.lyrics-popout-btn').forEach(btn => { btn.style.display = 'none'; });
+    }
   } catch (e) {
-    console.log(e);
+    console.error('Could not open lyrics popout:', e);
+    toast('Could not open the lyrics popout');
   }
 }
 
