@@ -9382,13 +9382,11 @@ const FullLyricsPlayer = (() => {
     const pane = $('fullLyricsContent');
     if (!pane || !opened) return;
     const am = pane.querySelector('am-lyrics');
-    if (!am) return; // fallback lines are handled by the fullscreen CSS
+    if (!am) return; // The fallback renderer uses its .passed line classes.
     am.toggleAttribute('data-yl-hide-past', hidePastLyrics);
     const root = am.shadowRoot;
-    if (!hidePastLyrics || !root) return;
+    if (!root) return;
 
-    // am-lyrics renders inside shadow DOM. Inject only once per renderer,
-    // and only hide lines if the renderer is currently in fullscreen.
     if (!root.getElementById('youtify-hide-past-lyrics-style')) {
       const sheet = document.createElement('style');
       sheet.id = 'youtify-hide-past-lyrics-style';
@@ -9397,19 +9395,43 @@ const FullLyricsPlayer = (() => {
         pointer-events: auto !important;
         transition: opacity .24s ease;
       }
-      :host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric:is(:hover, :focus-visible, :focus-within) {
+      :host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric:is(:hover, :focus-visible) {
         opacity: 1 !important;
       }`;
       root.appendChild(sheet);
     }
 
+    // Determine completed lines from the actual playback time, not from the
+    // renderer's .active / currentPrimaryActiveLine markers. Those markers
+    // can stay on a clicked line after seeking, keeping it visible forever.
     const lines = Array.from(root.querySelectorAll('.lyrics-line'));
-    const current = am.cachedIsUnsynced ? null : lyricsManager?.getAmCurrentLine?.();
-    const currentIndex = lines.indexOf(current);
+    if (!hidePastLyrics || am.cachedIsUnsynced) {
+      for (const line of lines) line.classList.remove('youtify-past-lyric');
+      return;
+    }
+    const data = Array.isArray(am.lyrics) ? am.lyrics : [];
+    if (!data.length) return;
+    const playedMs = Math.max(0,
+      (Number(lyricsManager?.getLyricsPlaybackSeconds?.()) || 0) * 1000
+      - (Number(lyricsManager?.amOffsetMs) || 0));
     for (let i = 0; i < lines.length; i++) {
-      // An overlapping/duet line should remain visible while still active.
-      lines[i].classList.toggle('youtify-past-lyric',
-        currentIndex >= 0 && i < currentIndex && !lines[i].classList.contains('active'));
+      const line = lines[i];
+      const id = /^lyrics-line-(\d+)$/.exec(line.id);
+      const index = id ? Number(id[1]) : i;
+      const lyric = data[index];
+      const start = Number(lyric?.timestamp);
+      const explicitEnd = Number(lyric?.endtime);
+      let endMs = Number.isFinite(explicitEnd) && explicitEnd > start ? explicitEnd : NaN;
+      if (!Number.isFinite(endMs)) {
+        // A line without its own end time lasts until the next timed line.
+        for (let j = index + 1; j < data.length; j++) {
+          const next = Number(data[j]?.timestamp);
+          if (Number.isFinite(next) && next > start) { endMs = next; break; }
+        }
+      }
+      const finished = Number.isFinite(start) && start >= 0 &&
+        Number.isFinite(endMs) && endMs <= playedMs - 80;
+      line.classList.toggle('youtify-past-lyric', finished);
     }
   }
 
