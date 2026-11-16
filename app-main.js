@@ -9637,8 +9637,8 @@ const FullLyricsPlayer = (() => {
     const icon = $('fullLyricsPlayIcon');
     if (icon) {
       icon.innerHTML = playing
-        ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>'
-        : '<path d="M8 5v14l11-7z"></path>';
+        ? '<rect x="6.4" y="5.3" width="4.3" height="13.4" rx="1.8"></rect><rect x="13.3" y="5.3" width="4.3" height="13.4" rx="1.8"></rect>'
+        : '<path d="M8.5 6.4c0-.9 1-1.4 1.8-.9l8 5.2a1.5 1.5 0 0 1 0 2.6l-8 5.2c-.8.5-1.8 0-1.8-.9z"></path>';
     }
     if (opened && hidePastLyrics) updatePastLyrics();
   }
