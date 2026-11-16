@@ -495,6 +495,20 @@
     border-radius: 24px;
     background: #15182231;
   }
+  /* Mouse users see the controls only when the cursor is nearby.
+     Keep them accessible on touch devices and during keyboard navigation. */
+  @media (hover: hover) and (pointer: fine) {
+    #fullLyricsPlayer .full-lyrics-topbar {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .22s ease;
+    }
+    #fullLyricsPlayer.full-lyrics-toolbar-near .full-lyrics-topbar,
+    #fullLyricsPlayer:not(.full-lyrics-pointer-active) .full-lyrics-topbar:focus-within {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
   #fullLyricsPlayer .full-lyrics-icon {
     display: inline-grid;
     place-items: center;
