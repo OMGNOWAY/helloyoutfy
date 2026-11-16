@@ -701,6 +701,11 @@
   }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line[role="button"]:not(.active) { opacity: .64; }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line:is(.active, :hover) { color: var(--full-lyrics-ink); opacity: 1; }
+  /* Keep completed lyric lines in the scroll geometry, but hide their ink. */
+  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line:not([role="button"]) { cursor: inherit; }
   #fullLyricsPlayer #fullLyricsContent .moveitalittle { transform: none; }
   #fullLyricsPlayer .full-lyrics-queue {
@@ -924,6 +929,9 @@
             </button>
             <button class="full-lyrics-icon lyrics-popout-btn" type="button" onclick="openLyricsPopout()" aria-label="Pop out lyrics" title="Pop out lyrics">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 4h7v7m0-7-9 9m9-1v7H4V4h7"/></svg>
+            </button>
+            <button id="fullLyricsHidePast" class="full-lyrics-icon" type="button" aria-pressed="false" aria-label="Hide past lyrics" title="Hide past lyrics">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M3 12h12M3 17h7"/><path d="m17 15 4 4m0-4-4 4"/></svg>
             </button>
             <button class="full-lyrics-icon" type="button" data-full-layout="classic" aria-pressed="true" aria-label="Classic layout" title="Classic layout">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 5h18v14H3zM10 5v14m3-9h5m-5 4h5"/></svg>
