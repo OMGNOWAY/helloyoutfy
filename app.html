@@ -777,10 +777,14 @@
   }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line[role="button"]:not(.active) { opacity: .64; }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line:is(.active, :hover) { color: var(--full-lyrics-ink); opacity: 1; }
-  /* Keep completed lyric lines in the scroll geometry, but hide their ink. */
+  /* Keep completed lines in the scroll geometry and let users revisit them. */
   #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed {
     opacity: 0 !important;
-    pointer-events: none;
+    pointer-events: auto;
+    transition: opacity .24s ease;
+  }
+  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed:is(:hover, :focus-visible, :focus-within) {
+    opacity: 1 !important;
   }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line:not([role="button"]) { cursor: inherit; }
   #fullLyricsPlayer #fullLyricsContent .moveitalittle { transform: none; }
