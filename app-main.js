@@ -9448,6 +9448,64 @@ const FullLyricsPlayer = (() => {
     updatePastLyrics();
   }
 
+  let performanceBackdropArt = null;
+  let performanceBackdropRequest = 0;
+  const performanceColorCache = new Map();
+
+  async function syncPerformanceBackdropColors(artwork) {
+    const backdrop = $('fullLyricsPerformanceBackdrop');
+    if (!backdrop || artwork === performanceBackdropArt) return;
+    performanceBackdropArt = artwork;
+    const request = ++performanceBackdropRequest;
+    for (let i = 1; i <= 3; i++) backdrop.style.removeProperty('--perf-g' + i);
+    if (!artwork || !document.body.classList.contains('performance-mode')) return;
+
+    let colors = performanceColorCache.get(artwork);
+    if (colors === undefined) {
+      colors = null;
+      try {
+        // Sample once per cover change, at a tiny resolution; no WebGL or
+        // animation frames are used to extract artwork colors.
+        const image = await lyricsManager?.loadImageCors?.(artwork);
+        if (image) {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 40;
+          const context = canvas.getContext('2d', { willReadFrequently: true });
+          if (context) {
+            context.drawImage(image, 0, 0, 40, 40);
+            const pixels = context.getImageData(0, 0, 40, 40).data;
+            const samples = [];
+            for (let y = 2; y < 38; y += 4) {
+              for (let x = 2; x < 38; x += 4) {
+                const index = (y * 40 + x) * 4;
+                const r = pixels[index], g = pixels[index + 1], b = pixels[index + 2];
+                const bright = Math.max(r, g, b), dark = Math.min(r, g, b);
+                if (bright < 36 || bright > 245 || bright - dark < 25) continue;
+                samples.push({ r, g, b, score: (bright - dark) * (.4 + bright / 255) });
+              }
+            }
+            samples.sort((a, b) => b.score - a.score);
+            const picks = [];
+            for (const color of samples) {
+              if (picks.every(p => Math.hypot(p.r - color.r, p.g - color.g, p.b - color.b) > 75)) picks.push(color);
+              if (picks.length === 3) break;
+            }
+            if (picks.length) {
+              while (picks.length < 3) picks.push(picks[picks.length - 1]);
+              colors = picks.map(p => [p.r, p.g, p.b].join(','));
+            }
+          }
+        }
+      } catch { /* Cross-origin art can be unreadable; fall back to preview colors. */ }
+      if (performanceColorCache.size >= 32) performanceColorCache.delete(performanceColorCache.keys().next().value);
+      performanceColorCache.set(artwork, colors);
+    }
+
+    // A rapid track skip must not tint the new song with the previous cover.
+    if (request !== performanceBackdropRequest || !colors) return;
+    colors.forEach((color, i) => backdrop.style.setProperty('--perf-g' + (i + 1), color));
+  }
+
   function syncBackdrop(url) {
     if (url === backdropURL) return;
     backdropURL = url;
@@ -9628,6 +9686,9 @@ const FullLyricsPlayer = (() => {
     if (!artwork && cover?.hasAttribute('src')) cover.removeAttribute('src');
     cover?.setAttribute('alt', artwork ? `${track.title} album art` : '');
     syncBackdrop(artwork);
+    if (document.body.classList.contains('performance-mode')) {
+      void syncPerformanceBackdropColors(artwork);
+    }
     const canvas = $('fullLyricsCanvas');
     if (canvas) {
       warpedBackdrop ??= createFullLyricsBackground(canvas, () => opened);
@@ -9769,6 +9830,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto-hide the fullscreen action toolbar until the pointer approaches it.
   const fullLyricsOverlay = document.getElementById('fullLyricsPlayer');
   const fullLyricsToolbar = fullLyricsOverlay?.querySelector('.full-lyrics-topbar');
+  let lastPerformanceMode = document.body.classList.contains('performance-mode');
+  new MutationObserver(() => {
+    const performanceMode = document.body.classList.contains('performance-mode');
+    if (performanceMode === lastPerformanceMode) return;
+    lastPerformanceMode = performanceMode;
+    if (FullLyricsPlayer.isOpen()) FullLyricsPlayer.syncTrackInfo();
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   if (fullLyricsOverlay && fullLyricsToolbar) {
     const hoverEnabled = window.matchMedia('(hover: hover) and (pointer: fine)');
     fullLyricsOverlay.addEventListener('pointermove', event => {
