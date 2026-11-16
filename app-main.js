@@ -9394,7 +9394,11 @@ const FullLyricsPlayer = (() => {
       sheet.id = 'youtify-hide-past-lyrics-style';
       sheet.textContent = `:host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric {
         opacity: 0 !important;
-        pointer-events: none !important;
+        pointer-events: auto !important;
+        transition: opacity .24s ease;
+      }
+      :host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric:is(:hover, :focus-visible, :focus-within) {
+        opacity: 1 !important;
       }`;
       root.appendChild(sheet);
     }
