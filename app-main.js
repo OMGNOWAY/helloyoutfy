@@ -9691,6 +9691,35 @@ function seekFullLyricsProgress(event) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Auto-hide the fullscreen action toolbar until the pointer approaches it.
+  const fullLyricsOverlay = document.getElementById('fullLyricsPlayer');
+  const fullLyricsToolbar = fullLyricsOverlay?.querySelector('.full-lyrics-topbar');
+  if (fullLyricsOverlay && fullLyricsToolbar) {
+    const hoverEnabled = window.matchMedia('(hover: hover) and (pointer: fine)');
+    fullLyricsOverlay.addEventListener('pointermove', event => {
+      if (!hoverEnabled.matches || event.pointerType === 'touch') return;
+      const rect = fullLyricsToolbar.getBoundingClientRect();
+      const distance = 85;
+      const isNear = event.clientX >= rect.left - distance &&
+        event.clientX <= rect.right + distance &&
+        event.clientY >= rect.top - distance &&
+        event.clientY <= rect.bottom + distance;
+      fullLyricsOverlay.classList.add('full-lyrics-pointer-active');
+      fullLyricsOverlay.classList.toggle('full-lyrics-toolbar-near', isNear);
+    });
+    fullLyricsOverlay.addEventListener('pointerleave', () => {
+      fullLyricsOverlay.classList.remove('full-lyrics-toolbar-near');
+    });
+    fullLyricsOverlay.addEventListener('keydown', event => {
+      if (event.key === 'Tab') fullLyricsOverlay.classList.remove('full-lyrics-pointer-active');
+    });
+    fullLyricsOverlay.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'touch') {
+        fullLyricsOverlay.classList.remove('full-lyrics-pointer-active');
+        fullLyricsOverlay.classList.add('full-lyrics-toolbar-near');
+      }
+    });
+  }
   const queueButton = document.getElementById('fullLyricsQueueButton');
   if (queueButton) queueButton.onclick = () => FullLyricsPlayer.toggleQueue();
   const showLyrics = document.getElementById('fullLyricsShowLyrics');
