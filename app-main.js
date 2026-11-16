@@ -9376,6 +9376,51 @@ const FullLyricsPlayer = (() => {
   let warpedBackdrop, queueSignature;
 
   const $ = id => document.getElementById(id);
+  let hidePastLyrics = false;
+
+  function updatePastLyrics() {
+    const pane = $('fullLyricsContent');
+    if (!pane || !opened) return;
+    const am = pane.querySelector('am-lyrics');
+    if (!am) return; // fallback lines are handled by the fullscreen CSS
+    am.toggleAttribute('data-yl-hide-past', hidePastLyrics);
+    const root = am.shadowRoot;
+    if (!hidePastLyrics || !root) return;
+
+    // am-lyrics renders inside shadow DOM. Inject only once per renderer,
+    // and only hide lines if the renderer is currently in fullscreen.
+    if (!root.getElementById('youtify-hide-past-lyrics-style')) {
+      const sheet = document.createElement('style');
+      sheet.id = 'youtify-hide-past-lyrics-style';
+      sheet.textContent = `:host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }`;
+      root.appendChild(sheet);
+    }
+
+    const lines = Array.from(root.querySelectorAll('.lyrics-line'));
+    const current = am.cachedIsUnsynced ? null : lyricsManager?.getAmCurrentLine?.();
+    const currentIndex = lines.indexOf(current);
+    for (let i = 0; i < lines.length; i++) {
+      // An overlapping/duet line should remain visible while still active.
+      lines[i].classList.toggle('youtify-past-lyric',
+        currentIndex >= 0 && i < currentIndex && !lines[i].classList.contains('active'));
+    }
+  }
+
+  function setHidePastLyrics(enabled) {
+    hidePastLyrics = !!enabled;
+    $('fullLyricsPlayer')?.toggleAttribute('data-hide-past-lyrics', hidePastLyrics);
+    const button = $('fullLyricsHidePast');
+    if (button) {
+      button.setAttribute('aria-pressed', String(hidePastLyrics));
+      button.setAttribute('aria-label', hidePastLyrics ? 'Show past lyrics' : 'Hide past lyrics');
+      button.title = button.getAttribute('aria-label');
+    }
+    try { localStorage.setItem('youtify_fullscreen_hide_past_lyrics', hidePastLyrics ? '1' : '0'); } catch {}
+    updatePastLyrics();
+  }
 
   function syncBackdrop(url) {
     if (url === backdropURL) return;
@@ -9520,6 +9565,7 @@ const FullLyricsPlayer = (() => {
     pane.style.setProperty('--full-lyrics-edge-space', pane.clientHeight / 2 + 'px');
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
+      updatePastLyrics();
       if (!lyricsManager.amEl?.isUserScrolling && Date.now() >= Number(pane.dataset.followAfter || 0)) {
         lyricsManager.jumpAmToCurrentLine();
       }
@@ -9594,6 +9640,7 @@ const FullLyricsPlayer = (() => {
         ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"></path>'
         : '<path d="M8 5v14l11-7z"></path>';
     }
+    if (opened && hidePastLyrics) updatePastLyrics();
   }
 
   function mirrorLyrics() {
@@ -9602,6 +9649,7 @@ const FullLyricsPlayer = (() => {
     if (!opened || !source || !target) return;
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
+      updatePastLyrics();
       return;
     }
     mirrorLyricsContent(source, target);
@@ -9673,6 +9721,7 @@ const FullLyricsPlayer = (() => {
 
   return {
     open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, recenter,
+    setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
     isOpen: () => opened,
     syncBackdropMotion: () => warpedBackdrop?.sync()
   };
@@ -9720,6 +9769,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+  let hidePastPreference = false;
+  try { hidePastPreference = localStorage.getItem('youtify_fullscreen_hide_past_lyrics') === '1'; } catch {}
+  FullLyricsPlayer.setHidePastLyrics(hidePastPreference);
+  document.getElementById('fullLyricsHidePast')?.addEventListener('click', () => {
+    FullLyricsPlayer.setHidePastLyrics(!FullLyricsPlayer.isHidePastLyrics());
+  });
+
   const queueButton = document.getElementById('fullLyricsQueueButton');
   if (queueButton) queueButton.onclick = () => FullLyricsPlayer.toggleQueue();
   const showLyrics = document.getElementById('fullLyricsShowLyrics');
