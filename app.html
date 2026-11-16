@@ -859,9 +859,15 @@
   }
   @media (max-height: 529px) and (orientation: landscape), (max-width: 720px) and (orientation: landscape) {
     #fullLyricsPlayer { --cover-size: min(32vw, max(68px, calc(100dvh - 183px))); }
-    #fullLyricsPlayer .full-lyrics-art-side { padding-block: 49px 7px; }
-    #fullLyricsPlayer :is(.full-lyrics-album, .full-lyrics-cover) { position: static; }
+    #fullLyricsPlayer .full-lyrics-art-side { padding-block: 44px 7px; }
+    #fullLyricsPlayer .full-lyrics-album {
+      position: static;
+      width: min(calc(100% - 6px), max(174px, var(--cover-size)));
+    }
+    #fullLyricsPlayer .full-lyrics-cover { position: static; width: var(--cover-size); }
     #fullLyricsPlayer .full-lyrics-cover::before { display: none; }
+    #fullLyricsPlayer .full-lyrics-buttons { margin-inline: 0; }
+    #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon { max-width: 100%; }
     #fullLyricsPlayer .full-lyrics-topbar {
       flex-flow: row;
       inset: max(6px, env(safe-area-inset-top)) auto auto max(4vw, env(safe-area-inset-left));
