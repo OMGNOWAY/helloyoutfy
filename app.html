@@ -426,7 +426,7 @@
 <style id="fullLyricsStyles">
   #fullLyricsPlayer {
     --full-lyrics-ink: #fff;
-    --full-lyrics-muted: #ffffffa6;
+    --full-lyrics-muted: #ffffffcc;
     --full-lyrics-size: clamp(22px, 3.15vw, 52px);
     position: fixed;
     inset: 0;
@@ -452,7 +452,7 @@
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: linear-gradient(105deg, #09121e45, #07111e83 55%, #0b1118a6);
+    background: linear-gradient(105deg, #09121e55, #0a101b9e 52%, #0b1118b5);
   }
   #fullLyricsPlayer .full-lyrics-backdrop img {
     position: absolute;
@@ -461,7 +461,7 @@
     height: 124%;
     max-width: none;
     object-fit: cover;
-    filter: blur(65px) saturate(1.55) brightness(.77);
+    filter: blur(65px) saturate(1.3) brightness(.73);
     opacity: 0;
     transition: opacity .55s ease;
   }
@@ -574,8 +574,8 @@
     pointer-events: none;
   }
   #fullLyricsPlayer #fullLyricsProgressFill { height: 100%; border-radius: inherit; background: currentColor; }
-  #fullLyricsPlayer .full-lyrics-time { font-size: 11px; font-variant-numeric: tabular-nums; }
-  #fullLyricsPlayer .full-lyrics-time:last-child { text-align: right; }
+  #fullLyricsPlayer .full-lyrics-time { width: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+  #fullLyricsPlayer .full-lyrics-time:last-child { justify-self: end; text-align: right; }
   #fullLyricsPlayer .full-lyrics-buttons {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -709,7 +709,7 @@
     <button id="fullLyricsClose" class="full-lyrics-icon" type="button" onclick="closeFullLyricsPlayer()" aria-label="Close lyrics player" title="Close lyrics player">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
     </button>
-    <button class="full-lyrics-icon lyrics-fetch-btn" type="button" onclick="fetchCurrentTrackLyrics()" aria-label="Fetch lyrics" title="Fetch lyrics">
+    <button class="full-lyrics-icon lyrics-fetch-btn" data-icon-only type="button" onclick="fetchCurrentTrackLyrics()" aria-label="Fetch lyrics" title="Fetch lyrics">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 5v6h-6M4 19v-6h6m9.5-2A8 8 0 0 0 6 6m-1.5 7A8 8 0 0 0 18 18"/></svg>
     </button>
     <button class="full-lyrics-icon lyrics-popout-btn" type="button" onclick="openLyricsPopout()" aria-label="Pop out lyrics" title="Pop out lyrics">
