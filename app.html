@@ -604,44 +604,117 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  #fullLyricsPlayer .full-lyrics-controls { margin-top: 9px; }
+  #fullLyricsPlayer .full-lyrics-controls { margin-top: 13px; }
   #fullLyricsPlayer .full-lyrics-progress-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
     align-items: center;
-    gap: 2px 0;
+    gap: 10px;
   }
   #fullLyricsPlayer #fullLyricsProgress {
-    grid-column: 1 / -1;
-    height: 12px;
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    height: 22px;
     display: flex;
     align-items: center;
     cursor: pointer;
+    touch-action: manipulation;
   }
   #fullLyricsPlayer .full-lyrics-progress-track {
     display: block;
     width: 100%;
     height: 4px;
-    border-radius: 8px;
-    background: #ffffff46;
+    border-radius: 99px;
+    background: #ffffff45;
     pointer-events: none;
+    transition: height .18s ease, background .18s ease;
   }
-  #fullLyricsPlayer #fullLyricsProgressFill { height: 100%; border-radius: inherit; background: currentColor; }
-  #fullLyricsPlayer .full-lyrics-time { width: auto; flex: none; font-size: 11px; font-variant-numeric: tabular-nums; }
-  #fullLyricsPlayer .full-lyrics-time:last-child { justify-self: end; text-align: right; }
+  #fullLyricsPlayer #fullLyricsProgress:hover .full-lyrics-progress-track,
+  #fullLyricsPlayer #fullLyricsProgress:focus-visible .full-lyrics-progress-track {
+    height: 6px;
+    background: #ffffff61;
+  }
+  #fullLyricsPlayer #fullLyricsProgressFill {
+    position: relative;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--full-lyrics-ink);
+    transition: width .08s linear;
+  }
+  #fullLyricsPlayer #fullLyricsProgressFill::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--full-lyrics-ink);
+    transform: translateY(-50%) scale(.6);
+    opacity: 0;
+    transition: transform .18s ease, opacity .18s ease;
+  }
+  #fullLyricsPlayer #fullLyricsProgress:hover #fullLyricsProgressFill::after,
+  #fullLyricsPlayer #fullLyricsProgress:focus-visible #fullLyricsProgressFill::after {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+  #fullLyricsPlayer .full-lyrics-time {
+    width: auto;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--full-lyrics-muted);
+    white-space: nowrap;
+  }
+  #fullLyricsPlayer #fullLyricsCurrentTime { grid-column: 1; grid-row: 1; text-align: left; }
+  #fullLyricsPlayer #fullLyricsDuration { grid-column: 3; grid-row: 1; text-align: right; }
   #fullLyricsPlayer .full-lyrics-buttons {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    justify-items: center;
+    display: flex;
     align-items: center;
-    gap: 0;
-    margin: 5px -6px 0;
+    justify-content: center;
+    gap: clamp(8px, 1vw, 16px);
+    margin: 12px 0 0;
   }
-  #fullLyricsPlayer .full-lyrics-buttons button:first-child { justify-self: start; }
-  #fullLyricsPlayer .full-lyrics-buttons button:last-child { justify-self: end; }
-  #fullLyricsPlayer #fullLyricsPlayBtn { width: 44px; height: 44px; }
-  #fullLyricsPlayer #fullLyricsPlayBtn svg { width: 27px; height: 27px; }
-  #fullLyricsPlayer .full-lyrics-volume { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+  #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    opacity: .84;
+    transition: background .18s ease, opacity .18s ease, transform .18s ease;
+  }
+  #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon svg { width: 19px; height: 19px; }
+  #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon:hover {
+    background: #ffffff24;
+    opacity: 1;
+  }
+  #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon[aria-pressed="true"] {
+    opacity: 1;
+    background: #ffffff22;
+  }
+  #fullLyricsPlayer #fullLyricsPlayBtn {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    color: #111820;
+    background: var(--full-lyrics-ink);
+    opacity: 1;
+    box-shadow: 0 3px 14px #00000026;
+  }
+  #fullLyricsPlayer #fullLyricsPlayBtn svg { width: 24px; height: 24px; }
+  #fullLyricsPlayer #fullLyricsPlayBtn:hover {
+    background: var(--full-lyrics-ink);
+    transform: scale(1.045);
+  }
+  #fullLyricsPlayer .full-lyrics-volume {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(100%, 270px);
+    margin: 11px auto 0;
+  }
   #fullLyricsPlayer .full-lyrics-volume button { width: 24px; height: 24px; }
   #fullLyricsPlayer #fullLyricsMute:not([aria-pressed="true"]) .muted-mark,
   #fullLyricsPlayer #fullLyricsMute[aria-pressed="true"] .volume-waves { display: none; }
@@ -871,8 +944,11 @@
     #fullLyricsPlayer .full-lyrics-cover::before { display: none; }
     #fullLyricsPlayer .full-lyrics-track-info { margin: 0; }
     #fullLyricsPlayer .full-lyrics-controls { grid-column: 2; margin-top: 2px; }
-    #fullLyricsPlayer .full-lyrics-buttons { margin-top: 0; }
-    #fullLyricsPlayer #fullLyricsPlayBtn { width: 38px; height: 36px; }
+    #fullLyricsPlayer .full-lyrics-buttons { gap: 3px; margin-top: 1px; }
+    #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon { width: 30px; height: 32px; }
+    #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon svg { width: 17px; height: 17px; }
+    #fullLyricsPlayer #fullLyricsPlayBtn { width: 36px; height: 36px; flex-basis: 36px; }
+    #fullLyricsPlayer #fullLyricsPlayBtn svg { width: 20px; height: 20px; }
     #fullLyricsPlayer .full-lyrics-volume { display: none; }
     #fullLyricsPlayer #fullLyricsContent { padding-inline: 22px; }
     #fullLyricsPlayer .full-lyrics-queue-panel { padding: 16px 22px 60px; }
@@ -894,14 +970,19 @@
     }
     #fullLyricsPlayer .full-lyrics-track-info { margin-top: 5px; }
     #fullLyricsPlayer .full-lyrics-controls { margin-top: 3px; }
-    #fullLyricsPlayer .full-lyrics-buttons { margin-top: 0; }
-    #fullLyricsPlayer :is(.full-lyrics-buttons button, #fullLyricsPlayBtn) { height: 32px; }
+    #fullLyricsPlayer .full-lyrics-buttons { gap: 5px; margin-top: 0; }
+    #fullLyricsPlayer .full-lyrics-buttons .full-lyrics-icon { width: 32px; height: 32px; }
+    #fullLyricsPlayer #fullLyricsPlayBtn { width: 36px; height: 36px; flex-basis: 36px; }
+    #fullLyricsPlayer #fullLyricsPlayBtn svg { width: 20px; height: 20px; }
     #fullLyricsPlayer .full-lyrics-volume { display: none; }
   }
   body.performance-mode #fullLyricsPlayer {
     --full-lyrics-ink: var(--text-primary, #fff);
     --full-lyrics-muted: var(--text-secondary, #ffffffa6);
     background: var(--bg-primary, #111820) !important;
+  }
+  body.performance-mode #fullLyricsPlayer #fullLyricsPlayBtn {
+    color: var(--bg-primary, #111820);
   }
   body.performance-mode #fullLyricsPlayer .full-lyrics-backdrop { display: none; }
   body.performance-mode #fullLyricsPlayer :is(.full-lyrics-topbar, .full-lyrics-queue) { background: var(--bg-secondary, #222); }
@@ -961,13 +1042,13 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m17 4 4 4-4 4m4-4h-3c-6 0-6 8-12 8H3m14-4 4 4-4 4m4-4h-3c-2 0-3-1-4-2M3 8h3c2 0 4 1 5 2"/></svg>
             </button>
             <button class="full-lyrics-icon" type="button" onclick="previousTrack()" aria-label="Previous track" title="Previous track">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h2v14H5zm14 0v14L8 12z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5v14M19 5 8 12l11 7V5Z"/></svg>
             </button>
             <button id="fullLyricsPlayBtn" class="full-lyrics-icon" type="button" onclick="togglePlay()" aria-label="Play" title="Play">
               <svg id="fullLyricsPlayIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
             </button>
             <button class="full-lyrics-icon" type="button" onclick="nextTrack(0, false)" aria-label="Next track" title="Next track">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 5h2v14h-2zM5 5l11 7-11 7z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5v14M5 5l11 7-11 7V5Z"/></svg>
             </button>
             <button id="fullLyricsRepeat" class="full-lyrics-icon" type="button" onclick="toggleRepeat()" aria-label="Repeat off" title="Repeat off">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m17 3 4 4-4 4m4-4H7a4 4 0 0 0-4 4m4 10-4-4 4-4m-4 4h14a4 4 0 0 0 4-4"/><text id="fullLyricsRepeatOne" x="12" y="14.5" text-anchor="middle" fill="currentColor" stroke="none" font-size="7" style="display:none">1</text></svg>
