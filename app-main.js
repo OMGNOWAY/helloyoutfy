@@ -1,6 +1,9 @@
 /* ===================== changelog.js ===================== */
-var version = "1.4.8";
+var version = "1.5";
 const CHANGELOG_DATA = {
+  "Release 1.5": [
+    `Redesigned the big lyrics view with an updated layout and visuals`
+  ],
   "Release 1.4.8": [
     `Title, artist, artwork and lyrics now blend smoothly with crossfade`,
     `Improved lyrics loading and saved lyric fallback`,
