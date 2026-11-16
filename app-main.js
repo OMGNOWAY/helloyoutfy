@@ -8226,7 +8226,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const style = this.amEl.style;
         this.amEl.toggleAttribute('data-yl-fullscreen', fullScreen);
         const ink = fullScreen ? 'var(--full-lyrics-ink, #fff)' : 'var(--text-primary, #ffffff)';
-        const muted = fullScreen ? 'var(--full-lyrics-muted, #ffffffa6)' : 'var(--text-secondary, #a0a0a0)';
+        const muted = fullScreen ? 'color-mix(in srgb, var(--full-lyrics-ink, #fff) 40%, transparent)' : 'var(--text-secondary, #a0a0a0)';
         this.amEl.fontFamily = fullScreen ? 'inherit' :
             getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
         // Keep the word-wipe contrast explicit: pending words use muted text,
