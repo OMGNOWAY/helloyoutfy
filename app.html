@@ -985,6 +985,60 @@
     #fullLyricsPlayer #fullLyricsPlayBtn svg { width: 20px; height: 20px; }
     #fullLyricsPlayer .full-lyrics-volume { display: none; }
   }
+  /* Low-cost ambient color used only in performance mode. This intentionally
+     avoids canvas, blur filters and per-frame audio processing. */
+  #fullLyricsPlayer .full-lyrics-performance-backdrop {
+    --perf-g1: 86,111,164;
+    --perf-g2: 111,64,116;
+    --perf-g3: 33,106,118;
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 16% 90%, #253b47 0%, #0e141d 62%, #0e121b 100%);
+  }
+  body.performance-mode #fullLyricsPlayer .full-lyrics-performance-backdrop { display: block; }
+  body.performance-mode #fullLyricsPlayer .full-lyrics-main { position: relative; z-index: 1; }
+  #fullLyricsPlayer .full-lyrics-performance-backdrop::before,
+  #fullLyricsPlayer .full-lyrics-performance-backdrop::after {
+    content: "";
+    position: absolute;
+    inset: -23%;
+    pointer-events: none;
+  }
+  body.performance-mode #fullLyricsPlayer .full-lyrics-performance-backdrop::before {
+    background:
+      radial-gradient(ellipse 40% 54% at 23% 64%, rgba(var(--perf-g1), .65), transparent 82%),
+      radial-gradient(ellipse 34% 49% at 76% 29%, rgba(var(--perf-g2), .56), transparent 82%);
+    opacity: .84;
+    animation: fullLyricsPerfColorOne 25s ease-in-out infinite alternate;
+  }
+  body.performance-mode #fullLyricsPlayer .full-lyrics-performance-backdrop::after {
+    background:
+      radial-gradient(ellipse 40% 40% at 72% 78%, rgba(var(--perf-g3), .63), transparent 80%),
+      radial-gradient(ellipse 29% 43% at 39% 18%, rgba(var(--perf-g1), .34), transparent 83%);
+    opacity: .8;
+    animation: fullLyricsPerfColorTwo 31s ease-in-out infinite alternate;
+  }
+  #fullLyricsPlayer .full-lyrics-performance-tint {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, rgba(9,12,19,.33), rgba(7,10,16,.12) 46%, rgba(7,9,15,.4));
+  }
+  @keyframes fullLyricsPerfColorOne {
+    from { transform: translate3d(-3%,2%,0) scale(1.01); }
+    to { transform: translate3d(4%,-2%,0) scale(1.1); }
+  }
+  @keyframes fullLyricsPerfColorTwo {
+    from { transform: translate3d(3%,-2%,0) scale(1.06); }
+    to { transform: translate3d(-4%,3%,0) scale(1.02); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.performance-mode #fullLyricsPlayer .full-lyrics-performance-backdrop::before,
+    body.performance-mode #fullLyricsPlayer .full-lyrics-performance-backdrop::after { animation: none; }
+  }
   body.performance-mode #fullLyricsPlayer {
     --full-lyrics-ink: var(--text-primary, #fff);
     --full-lyrics-muted: var(--text-secondary, #ffffffa6);
@@ -1004,6 +1058,9 @@
     <img id="fullLyricsBackdropA" alt="">
     <img id="fullLyricsBackdropB" alt="">
     <canvas id="fullLyricsCanvas" width="1" height="1"></canvas>
+  </div>
+  <div class="full-lyrics-performance-backdrop" id="fullLyricsPerformanceBackdrop" aria-hidden="true">
+    <div class="full-lyrics-performance-tint"></div>
   </div>
   <div class="full-lyrics-main">
     <section class="full-lyrics-art-side" aria-label="Now playing">
