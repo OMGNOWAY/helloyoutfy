@@ -436,8 +436,9 @@
     overflow: hidden;
     color: var(--full-lyrics-ink);
     background: #111820;
-    font-family: system-ui, sans-serif;
+    font-family: inherit;
   }
+  #fullLyricsPlayer :is(button, input, select) { font-family: inherit; }
   #fullLyricsPlayer.open { visibility: visible; }
   #fullLyricsPlayer .full-lyrics-backdrop {
     position: absolute;
