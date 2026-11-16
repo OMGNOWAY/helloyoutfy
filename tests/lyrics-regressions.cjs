@@ -232,6 +232,38 @@ test('large fullscreen scroll padding cannot clip an overlapping group that fits
   assert.equal(container.scrolls, 1);
 });
 
+test('fullscreen follow moves lines out of the faded edge', () => {
+  const { m, lines, container } = overlapFixture(600);
+  m.amEl.parentElement = { id: 'fullLyricsContent' };
+  m.amEl.getScrollPaddingTop = () => 222;
+  container.scrollTop = 65;
+  assert.equal(m.amLineNeedsScroll(container, lines[1]), true);
+  m.updateAmJump();
+  assert.ok(lines[0].getBoundingClientRect().top >= 48);
+  assert.equal(m.amLineNeedsScroll(container, lines[1]), false);
+});
+
+test('refresh state keeps the fullscreen icon and updates its accessible label', () => {
+  const { ctx, manager } = fixture();
+  const button = iconOnly => ({
+    style: {}, textContent: iconOnly ? 'icon' : '',
+    hasAttribute: name => iconOnly && name === 'data-icon-only',
+    setAttribute(name, value) { this[name] = value; }
+  });
+  const icon = button(true), text = button(false);
+  ctx.document = { querySelectorAll: () => [icon, text] };
+  delete manager.updateFetchButtonVisibility;
+  manager.parsedLines = [{ text: 'line' }];
+  manager.updateFetchButtonVisibility();
+  assert.equal(icon.textContent, 'icon');
+  assert.equal(icon['aria-label'], 'Refresh lyrics');
+  assert.equal(text.textContent, '↻ Refresh');
+  manager.isFetching = true;
+  manager.updateFetchButtonVisibility();
+  assert.equal(icon['aria-label'], 'Loading lyrics…');
+  assert.equal(icon.disabled, true);
+});
+
 function speedFixture() {
   const { ctx, manager: m } = fixture();
   ctx.audio.paused = false; ctx.audio.playbackRate = 1;

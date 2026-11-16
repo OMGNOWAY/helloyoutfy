@@ -7362,15 +7362,23 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
           }
           :host([data-yl-fullscreen]) .lyrics-container {
-            padding-top: 0 !important;
-            padding-bottom: 30% !important;
+            padding-top: 12px !important;
+            padding-bottom: 18px !important;
           }
           :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced) {
             --lyrics-scroll-padding-top: 37%;
-            mask-image: linear-gradient(transparent, #000 11%, #000 88%, transparent);
+            padding-block: 0 !important;
+            mask-image: linear-gradient(transparent, #000 8%, #000 92%, transparent);
           }
-          :host([data-yl-fullscreen]) .lyrics-line {
-            letter-spacing: -.034em;
+          :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced)::before,
+          :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced)::after {
+            content: '';
+            display: block;
+            height: var(--lyrics-scroll-padding-top);
+          }
+          :host([data-yl-fullscreen]) .lyrics-line { letter-spacing: -.034em; }
+          :host([data-yl-fullscreen]:not([data-yl-focus])) .lyrics-container .lyrics-line {
+            filter: none !important;
           }
           :host([data-yl-fullscreen]) .lyrics-footer {
             visibility: visible !important;
@@ -7699,10 +7707,14 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         return index >= 0 ? root.querySelector(`#lyrics-line-${index}`) : null;
     }
+    amFollowMargin(height) {
+        // The fullscreen edge fade visually clips lines before the physical edge.
+        return this.amEl?.parentElement?.id === 'fullLyricsContent' ? height * .08 : Math.min(8, height * .1);
+    }
     amFollowBounds(container, line) {
         const rect = line.getBoundingClientRect();
         const height = container.getBoundingClientRect().height;
-        const margin = Math.min(8, height * .1);
+        const margin = this.amFollowMargin(height);
         const active = this.amEl?.shadowRoot?.querySelectorAll?.('.lyrics-line.active') || [];
         let top = rect.top, bottom = rect.bottom;
         for (const other of active) {
@@ -7719,7 +7731,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     amLineNeedsScroll(container, line) {
         const viewport = container.getBoundingClientRect(), rect = this.amFollowBounds(container, line);
         if (viewport.height <= 0 || rect.height <= 0) return false;
-        const margin = Math.min(8, viewport.height * .1);
+        const margin = this.amFollowMargin(viewport.height);
         const top = viewport.top + margin, bottom = viewport.bottom - margin;
         // A very tall verse cannot fit in one viewport; don't repeatedly scroll it.
         if (rect.height > bottom - top) {
@@ -7740,7 +7752,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         const cr = container.getBoundingClientRect(), lr = line.getBoundingClientRect();
         const bounds = this.amFollowBounds(container, line);
-        const margin = Math.min(8, cr.height * .1);
+        const margin = this.amFollowMargin(cr.height);
         const preferredPad = typeof el.getScrollPaddingTop === 'function' ? el.getScrollPaddingTop() : 8;
         const pad = Math.max(margin, Math.min(preferredPad, cr.height - margin - bounds.height));
         const top = Math.max(0, (Number.isFinite(line.offsetTop) ? line.offsetTop : container.scrollTop + lr.top - cr.top) + bounds.top - lr.top - pad);
@@ -7955,7 +7967,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (!glow) return;
         const token = this._glowToken = (this._glowToken || 0) + 1;
         glow.style.opacity = '0';
-        if (!this.amAmbient || !track?.albumArt || this.amEl?.parentElement?.id === 'playerEmbedLyricsContent') return;
+        const host = this.amEl?.parentElement?.id;
+        if (!this.amAmbient || !track?.albumArt || host === 'playerEmbedLyricsContent' || host === 'fullLyricsContent') return;
         const rgb = await this.dominantColor(track.albumArt);
         if (token !== this._glowToken || !rgb) return;
         const c = `${rgb[0]},${rgb[1]},${rgb[2]}`;
@@ -8366,7 +8379,13 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         document.querySelectorAll('.lyrics-fetch-btn').forEach(btn => {
             btn.style.display = '';
             btn.disabled = this.isFetching;
-            btn.textContent = this.isFetching ? 'Loading…' : hasLyrics ? '↻ Refresh' : '↻ Find lyrics';
+            const label = this.isFetching ? 'Loading lyrics…' : hasLyrics ? 'Refresh lyrics' : 'Find lyrics';
+            if (btn.hasAttribute('data-icon-only')) {
+                btn.title = label;
+                btn.setAttribute('aria-label', label);
+            } else {
+                btn.textContent = this.isFetching ? 'Loading…' : hasLyrics ? '↻ Refresh' : '↻ Find lyrics';
+            }
             btn.setAttribute('aria-busy', String(this.isFetching));
         });
     }
