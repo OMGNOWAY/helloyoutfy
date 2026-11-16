@@ -8199,7 +8199,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this.amEl.toggleAttribute('data-yl-fullscreen', fullScreen);
         const ink = fullScreen ? 'var(--full-lyrics-ink, #fff)' : 'var(--text-primary, #ffffff)';
         const muted = fullScreen ? 'var(--full-lyrics-muted, #ffffffa6)' : 'var(--text-secondary, #a0a0a0)';
-        this.amEl.fontFamily = getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
+        this.amEl.fontFamily = fullScreen ? 'inherit' :
+            getComputedStyle(host).fontFamily || getComputedStyle(document.body).fontFamily || 'inherit';
         // Keep the word-wipe contrast explicit: pending words use muted text,
         // while the sung portion uses the readable primary text colour.
         style.setProperty('--am-lyrics-highlight-color', ink);
