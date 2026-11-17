@@ -9157,7 +9157,7 @@ function syncFullLyricsModes() {
   if (document.getElementById('fullLyricsQueuePanel')?.hidden === false) FullLyricsPlayer.renderQueue();
 }
 
-const fullLyricsAssetBase = document.currentScript?.src || window.YOUTIFY_GATE?.appJs || document.baseURI;
+const fullLyricsScriptSource = document.currentScript?.src;
 
 function createFullLyricsBackground(canvas, isOpen) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -9166,10 +9166,15 @@ function createFullLyricsBackground(canvas, isOpen) {
   let needsPaint = true;
   let sizeDirty = true;
   let lastPaint = null;
+  let performanceMode = document.body.classList.contains('performance-mode');
   let phase = 0, level = .35, playingAmount = 0, analysisAmount = 0;
 
   function canDraw() {
-    return isOpen() && !document.hidden && !document.body.classList.contains('performance-mode');
+    return isOpen() && !document.hidden;
+  }
+
+  function shouldAnimate() {
+    return !performanceMode && !reducedMotion.matches;
   }
 
   function detachAudio() {
@@ -9205,10 +9210,10 @@ function createFullLyricsBackground(canvas, isOpen) {
   function render(now) {
     frame = null;
     if (!canDraw() || !renderer) return;
-    const reduced = reducedMotion.matches;
+    const animate = shouldAnimate();
     if (!image && !hasImage) return;
     // Allow for fractional refresh intervals so 60 Hz doesn't skip every third frame.
-    if (!needsPaint && lastPaint !== null && now - lastPaint < 1000 / 30 - .75) {
+    if (animate && !needsPaint && lastPaint !== null && now - lastPaint < 1000 / 30 - .75) {
       schedule();
       return;
     }
@@ -9217,15 +9222,20 @@ function createFullLyricsBackground(canvas, isOpen) {
       if (sizeDirty) {
         const width = canvas.clientWidth, height = canvas.clientHeight;
         if (!width || !height) return;
-        const scale = Math.min(window.devicePixelRatio || 1, 1280 / width, 800 / height);
+        // The soft color field scales well from a smaller still frame.
+        const maxWidth = performanceMode ? 320 : 1280;
+        const maxHeight = performanceMode ? 200 : 800;
+        const scale = Math.min(window.devicePixelRatio || 1, maxWidth / width, maxHeight / height);
         const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
         if (canvas.width !== w || canvas.height !== h) {
           canvas.width = w;
           canvas.height = h;
           renderer.resize();
+          needsPaint = true;
         }
         sizeDirty = false;
       }
+      if (!animate && !needsPaint) return;
       if (image) {
         renderer.loadImageElement(image);
         image = null;
@@ -9234,7 +9244,7 @@ function createFullLyricsBackground(canvas, isOpen) {
 
       const dt = lastPaint === null ? 0 : Math.min(.1, (now - lastPaint) / 1000);
       const approach = (from, to, seconds) => from + (to - from) * -Math.expm1(-dt / seconds);
-      if (!reduced) {
+      if (animate) {
         const loudness = sampleAudio();
         const target = loudness ?? .35;
         level = approach(level, target, target > level ? 1.1 : 2.8);
@@ -9259,11 +9269,11 @@ function createFullLyricsBackground(canvas, isOpen) {
       stop();
       return;
     }
-    if (!reduced) schedule();
+    if (animate) schedule();
   }
 
   function schedule() {
-    if (frame == null && canDraw() && renderer && (image || hasImage) && (!reducedMotion.matches || needsPaint)) {
+    if (frame == null && canDraw() && renderer && (image || hasImage) && (shouldAnimate() || needsPaint || sizeDirty)) {
       frame = requestAnimationFrame(render);
     }
   }
@@ -9279,7 +9289,8 @@ function createFullLyricsBackground(canvas, isOpen) {
     try {
       renderer = new Kawarp(canvas, {
         warpIntensity: 1, warpResolutionScale: .5, blurPasses: 7, saturation: 1.5, dithering: .008,
-        tintIntensity: 0, transitionDuration: reducedMotion.matches ? 0 : 1000,
+        tintIntensity: 0, transitionDuration: shouldAnimate() ? 1000 : 0,
+        powerPreference: performanceMode ? 'low-power' : 'high-performance',
         scale: 1, animationSpeed: .1
       });
     } catch {
@@ -9290,7 +9301,6 @@ function createFullLyricsBackground(canvas, isOpen) {
 
   function requestImage() {
     image = null;
-    needsPaint = true;
     if (!artwork) {
       hasImage = false;
       canvas.removeAttribute('data-ready');
@@ -9305,7 +9315,7 @@ function createFullLyricsBackground(canvas, isOpen) {
     source.onload = () => {
       if (pendingSource !== source || artwork !== url || !renderer) return;
       image = source;
-      schedule();
+      repaint();
     };
     source.onerror = () => {
       if (pendingSource !== source || artwork !== url) return;
@@ -9319,6 +9329,12 @@ function createFullLyricsBackground(canvas, isOpen) {
   let pendingSource;
 
   function sync() {
+    const nextMode = document.body.classList.contains('performance-mode');
+    if (nextMode !== performanceMode) {
+      performanceMode = nextMode;
+      sizeDirty = true;
+      updateMotion();
+    }
     if (!canDraw()) { stop(); return; }
     if (renderer) { schedule(); return; }
     if (!artwork || scriptLoad) return;
@@ -9327,7 +9343,8 @@ function createFullLyricsBackground(canvas, isOpen) {
       return;
     }
     scriptLoad = document.createElement('script');
-    scriptLoad.src = new URL('./vendor/kawarp.js', fullLyricsAssetBase).href;
+    const assetBase = fullLyricsScriptSource || window.YOUTIFY_GATE?.appJs || document.baseURI;
+    scriptLoad.src = new URL('./vendor/kawarp.js', assetBase).href;
     scriptLoad.onload = () => {
       scriptLoad = null;
       if (window.YoutifyKawarp) startRenderer(window.YoutifyKawarp);
@@ -9346,16 +9363,18 @@ function createFullLyricsBackground(canvas, isOpen) {
 
   function resize() {
     sizeDirty = true;
+    schedule();
+  }
+
+  function updateMotion() {
+    if (renderer) renderer.transitionDuration = shouldAnimate() ? 1000 : 0;
+    stop();
     repaint();
   }
 
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(canvas);
   window.addEventListener('resize', resize);
-  reducedMotion.addEventListener?.('change', () => {
-    if (renderer) renderer.transitionDuration = reducedMotion.matches ? 0 : 1000;
-    stop();
-    repaint();
-  });
+  reducedMotion.addEventListener?.('change', updateMotion);
   document.addEventListener('visibilitychange', sync);
   canvas.addEventListener('webglcontextlost', event => {
     event.preventDefault();
@@ -9459,64 +9478,6 @@ const FullLyricsPlayer = (() => {
     }
     try { localStorage.setItem('youtify_fullscreen_hide_past_lyrics', hidePastLyrics ? '1' : '0'); } catch {}
     updatePastLyrics();
-  }
-
-  let performanceBackdropArt = null;
-  let performanceBackdropRequest = 0;
-  const performanceColorCache = new Map();
-
-  async function syncPerformanceBackdropColors(artwork) {
-    const backdrop = $('fullLyricsPerformanceBackdrop');
-    if (!backdrop || artwork === performanceBackdropArt) return;
-    performanceBackdropArt = artwork;
-    const request = ++performanceBackdropRequest;
-    for (let i = 1; i <= 3; i++) backdrop.style.removeProperty('--perf-g' + i);
-    if (!artwork || !document.body.classList.contains('performance-mode')) return;
-
-    let colors = performanceColorCache.get(artwork);
-    if (colors === undefined) {
-      colors = null;
-      try {
-        // Sample once per cover change, at a tiny resolution; no WebGL or
-        // animation frames are used to extract artwork colors.
-        const image = await lyricsManager?.loadImageCors?.(artwork);
-        if (image) {
-          const canvas = document.createElement('canvas');
-          canvas.width = canvas.height = 40;
-          const context = canvas.getContext('2d', { willReadFrequently: true });
-          if (context) {
-            context.drawImage(image, 0, 0, 40, 40);
-            const pixels = context.getImageData(0, 0, 40, 40).data;
-            const samples = [];
-            for (let y = 2; y < 38; y += 4) {
-              for (let x = 2; x < 38; x += 4) {
-                const index = (y * 40 + x) * 4;
-                const r = pixels[index], g = pixels[index + 1], b = pixels[index + 2];
-                const bright = Math.max(r, g, b), dark = Math.min(r, g, b);
-                if (bright < 36 || bright > 245 || bright - dark < 25) continue;
-                samples.push({ r, g, b, score: (bright - dark) * (.4 + bright / 255) });
-              }
-            }
-            samples.sort((a, b) => b.score - a.score);
-            const picks = [];
-            for (const color of samples) {
-              if (picks.every(p => Math.hypot(p.r - color.r, p.g - color.g, p.b - color.b) > 75)) picks.push(color);
-              if (picks.length === 3) break;
-            }
-            if (picks.length) {
-              while (picks.length < 3) picks.push(picks[picks.length - 1]);
-              colors = picks.map(p => [p.r, p.g, p.b].join(','));
-            }
-          }
-        }
-      } catch { /* Cross-origin art can be unreadable; fall back to preview colors. */ }
-      if (performanceColorCache.size >= 32) performanceColorCache.delete(performanceColorCache.keys().next().value);
-      performanceColorCache.set(artwork, colors);
-    }
-
-    // A rapid track skip must not tint the new song with the previous cover.
-    if (request !== performanceBackdropRequest || !colors) return;
-    colors.forEach((color, i) => backdrop.style.setProperty('--perf-g' + (i + 1), color));
   }
 
   function syncBackdrop(url) {
@@ -9699,9 +9660,6 @@ const FullLyricsPlayer = (() => {
     if (!artwork && cover?.hasAttribute('src')) cover.removeAttribute('src');
     cover?.setAttribute('alt', artwork ? `${track.title} album art` : '');
     syncBackdrop(artwork);
-    if (document.body.classList.contains('performance-mode')) {
-      void syncPerformanceBackdropColors(artwork);
-    }
     const canvas = $('fullLyricsCanvas');
     if (canvas) {
       warpedBackdrop ??= createFullLyricsBackground(canvas, () => opened);
@@ -9843,13 +9801,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Auto-hide the fullscreen action toolbar until the pointer approaches it.
   const fullLyricsOverlay = document.getElementById('fullLyricsPlayer');
   const fullLyricsToolbar = fullLyricsOverlay?.querySelector('.full-lyrics-topbar');
-  let lastPerformanceMode = document.body.classList.contains('performance-mode');
-  new MutationObserver(() => {
-    const performanceMode = document.body.classList.contains('performance-mode');
-    if (performanceMode === lastPerformanceMode) return;
-    lastPerformanceMode = performanceMode;
-    if (FullLyricsPlayer.isOpen()) FullLyricsPlayer.syncTrackInfo();
-  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   if (fullLyricsOverlay && fullLyricsToolbar) {
     const hoverEnabled = window.matchMedia('(hover: hover) and (pointer: fine)');
     fullLyricsOverlay.addEventListener('pointermove', event => {

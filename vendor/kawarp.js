@@ -365,7 +365,7 @@ class Kawarp {
             depth: false,
             stencil: false,
             preserveDrawingBuffer: true,
-            powerPreference: "high-performance",
+            powerPreference: options.powerPreference ?? "high-performance",
         };
         const gl2 = options.highPrecisionInput || options.highPrecisionOutput
             ? canvas.getContext("webgl2", contextAttributes)
