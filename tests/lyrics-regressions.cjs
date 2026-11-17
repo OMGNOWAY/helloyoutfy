@@ -243,6 +243,31 @@ test('fullscreen follow moves lines out of the faded edge', () => {
   assert.equal(m.amLineNeedsScroll(container, lines[1]), false);
 });
 
+test('fullscreen native scroll leaves readable lyrics and the ending footer in place', () => {
+  const { m, lines, container } = overlapFixture(600);
+  container.clientHeight = 600;
+  container.scrollHeight = 1800;
+  const el = m.amEl;
+  el.parentElement = { id: 'fullLyricsContent' };
+  el.lyricsContainer = container;
+  el.scrollToActiveLineYouLy = () => {};
+  el.animateScrollYouLy = offset => { container.scrollTop = -offset; };
+  const footer = { classList: { contains: name => name === 'lyrics-footer' || name === 'active' } };
+  el.footerElement = footer;
+  m.installFullscreenAmScroll();
+
+  container.scrollTop = 40;
+  el.animateScrollYouLy(-140, false, 350, lines[1]);
+  assert.equal(container.scrollTop, 40);
+  el.animateScrollYouLy(-800, false, 350, footer);
+  assert.equal(container.scrollTop, 40);
+  assert.equal(m.getAmCurrentLine(), null);
+
+  container.scrollTop = 140;
+  el.animateScrollYouLy(-80, false, 350, lines[1]);
+  assert.equal(container.scrollTop, 0);
+});
+
 test('refresh state keeps the fullscreen icon and updates its accessible label', () => {
   const { ctx, manager } = fixture();
   const button = iconOnly => ({
