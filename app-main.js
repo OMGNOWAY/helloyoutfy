@@ -9164,6 +9164,7 @@ function createFullLyricsBackground(canvas, isOpen) {
   let renderer, scriptLoad, artwork, frame, image, tap, analyser, samples;
   let hasImage = false;
   let needsPaint = true;
+  let sizeDirty = true;
   let lastPaint = null;
   let phase = 0, level = .35, playingAmount = 0, analysisAmount = 0;
 
@@ -9206,20 +9207,24 @@ function createFullLyricsBackground(canvas, isOpen) {
     if (!canDraw() || !renderer) return;
     const reduced = reducedMotion.matches;
     if (!image && !hasImage) return;
-    if (!needsPaint && !reduced && now - lastPaint < 1000 / 30) {
+    // Allow for fractional refresh intervals so 60 Hz doesn't skip every third frame.
+    if (!needsPaint && lastPaint !== null && now - lastPaint < 1000 / 30 - .75) {
       schedule();
       return;
     }
 
     try {
-      const width = canvas.clientWidth, height = canvas.clientHeight;
-      if (!width || !height) return;
-      const scale = Math.min(window.devicePixelRatio || 1, 1280 / width, 800 / height);
-      const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-        renderer.resize();
+      if (sizeDirty) {
+        const width = canvas.clientWidth, height = canvas.clientHeight;
+        if (!width || !height) return;
+        const scale = Math.min(window.devicePixelRatio || 1, 1280 / width, 800 / height);
+        const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+          renderer.resize();
+        }
+        sizeDirty = false;
       }
       if (image) {
         renderer.loadImageElement(image);
@@ -9243,7 +9248,7 @@ function createFullLyricsBackground(canvas, isOpen) {
         renderer.scale = 1;
       }
       renderer.renderFrame(phase);
-      canvas.setAttribute('data-ready', '');
+      if (!canvas.hasAttribute('data-ready')) canvas.setAttribute('data-ready', '');
       lastPaint = now;
       needsPaint = false;
     } catch {
@@ -9273,7 +9278,7 @@ function createFullLyricsBackground(canvas, isOpen) {
     if (renderer || !canDraw()) return;
     try {
       renderer = new Kawarp(canvas, {
-        warpIntensity: 1, blurPasses: 7, saturation: 1.5, dithering: .008,
+        warpIntensity: 1, warpResolutionScale: .5, blurPasses: 7, saturation: 1.5, dithering: .008,
         tintIntensity: 0, transitionDuration: reducedMotion.matches ? 0 : 1000,
         scale: 1, animationSpeed: .1
       });
@@ -9339,8 +9344,13 @@ function createFullLyricsBackground(canvas, isOpen) {
     schedule();
   }
 
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(repaint).observe(canvas);
-  else window.addEventListener('resize', repaint);
+  function resize() {
+    sizeDirty = true;
+    repaint();
+  }
+
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(canvas);
+  window.addEventListener('resize', resize);
   reducedMotion.addEventListener?.('change', () => {
     if (renderer) renderer.transitionDuration = reducedMotion.matches ? 0 : 1000;
     stop();
@@ -9395,8 +9405,13 @@ const FullLyricsPlayer = (() => {
         pointer-events: auto !important;
         transition: opacity .24s ease;
       }
-      :host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric:is(:hover, :focus-visible) {
+      :host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric:focus-visible {
         opacity: 1 !important;
+      }
+      @media (hover: hover) {
+        :host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric:hover:not(:focus-visible) {
+          opacity: var(--full-lyrics-past-hover-opacity, 1) !important;
+        }
       }`;
       root.appendChild(sheet);
     }
@@ -9404,7 +9419,7 @@ const FullLyricsPlayer = (() => {
     // Determine completed lines from the actual playback time, not from the
     // renderer's .active / currentPrimaryActiveLine markers. Those markers
     // can stay on a clicked line after seeking, keeping it visible forever.
-    const lines = Array.from(root.querySelectorAll('.lyrics-line'));
+    const lines = root.querySelectorAll('.lyrics-line[id^="lyrics-line-"]');
     if (!hidePastLyrics || am.cachedIsUnsynced) {
       for (const line of lines) line.classList.remove('youtify-past-lyric');
       return;
@@ -9414,10 +9429,8 @@ const FullLyricsPlayer = (() => {
     const playedMs = Math.max(0,
       (Number(lyricsManager?.getLyricsPlaybackSeconds?.()) || 0) * 1000
       - (Number(lyricsManager?.amOffsetMs) || 0));
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const id = /^lyrics-line-(\d+)$/.exec(line.id);
-      const index = id ? Number(id[1]) : i;
+    for (const line of lines) {
+      const index = Number(line.id.slice('lyrics-line-'.length));
       const lyric = data[index];
       const start = Number(lyric?.timestamp);
       const explicitEnd = Number(lyric?.endtime);
@@ -9429,8 +9442,8 @@ const FullLyricsPlayer = (() => {
           if (Number.isFinite(next) && next > start) { endMs = next; break; }
         }
       }
-      const finished = Number.isFinite(start) && start >= 0 &&
-        Number.isFinite(endMs) && endMs <= playedMs - 80;
+      const finished = Number.isFinite(start) && start >= 0 && start <= playedMs &&
+        (audio.ended || (Number.isFinite(endMs) && endMs <= playedMs - 80));
       line.classList.toggle('youtify-past-lyric', finished);
     }
   }
@@ -9881,6 +9894,18 @@ document.addEventListener('DOMContentLoaded', () => {
     button.onclick = () => FullLyricsPlayer.setLayout(button.dataset.fullLayout);
   });
   const pane = document.getElementById('fullLyricsContent');
+  if (pane) {
+    // An active line can finish while the pointer is still where the user clicked.
+    // Re-enable hover previews when the user actually moves the pointer.
+    pane.addEventListener('click', event => {
+      if (event.detail > 0 && event.composedPath().some(node => node.classList?.contains('lyrics-line'))) {
+        pane.setAttribute('data-lyric-pointer-seek', '');
+      }
+    }, true);
+    const restoreLyricHover = () => pane.removeAttribute('data-lyric-pointer-seek');
+    pane.addEventListener('pointermove', restoreLyricHover, { passive: true });
+    pane.addEventListener('pointerleave', restoreLyricHover);
+  }
   if (pane && typeof ResizeObserver !== 'undefined') new ResizeObserver(FullLyricsPlayer.recenter).observe(pane);
   else window.addEventListener('resize', FullLyricsPlayer.recenter);
 
@@ -9912,7 +9937,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   for (const player of [audio, audio2]) {
-    for (const event of ['timeupdate', 'loadedmetadata', 'play', 'pause', 'durationchange']) {
+    for (const event of ['timeupdate', 'loadedmetadata', 'play', 'pause', 'durationchange', 'seeked', 'ended']) {
       player.addEventListener(event, () => {
         if (player === audio) FullLyricsPlayer.syncPlayback();
       });
