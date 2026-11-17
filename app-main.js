@@ -235,6 +235,17 @@ class Utils {
     return Math.max(0, Math.min(center, limit));
   }
 
+  static amLyricsCredits(renderer) {
+    const source = renderer?.lyricsSource || '';
+    const selected = renderer?.availableSources?.[renderer.currentSourceIndex];
+    const credits = source && selected?.source === source ? selected : renderer;
+    return {
+      source,
+      songwriters: credits?.songwriters || '',
+      ...(Array.isArray(credits?.contributors) ? { contributors: credits.contributors } : {})
+    };
+  }
+
   static lyricsBoundsNeedScroll(viewport, bounds, margin) {
     if (viewport.height <= 0 || bounds.height <= 0) return false;
     const top = viewport.top + margin, bottom = viewport.bottom - margin;
@@ -6322,7 +6333,7 @@ class UnifiedLyricsManager {
                 if (!lines.length) continue;
                 const unsynced = el.lyrics.every(line => line.timestamp === 0 && line.endtime === 0);
                 return { lyrics: lines, parsedLines: lines, source: unsynced ? 'saved-amlyrics-text' : 'saved-amlyrics',
-                    amData: { version: 1, lines: JSON.parse(JSON.stringify(el.lyrics)), source: el.lyricsSource || 'Saved', songwriters: el.songwriters || '' } };
+                    amData: { version: 1, lines: JSON.parse(JSON.stringify(el.lyrics)), ...Utils.amLyricsCredits(el) } };
             }
             if (!this.apiKey) return null;
             // API fallbacks use an isolated worker; their parsing/error state
@@ -6424,7 +6435,8 @@ class UnifiedLyricsManager {
             });
         }
         return { version: 1, lines, unsynced, source: snapshot?.source || ({ spotify: 'Spotify', musix: 'Musix', genius: 'Genius', 'imported-lrc': 'Local LRC', 'imported-text': 'Local text' })[data.source] || 'Saved',
-            songwriters: snapshot?.songwriters || '' };
+            songwriters: snapshot?.songwriters || '',
+            ...(Array.isArray(snapshot?.contributors) ? { contributors: snapshot.contributors } : {}) };
     }
 
     async renderCachedLyrics(data, track, generation = this.trackLoadGeneration) {
@@ -6448,7 +6460,7 @@ class UnifiedLyricsManager {
             el.lyrics = JSON.parse(JSON.stringify(snapshot.lines));
             el.lyricsSource = snapshot.source || 'Saved';
             el.songwriters = snapshot.songwriters || '';
-            el.availableSources = [{ lines: el.lyrics, source: el.lyricsSource }];
+            el.availableSources = [{ lines: el.lyrics, source: el.lyricsSource, songwriters: el.songwriters, contributors: snapshot.contributors }];
             el.currentSourceIndex = 0;
             el.hasFetchedAllProviders = true;
             el.cachedIsUnsynced = snapshot.unsynced;
@@ -6745,7 +6757,7 @@ class UnifiedLyricsManager {
                 this.currentLyrics = this.parsedLines;
                 this.amTrackKey = this.fetchingKey;
                 const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: this.amEl?.cachedIsUnsynced ? 'saved-amlyrics-text' : 'saved-amlyrics',
-                    amData: { version: 1, lines: JSON.parse(JSON.stringify(amLines)), source: this.amEl?.lyricsSource || 'Saved', songwriters: this.amEl?.songwriters || '' } };
+                    amData: { version: 1, lines: JSON.parse(JSON.stringify(amLines)), ...Utils.amLyricsCredits(this.amEl) } };
                 await this.rememberLyrics(track, saved);
                 if (!isFresh()) return;
                 this.isLoading = false;
@@ -8215,7 +8227,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         // and it never re-centers on the current line, so do that ourselves
         this.jumpAmToCurrentLine();
     }
-    async jumpAmToCurrentLine(force = false) {
+    async jumpAmToCurrentLine(force = false, layoutChanged = false) {
         const el = this.amEl;
         if (!el || el.cachedIsUnsynced) return;
         const token = this._amJumpToken = (this._amJumpToken || 0) + 1;
@@ -8238,7 +8250,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (!container) return;
             const line = this.getAmCurrentLine();
             const fullscreen = el.parentElement?.id === 'fullLyricsContent';
-            if (!force && (el.lineSprings?.size || (!fullscreen && el.isProgrammaticScroll))) return;
+            // Layout changes can retarget a running fullscreen spring after reflow.
+            if (!force && !(fullscreen && layoutChanged) &&
+                (el.lineSprings?.size || (!fullscreen && el.isProgrammaticScroll))) return;
             if (fullscreen && !container.clientHeight) return;
             if (line && (fullscreen || (force && firstSnap) || this.amLineNeedsScroll(container, line))) {
                 this.scrollAmLineIntoView(container, line, force && firstSnap); firstSnap = false;
@@ -9667,7 +9681,7 @@ const FullLyricsPlayer = (() => {
   }
 
   function setLayout(layout) {
-    if (!['classic', 'minimal', 'immersive'].includes(layout)) layout = 'classic';
+    if (!['classic', 'minimal', 'immersive', 'compact'].includes(layout)) layout = 'classic';
     const overlay = $('fullLyricsPlayer');
     if (!overlay) return;
     overlay.dataset.layout = layout;
@@ -9675,6 +9689,20 @@ const FullLyricsPlayer = (() => {
       button.setAttribute('aria-pressed', String(button.dataset.fullLayout === layout));
     });
     try { localStorage.setItem('youtify_fullscreen_layout', layout); } catch {}
+    if (opened) recenter();
+  }
+
+  function setPlayerSide(side) {
+    const overlay = $('fullLyricsPlayer');
+    if (!overlay) return;
+    const right = side === 'right';
+    overlay.dataset.playerSide = right ? 'right' : 'left';
+    const button = $('fullLyricsSwapSide');
+    if (button) {
+      button.title = right ? 'Move player to the left' : 'Move player to the right';
+      button.setAttribute('aria-label', button.title);
+    }
+    try { localStorage.setItem('youtify_fullscreen_player_side', overlay.dataset.playerSide); } catch {}
     if (opened) recenter();
   }
 
@@ -9686,7 +9714,7 @@ const FullLyricsPlayer = (() => {
       lyricsManager.placeAm();
       updatePastLyrics();
       if (!lyricsManager.amEl?.isUserScrolling && Date.now() >= Number(pane.dataset.followAfter || 0)) {
-        lyricsManager.jumpAmToCurrentLine();
+        lyricsManager.jumpAmToCurrentLine(false, true);
       }
       return;
     }
@@ -9770,13 +9798,22 @@ const FullLyricsPlayer = (() => {
     const loadedAm = am?.lyrics?.length && !am.isLoading ? am : null;
     const fallback = pane.querySelector('.lyrics-source-label');
     const saved = fallback && track ? lyricsManager?.cache?.get(lyricsManager.getLyricsTrackId(track))?.amData : null;
-    const source = String(loadedAm?.lyricsSource || saved?.source || fallback?.textContent || '').trim();
-    const writers = String(loadedAm?.songwriters || saved?.songwriters || '').trim();
+    const attribution = loadedAm ? Utils.amLyricsCredits(loadedAm) : saved;
+    const source = String(attribution?.source || fallback?.textContent || '').trim();
+    const writers = String(attribution?.songwriters || '').trim();
+    let provider = source;
+    if (Array.isArray(attribution?.contributors)) {
+      const names = attribution.contributors.map(person => String(person?.username || '').trim()).filter(Boolean);
+      const handles = names.map(name => name.startsWith('@') ? name : `@${name}`);
+      provider = handles.length ? `Community lyrics · Made by ${handles.join(', ')}` : 'Community lyrics';
+    } else if (source && !/^(saved$|local\b)/i.test(source)) {
+      provider = `Provided by ${source.replace(/^Spicy Lyrics \((.+)\)$/, '$1')}`;
+    }
 
     credits.toggleAttribute('hidden', !source && !writers);
     $('fullLyricsSourceRow').toggleAttribute('hidden', !source);
     $('fullLyricsWritersRow').toggleAttribute('hidden', !writers);
-    setText('fullLyricsLyricsSource', source);
+    setText('fullLyricsLyricsSource', provider);
     setText('fullLyricsSongwriters', writers);
     const switchSource = $('fullLyricsSwitchSource');
     switchSource.toggleAttribute('hidden', !loadedAm || !source ||
@@ -9894,7 +9931,7 @@ const FullLyricsPlayer = (() => {
   }
 
   return {
-    open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, recenter, syncEndingInfo,
+    open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, setPlayerSide, recenter, syncEndingInfo,
     setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
     isOpen: () => opened,
     syncBackdropMotion: () => warpedBackdrop?.sync()
@@ -9954,9 +9991,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (queueButton) queueButton.onclick = () => FullLyricsPlayer.toggleQueue();
   const showLyrics = document.getElementById('fullLyricsShowLyrics');
   if (showLyrics) showLyrics.onclick = () => FullLyricsPlayer.toggleQueue(false);
-  let layout;
-  try { layout = localStorage.getItem('youtify_fullscreen_layout'); } catch {}
+  let layout, playerSide;
+  try {
+    layout = localStorage.getItem('youtify_fullscreen_layout');
+    playerSide = localStorage.getItem('youtify_fullscreen_player_side');
+  } catch {}
   FullLyricsPlayer.setLayout(layout);
+  FullLyricsPlayer.setPlayerSide(playerSide);
+  const swapSide = document.getElementById('fullLyricsSwapSide');
+  swapSide?.addEventListener('click', () => {
+    FullLyricsPlayer.setPlayerSide(fullLyricsOverlay?.dataset.playerSide === 'right' ? 'left' : 'right');
+  });
   document.querySelectorAll('#fullLyricsPlayer [data-full-layout]').forEach(button => {
     button.onclick = () => FullLyricsPlayer.setLayout(button.dataset.fullLayout);
   });

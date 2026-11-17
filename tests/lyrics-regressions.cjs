@@ -186,7 +186,7 @@ function overlapFixture(height = 200) {
   m.amEl = { shadowRoot: root, currentPrimaryActiveLine: lines[1], isConnected: true,
     autoScroll: true, getScrollPaddingTop: () => 8 };
   ctx.audio.paused = false;
-  return { m, lines, container };
+  return { ctx, m, lines, container };
 }
 test('overlapping lyrics use the renderer primary line instead of the first active line', () => {
   const { m, lines } = overlapFixture();
@@ -250,6 +250,22 @@ test('fullscreen fallback centering uses layout offsets during the opening anima
   ctx.line = { offsetParent: ctx.container, offsetTop: 400, offsetHeight: 40,
     getBoundingClientRect: () => ({ top: 398, height: 39.2 }) };
   assert.equal(vm.runInContext('Utils.centeredLyricsTop(container, line)', ctx), 120);
+});
+
+test('fullscreen layout changes retarget a running lyric scroll', async () => {
+  const { ctx, m, lines, container } = overlapFixture(600);
+  ctx.requestAnimationFrame = callback => callback();
+  container.clientHeight = 600;
+  m.amActive = true;
+  m.amEl.parentElement = { id: 'fullLyricsContent' };
+  m.amEl.lyrics = [{ timestamp: 1000 }, { timestamp: 2000 }];
+  m.amEl.lineSprings = new Map([[lines[1], {}]]);
+  const calls = [];
+  m.scrollAmLineIntoView = (...args) => calls.push(args);
+  await m.jumpAmToCurrentLine();
+  assert.equal(calls.length, 0);
+  await m.jumpAmToCurrentLine(false, true);
+  assert.deepEqual(calls, [[container, lines[1], false]]);
 });
 
 test('fullscreen native scroll centers each lyric and holds its position during the outro', () => {
@@ -494,19 +510,31 @@ function cachedRendererFixture() {
   f.manager.pruneLyricsDB = () => {};
   return { ...f, el, requests: () => requests };
 }
-test('am-lyrics persists the full word and backing-vocal data through an IndexedDB reload', async () => {
+test('am-lyrics persists word timing, backing vocals, and credits through an IndexedDB reload', async () => {
   const first = cachedRendererFixture(), db = lyricDB(); first.manager.db = db;
   delete first.manager.saveLyricsToDB;
   first.manager.amEl = first.el;
+  const contributors = [{ username: 'community-author', roles: ['author'] }];
+  first.el.currentSourceIndex = 1;
+  first.el.availableSources = [
+    { source: 'Alternate provider', songwriters: 'Alternate Writer' },
+    { source: 'Spicy Lyrics', songwriters: 'Test Writer', contributors }
+  ];
+  first.el.lyricsSource = 'Spicy Lyrics';
+  first.el.songwriters = 'Alternate Writer';
   first.manager.tryAm = async () => wordLyrics();
   await first.manager.fetchLyrics(first.track);
   const stored = db.rows.get(first.manager.getLyricsTrackId(first.track));
   assert.deepEqual(JSON.parse(JSON.stringify(stored.amData.lines)), wordLyrics());
+  assert.deepEqual(stored.amData.contributors, contributors);
+  assert.equal(stored.amData.songwriters, 'Test Writer');
   const next = cachedRendererFixture(); next.manager.db = db;
   next.manager.tryAm = async () => { throw Error('Saved lyrics must not search providers'); };
   await next.manager.onTrackChange();
   assert.equal(next.manager.currentSource, 'amlyrics');
   assert.deepEqual(JSON.parse(JSON.stringify(next.el.lyrics)), wordLyrics());
+  assert.deepEqual(next.el.availableSources[0].contributors, contributors);
+  assert.equal(next.el.availableSources[0].songwriters, 'Test Writer');
   assert.equal(next.requests(), 0, 'Connecting the cached renderer must not refetch');
   next.el.lyrics[0].text[0].text = 'Changed renderer word';
   assert.equal(stored.amData.lines[0].text[0].text, 'Saved ');
