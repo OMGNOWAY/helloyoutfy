@@ -243,7 +243,16 @@ test('fullscreen follow moves lines out of the faded edge', () => {
   assert.equal(m.amLineNeedsScroll(container, lines[1]), false);
 });
 
-test('fullscreen native scroll leaves readable lyrics and the ending footer in place', () => {
+test('fullscreen fallback centering uses layout offsets during the opening animation', () => {
+  const { ctx } = fixture();
+  ctx.container = { clientHeight: 600, scrollTop: 0, scrollHeight: 1000,
+    getBoundingClientRect: () => ({ top: 6, height: 588 }) };
+  ctx.line = { offsetParent: ctx.container, offsetTop: 400, offsetHeight: 40,
+    getBoundingClientRect: () => ({ top: 398, height: 39.2 }) };
+  assert.equal(vm.runInContext('Utils.centeredLyricsTop(container, line)', ctx), 120);
+});
+
+test('fullscreen native scroll centers each lyric and holds its position during the outro', () => {
   const { m, lines, container } = overlapFixture(600);
   container.clientHeight = 600;
   container.scrollHeight = 1800;
@@ -252,20 +261,28 @@ test('fullscreen native scroll leaves readable lyrics and the ending footer in p
   el.lyricsContainer = container;
   el.scrollToActiveLineYouLy = () => {};
   el.animateScrollYouLy = offset => { container.scrollTop = -offset; };
-  const footer = { classList: { contains: name => name === 'lyrics-footer' || name === 'active' } };
+  let footerActive = false;
+  const footer = { classList: { contains: name => name === 'lyrics-footer' || (name === 'active' && footerActive) } };
   el.footerElement = footer;
   m.installFullscreenAmScroll();
 
-  container.scrollTop = 40;
-  el.animateScrollYouLy(-140, false, 350, lines[1]);
-  assert.equal(container.scrollTop, 40);
+  lines[0].offsetTop = 410;
+  lines[1].offsetTop = 470;
+  container.scrollTop = 150;
+  assert.equal(m.amLineNeedsScroll(container, lines[1]), false);
+  el.animateScrollYouLy(-450, false, 350, lines[1]);
+  assert.equal(container.scrollTop, 190);
+  footerActive = true;
   el.animateScrollYouLy(-800, false, 350, footer);
-  assert.equal(container.scrollTop, 40);
+  assert.equal(container.scrollTop, 190);
   assert.equal(m.getAmCurrentLine(), null);
 
-  container.scrollTop = 140;
-  el.animateScrollYouLy(-80, false, 350, lines[1]);
-  assert.equal(container.scrollTop, 0);
+  container.scrollTop = 200;
+  el.animateScrollYouLy(-450, false, 350, lines[1]);
+  assert.equal(container.scrollTop, 200);
+  footerActive = false;
+  el.animateScrollYouLy(-450, false, 350, lines[1]);
+  assert.equal(container.scrollTop, 190);
 });
 
 test('refresh state keeps the fullscreen icon and updates its accessible label', () => {
