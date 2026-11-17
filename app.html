@@ -746,10 +746,11 @@
   }
   #fullLyricsPlayer .full-lyrics-credits {
     display: grid;
-    gap: 3px;
+    gap: 2px;
     min-width: 0;
     margin: 0;
-    font-size: clamp(12px, 1vw, 15px);
+    font-size: clamp(12px, 1vw, 14px);
+    line-height: 1.2;
   }
   #fullLyricsPlayer .full-lyrics-credits > div {
     display: flex;
@@ -757,41 +758,54 @@
     gap: 6px;
     min-width: 0;
   }
-  #fullLyricsPlayer .full-lyrics-credits dt { font-weight: 750; color: var(--full-lyrics-ink); }
-  #fullLyricsPlayer .full-lyrics-credits dd,
-  #fullLyricsPlayer .full-lyrics-next-label {
+  #fullLyricsPlayer .full-lyrics-credits dt { white-space: nowrap; }
+  #fullLyricsPlayer .full-lyrics-credits dd {
     min-width: 0;
     margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
+  #fullLyricsPlayer #fullLyricsSongwriters {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    font-weight: 650;
+    color: var(--full-lyrics-ink);
+  }
+  #fullLyricsPlayer #fullLyricsSourceRow { align-items: center; font-size: 11px; }
   #fullLyricsPlayer #fullLyricsSourceRow dd { display: flex; align-items: center; gap: 4px; }
-  #fullLyricsPlayer #fullLyricsLyricsSource { overflow: hidden; text-overflow: ellipsis; }
-  #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon { width: 22px; height: 22px; }
+  #fullLyricsPlayer #fullLyricsLyricsSource { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon { width: 22px; height: 22px; flex: none; }
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon svg { width: 14px; height: 14px; }
   #fullLyricsPlayer .full-lyrics-next-track {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 10px;
     min-width: 0;
   }
   #fullLyricsPlayer .full-lyrics-next-art {
-    width: 38px;
-    height: 38px;
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: clamp(32px, 5.6dvh, 42px);
+    aspect-ratio: 1;
     flex: none;
-    border-radius: 6px;
+    border-radius: 7px;
     overflow: hidden;
-    background: #ffffff20;
+    background: color-mix(in srgb, var(--full-lyrics-ink) 12%, transparent);
   }
-  #fullLyricsPlayer .full-lyrics-next-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  #fullLyricsPlayer .full-lyrics-next-art::before { content: '♪'; }
+  #fullLyricsPlayer .full-lyrics-next-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #fullLyricsPlayer .full-lyrics-next-label { min-width: 0; line-height: 1.22; }
   #fullLyricsPlayer .full-lyrics-next-label > * {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  #fullLyricsPlayer .full-lyrics-next-label strong { font-size: 13px; color: var(--full-lyrics-ink); }
-  #fullLyricsPlayer .full-lyrics-next-label :is(span, small) { font-size: 11px; }
+  #fullLyricsPlayer .full-lyrics-next-label strong { font-size: 14px; font-weight: 650; color: var(--full-lyrics-ink); }
+  #fullLyricsPlayer .full-lyrics-next-label span { font-size: 10px; }
+  #fullLyricsPlayer .full-lyrics-next-label small { font-size: 12px; }
   #fullLyricsPlayer #fullLyricsContent {
     position: relative;
     width: 100%;
@@ -1150,6 +1164,7 @@
       <section id="fullLyricsContent" class="full-lyrics-content" aria-label="Lyrics"></section>
       <footer id="fullLyricsEndingInfo" class="full-lyrics-ending-info">
         <dl id="fullLyricsCredits" class="full-lyrics-credits" hidden>
+          <div id="fullLyricsWritersRow"><dt>Written by</dt><dd id="fullLyricsSongwriters"></dd></div>
           <div id="fullLyricsSourceRow">
             <dt>Source</dt>
             <dd>
@@ -1159,10 +1174,9 @@
               </button>
             </dd>
           </div>
-          <div id="fullLyricsWritersRow"><dt>Songwriters</dt><dd id="fullLyricsSongwriters"></dd></div>
         </dl>
         <div id="fullLyricsNextTrack" class="full-lyrics-next-track" hidden>
-          <span class="full-lyrics-next-art"><img id="fullLyricsNextArt" alt="" hidden></span>
+          <span class="full-lyrics-next-art" aria-hidden="true"><img id="fullLyricsNextArt" alt="" hidden></span>
           <div class="full-lyrics-next-label">
             <span>Up Next</span>
             <strong id="fullLyricsNextTitle"></strong>

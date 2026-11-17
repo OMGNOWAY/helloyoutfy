@@ -221,10 +221,16 @@ class Utils {
   }
 
   static centeredLyricsTop(container, line) {
-    const view = container.getBoundingClientRect();
-    const rect = line.getBoundingClientRect();
-    const height = container.clientHeight || view.height;
-    const center = container.scrollTop + rect.top - view.top + (rect.height - height) / 2;
+    const height = container.clientHeight || container.getBoundingClientRect().height;
+    let center;
+    if (line.offsetParent === container && line.offsetHeight > 0) {
+      // Layout offsets stay accurate while the fullscreen overlay scales in.
+      center = line.offsetTop + (line.offsetHeight - height) / 2;
+    } else {
+      const view = container.getBoundingClientRect();
+      const rect = line.getBoundingClientRect();
+      center = container.scrollTop + rect.top - view.top + (rect.height - height) / 2;
+    }
     const limit = Number.isFinite(container.scrollHeight) ? container.scrollHeight - height : Infinity;
     return Math.max(0, Math.min(center, limit));
   }
@@ -7770,7 +7776,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const view = container.getBoundingClientRect();
         const bounds = this.amFollowBounds(container, line);
         const margin = this.amFollowMargin(view.height);
-        if (!Utils.lyricsBoundsNeedScroll(view, bounds, margin)) return container.scrollTop;
+        if (line.classList.contains('lyrics-gap') &&
+            !Utils.lyricsBoundsNeedScroll(view, bounds, margin)) return container.scrollTop;
 
         const height = container.clientHeight || view.height;
         let centered = Number.isFinite(line.offsetTop) && line.offsetHeight > 0
@@ -8233,7 +8240,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             const fullscreen = el.parentElement?.id === 'fullLyricsContent';
             if (!force && (el.lineSprings?.size || (!fullscreen && el.isProgrammaticScroll))) return;
             if (fullscreen && !container.clientHeight) return;
-            if (line && ((force && firstSnap) || this.amLineNeedsScroll(container, line))) {
+            if (line && (fullscreen || (force && firstSnap) || this.amLineNeedsScroll(container, line))) {
                 this.scrollAmLineIntoView(container, line, force && firstSnap); firstSnap = false;
             }
         };
@@ -8295,7 +8302,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
                 el.pendingLayoutOffsets?.clear();
                 return;
             }
-            const follow = line && !line.classList.contains('lyrics-footer') && !el.isUserScrolling;
+            const follow = line && !el.isUserScrolling && !line.classList.contains('lyrics-footer') &&
+                !el.footerElement?.classList.contains('active');
             const top = follow ? this.getFullscreenAmScrollTop(container, line) : container.scrollTop;
             return animate(-top, force, duration, line);
         };
@@ -8422,10 +8430,6 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (!line) return;
             line.classList.add('active');
             if (!container.getClientRects().length || Number(container.dataset.followAfter) > Date.now() || container.querySelector('.lyrics-find')?.value) return;
-            if (container.id === 'fullLyricsContent') {
-                const view = container.getBoundingClientRect();
-                if (!Utils.lyricsBoundsNeedScroll(view, line.getBoundingClientRect(), view.height * .08)) return;
-            }
             container.scrollTo({
                 top: Utils.centeredLyricsTop(container, line),
                 behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
@@ -9694,10 +9698,8 @@ const FullLyricsPlayer = (() => {
         pane.querySelector('.lyrics-find')?.value) return;
     const line = pane.querySelector('.lyrics-line.active');
     if (line) {
-      const view = pane.getBoundingClientRect();
-      if (Utils.lyricsBoundsNeedScroll(view, line.getBoundingClientRect(), view.height * .08)) {
-        pane.scrollTo({ top: Utils.centeredLyricsTop(pane, line), behavior });
-      }
+      const top = Utils.centeredLyricsTop(pane, line);
+      if (Math.abs(pane.scrollTop - top) > 1) pane.scrollTo({ top, behavior });
     }
   }
 
@@ -9744,7 +9746,9 @@ const FullLyricsPlayer = (() => {
     const credits = $('fullLyricsCredits');
     const setText = (id, value) => {
       const node = $(id);
-      if (node.textContent !== value) node.textContent = value;
+      if (node.textContent === value) return;
+      node.textContent = value;
+      node.title = value;
     };
     card.toggleAttribute('hidden', !next);
     if (next) {
