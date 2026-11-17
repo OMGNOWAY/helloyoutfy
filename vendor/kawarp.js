@@ -386,6 +386,7 @@ class Kawarp {
             this.floatLinearFiltering = !!gl2.getExtension("OES_texture_float_linear");
         }
         this._warpIntensity = options.warpIntensity ?? 1.0;
+        this.warpResolutionScale = Math.max(0.25, Math.min(1, options.warpResolutionScale ?? 1));
         this._blurPasses = options.blurPasses ?? 8;
         this._animationSpeed = options.animationSpeed ?? 1.0;
         this._targetAnimationSpeed = this._animationSpeed;
@@ -449,9 +450,7 @@ class Kawarp {
         // Create album FBOs for crossfade (high precision to avoid banding)
         this.currentAlbumFBO = this.createFramebuffer(BLUR_SIZE, BLUR_SIZE, true);
         this.nextAlbumFBO = this.createFramebuffer(BLUR_SIZE, BLUR_SIZE, true);
-        const initW = Math.max(1, canvas.width || 640);
-        const initH = Math.max(1, canvas.height || 360);
-        this.warpFBO = this.createFramebuffer(initW, initH, true);
+        this.resize();
         if (options.highPrecisionOutput)
             this.applyFloatDrawingBuffer();
     }
@@ -1185,9 +1184,9 @@ class Kawarp {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
     resize() {
-        const width = Math.max(1, this.canvas.width);
-        const height = Math.max(1, this.canvas.height);
-        if (this.warpFBO.width !== width || this.warpFBO.height !== height) {
+        const width = Math.max(1, Math.round(this.canvas.width * this.warpResolutionScale));
+        const height = Math.max(1, Math.round(this.canvas.height * this.warpResolutionScale));
+        if (this.warpFBO?.width !== width || this.warpFBO?.height !== height) {
             if (this.warpFBO)
                 this.deleteFramebuffer(this.warpFBO);
             this.warpFBO = this.createFramebuffer(width, height, true);
@@ -1281,10 +1280,7 @@ class Kawarp {
         const gl = this.gl;
         const width = Math.max(1, this.canvas.width);
         const height = Math.max(1, this.canvas.height);
-        if (this.warpFBO.width !== width || this.warpFBO.height !== height) {
-            this.deleteFramebuffer(this.warpFBO);
-            this.warpFBO = this.createFramebuffer(width, height, true);
-        }
+        this.resize();
         // Calculate transition blend factor
         let blendFactor = 1.0;
         if (this.isTransitioning) {
@@ -1319,11 +1315,12 @@ class Kawarp {
         else {
             currentTexture = this.nextAlbumFBO.texture;
         }
-        // Warp upscales the blended result to full resolution
+        // The smooth warp can use fewer pixels. The output pass still applies
+        // saturation and dithering at the drawing buffer's full resolution.
         gl.useProgram(this.warpProgram);
         this.setupAttributes();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.warpFBO.framebuffer);
-        gl.viewport(0, 0, width, height);
+        gl.viewport(0, 0, this.warpFBO.width, this.warpFBO.height);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, currentTexture);
         gl.uniform1i(this.uniforms.warp.texture, 0);

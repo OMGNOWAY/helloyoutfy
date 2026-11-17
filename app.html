@@ -783,8 +783,14 @@
     pointer-events: auto;
     transition: opacity .24s ease;
   }
-  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed:is(:hover, :focus-visible) {
+  #fullLyricsPlayer #fullLyricsContent[data-lyric-pointer-seek] { --full-lyrics-past-hover-opacity: 0; }
+  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed:focus-visible {
     opacity: 1 !important;
+  }
+  @media (hover: hover) {
+    #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed:hover:not(:focus-visible) {
+      opacity: var(--full-lyrics-past-hover-opacity, 1) !important;
+    }
   }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line:not([role="button"]) { cursor: inherit; }
   #fullLyricsPlayer #fullLyricsContent .moveitalittle { transform: none; }
