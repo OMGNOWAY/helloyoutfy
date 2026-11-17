@@ -229,6 +229,16 @@ class Utils {
     return Math.max(0, Math.min(center, limit));
   }
 
+  static lyricsBoundsNeedScroll(viewport, bounds, margin) {
+    if (viewport.height <= 0 || bounds.height <= 0) return false;
+    const top = viewport.top + margin, bottom = viewport.bottom - margin;
+    if (bounds.height > bottom - top) {
+      const visible = Math.min(bounds.bottom, bottom) - Math.max(bounds.top, top);
+      return visible < Math.min(64, (bottom - top) / 2);
+    }
+    return bounds.top < top - 2 || bounds.bottom > bottom + 2;
+  }
+
   static formatDuration(seconds) {
     if (!seconds || isNaN(seconds)) return '0 min';
     const hours = Math.floor(seconds / 3600);
@@ -1124,6 +1134,7 @@ function uqRender() {
   ['uqCount', 'uqEmbedCount'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = userQueue.length; });
   uqRenderNow();
   if (document.getElementById('fullLyricsQueuePanel')?.hidden === false) FullLyricsPlayer.renderQueue();
+  if (document.getElementById('fullLyricsEndingInfo')) FullLyricsPlayer.syncEndingInfo();
 }
 document.addEventListener('DOMContentLoaded', () => {
   const t = document.getElementById('playerTitle');
@@ -6578,7 +6589,11 @@ class UnifiedLyricsManager {
         setInterval(() => {
             if (document.hidden) return;
             if (this.isOpen) this.updateLyricPreloads();
-            if (this.amActive && this.isOpen) { this.placeAm(); this.updateAmJump(); }
+            if (this.amActive && this.isOpen) {
+                this.placeAm();
+                this.updateAmJump();
+                if (this.amEl?.parentElement?.id === 'fullLyricsContent') FullLyricsPlayer.syncEndingInfo();
+            }
         }, 400);
         // the sync loop idles while paused, so seeks (and the first frame after one) need their own nudge
         [audio, audio2].forEach(player => {
@@ -7240,8 +7255,8 @@ class UnifiedLyricsManager {
         const badge = this.hasSyncedLyrics() ? '<span style="color:var(--accent);font-size:11px;">⚡ Synced</span>' : '<span style="color:var(--text-muted);font-size:11px;"></span>';
         container.dataset.lyricsRevision = String(this.renderRevision = (this.renderRevision || 0) + 1);
         container.innerHTML = `
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">
-<span style="font-size:12px;color:var(--text-muted);">Source: ${({spotify:'Spotify', musix:'Musix', genius:'Genius', 'saved-amlyrics':'am-lyrics (saved)', 'saved-amlyrics-text':'am-lyrics (saved)', 'imported-lrc':'Local LRC', 'imported-text':'Local text'})[this.currentSource] || 'Lyrics'}</span>${badge}
+<div class="lyrics-source-heading" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);">
+<span style="font-size:12px;color:var(--text-muted);">Source: <span class="lyrics-source-label">${({spotify:'Spotify', musix:'Musix', genius:'Genius', 'saved-amlyrics':'am-lyrics (saved)', 'saved-amlyrics-text':'am-lyrics (saved)', 'imported-lrc':'Local LRC', 'imported-text':'Local text'})[this.currentSource] || 'Lyrics'}</span></span>${badge}
 </div>
 <div class="lyrics-tools"><input class="lyrics-find" type="search" placeholder="Find a line…" aria-label="Find a lyric line" oninput="lyricsManager.filterLyrics(this)"><span class="lyrics-mode">${this.hasSyncedLyrics() ? 'Synced · click a line to seek' : 'Plain lyrics · timing unavailable'}</span></div>
 ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${idx}" ${!this.hasSyncedLyrics() ? '' : `role="button" tabindex="0" aria-label="Seek to line ${idx + 1}" onclick="lyricsManager.seekToLine(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();lyricsManager.seekToLine(${idx})}"`}><span class="moveitalittle">${this.escapeHtml(line.text)}</span></div>`).join('')}`;
@@ -7379,8 +7394,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             padding-block: 0 !important;
             mask-image: linear-gradient(transparent, #000 8%, #000 92%, transparent);
           }
-          :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced)::before,
-          :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced)::after {
+          :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced)::before {
             content: '';
             display: block;
             height: var(--full-lyrics-edge-space, 50dvh);
@@ -7390,16 +7404,12 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
           :host([data-yl-fullscreen]:not([data-yl-focus])) .lyrics-container .lyrics-line {
             filter: none !important;
           }
-          :host([data-yl-fullscreen]) .lyrics-footer {
-            visibility: visible !important;
-            height: auto !important;
-            margin: 16px 0 0 !important;
-            overflow: visible !important;
-            pointer-events: auto !important;
-            letter-spacing: normal;
-            color: var(--full-lyrics-muted);
+          /* The visible credits sit below the pane. Keep a measurable spacer
+             for the native scroll engine's last-line limit. */
+          :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced) .lyrics-footer {
+            height: var(--full-lyrics-edge-space, 50dvh) !important;
+            flex: none;
           }
-          :host([data-yl-fullscreen]) .lyrics-footer .version-info { display: none; }
         `;
         root.appendChild(style);
     }
@@ -7705,8 +7715,11 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         // Several lines can stay highlighted during a duet or an overlap.
         // Follow the same primary line as the renderer, including its lookahead.
         const primary = el.currentPrimaryActiveLine;
-        if (primary && root.contains(primary) && primary.classList.contains('lyrics-line')) return primary;
-        const active = root.querySelector('.lyrics-line.active');
+        const full = el.parentElement?.id === 'fullLyricsContent';
+        if (full && el.footerElement?.classList.contains('active')) return null;
+        if (primary && root.contains(primary) && primary.classList.contains('lyrics-line') &&
+            !(full && primary.classList.contains('lyrics-footer'))) return primary;
+        const active = root.querySelector(full ? '.lyrics-line.active:not(.lyrics-footer)' : '.lyrics-line.active');
         if (active) return active;
         const ms = this.getLyricsPlaybackSeconds() * 1000 - (this.amOffsetMs || 0);
         let index = -1;
@@ -7722,43 +7735,54 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         return this.amEl?.parentElement?.id === 'fullLyricsContent' ? height * .08 : Math.min(8, height * .1);
     }
     amFollowBounds(container, line) {
-        const rect = line.getBoundingClientRect();
-        const height = container.getBoundingClientRect().height;
-        const margin = this.amFollowMargin(height);
+        const view = container.getBoundingClientRect();
+        const full = this.amEl?.parentElement?.id === 'fullLyricsContent';
+        const rectFor = el => {
+            // The native spring can translate a line visually after scrollTop has
+            // reached its destination. Use the settled geometry in fullscreen.
+            if (full && Number.isFinite(el.offsetTop) && el.offsetHeight > 0) {
+                const top = view.top + el.offsetTop - container.scrollTop;
+                return { top, bottom: top + el.offsetHeight, height: el.offsetHeight };
+            }
+            return el.getBoundingClientRect();
+        };
+        const rect = rectFor(line);
+        const margin = this.amFollowMargin(view.height);
         const active = this.amEl?.shadowRoot?.querySelectorAll?.('.lyrics-line.active') || [];
         let top = rect.top, bottom = rect.bottom;
         for (const other of active) {
-            const bounds = other.getBoundingClientRect();
+            if (full && other.classList.contains('lyrics-footer')) continue;
+            const bounds = rectFor(other);
             if (bounds.height <= 0) continue;
             top = Math.min(top, bounds.top); bottom = Math.max(bottom, bounds.bottom);
         }
         // Keep the whole group readable if it fits. Otherwise follow only the
         // primary line so an older highlighted line cannot pull us backwards.
-        return bottom - top <= height - margin * 2
+        return bottom - top <= view.height - margin * 2
             ? { top, bottom, height: bottom - top }
             : rect;
     }
     amLineNeedsScroll(container, line) {
-        const viewport = container.getBoundingClientRect(), rect = this.amFollowBounds(container, line);
-        if (viewport.height <= 0 || rect.height <= 0) return false;
-        const margin = this.amFollowMargin(viewport.height);
-        const top = viewport.top + margin, bottom = viewport.bottom - margin;
-        // A very tall verse cannot fit in one viewport; don't repeatedly scroll it.
-        if (rect.height > bottom - top) {
-            const visible = Math.min(rect.bottom, bottom) - Math.max(rect.top, top);
-            return visible < Math.min(64, (bottom - top) / 2);
-        }
-        return rect.top < top - 2 || rect.bottom > bottom + 2;
+        const view = container.getBoundingClientRect();
+        return Utils.lyricsBoundsNeedScroll(view, this.amFollowBounds(container, line), this.amFollowMargin(view.height));
     }
     getFullscreenAmScrollTop(container, line) {
-        const centered = Utils.centeredLyricsTop(container, line);
         const view = container.getBoundingClientRect();
         const bounds = this.amFollowBounds(container, line);
         const margin = this.amFollowMargin(view.height);
-        if (bounds.height > view.height - margin * 2) return centered;
-        const min = container.scrollTop + bounds.bottom - view.bottom + margin;
-        const max = container.scrollTop + bounds.top - view.top - margin;
-        return Math.max(0, min, Math.min(max, centered));
+        if (!Utils.lyricsBoundsNeedScroll(view, bounds, margin)) return container.scrollTop;
+
+        const height = container.clientHeight || view.height;
+        let centered = Number.isFinite(line.offsetTop) && line.offsetHeight > 0
+            ? line.offsetTop + (line.offsetHeight - height) / 2
+            : Utils.centeredLyricsTop(container, line);
+        if (bounds.height <= view.height - margin * 2) {
+            const min = container.scrollTop + bounds.bottom - view.bottom + margin;
+            const max = container.scrollTop + bounds.top - view.top - margin;
+            centered = Math.max(min, Math.min(max, centered));
+        }
+        const limit = Number.isFinite(container.scrollHeight) ? container.scrollHeight - height : Infinity;
+        return Math.max(0, Math.min(limit, centered));
     }
     scrollAmLineIntoView(container, line, force = false) {
         const el = this.amEl;
@@ -7770,13 +7794,18 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (typeof el.setUserScrolling === 'function') el.setUserScrolling(false);
             else { container.classList.remove('user-scrolling'); el.isUserScrolling = false; }
         }
+        const full = el.parentElement?.id === 'fullLyricsContent';
+        if (full && el._youtifyFullscreenScroll) {
+            const top = this.getFullscreenAmScrollTop(container, line);
+            if (Math.abs(container.scrollTop - top) > 1) el.scrollToActiveLineYouLy(line, true);
+            return;
+        }
         const cr = container.getBoundingClientRect(), lr = line.getBoundingClientRect();
         const bounds = this.amFollowBounds(container, line);
         const margin = this.amFollowMargin(cr.height);
         const preferredPad = typeof el.getScrollPaddingTop === 'function' ? el.getScrollPaddingTop() : 8;
         const pad = Math.max(margin, Math.min(preferredPad, cr.height - margin - bounds.height));
-        const top = el.parentElement?.id === 'fullLyricsContent'
-            ? this.getFullscreenAmScrollTop(container, line)
+        const top = full ? this.getFullscreenAmScrollTop(container, line)
             : Math.max(0, (Number.isFinite(line.offsetTop) ? line.offsetTop : container.scrollTop + lr.top - cr.top) + bounds.top - lr.top - pad);
         // Move only the viewport. Calling renderer animation helpers here can
         // interfere with the focus/highlight state managed by am-lyrics.
@@ -7791,11 +7820,9 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const line = this.getAmCurrentLine();
         const show = !el.cachedIsUnsynced && !!container && !!line && this.amLineNeedsScroll(container, line);
         const full = el.parentElement?.id === 'fullLyricsContent' ? el.parentElement : null;
-        const browsingFullscreen = full && el.isUserScrolling && !el.cachedIsUnsynced;
-        const offCenter = full && !el.cachedIsUnsynced && line && container?.clientHeight &&
-            Math.abs(container.scrollTop - this.getFullscreenAmScrollTop(container, line)) > 8;
+        const browsingFullscreen = full && line && el.isUserScrolling && !el.cachedIsUnsynced;
         jump?.classList.toggle('show', !full?.hidden && (show || Boolean(browsingFullscreen)));
-        if (!full?.hidden && (show || offCenter) && Date.now() >= (this.amScrollUntil || 0) && !audio.paused && el.autoScroll !== false && !el.isLoading &&
+        if (!full?.hidden && show && Date.now() >= (this.amScrollUntil || 0) && !audio.paused && el.autoScroll !== false && !el.isLoading &&
             !el.isUserScrolling && !el.isClickSeeking && !el.isProgrammaticScroll &&
             !el.lineSprings?.size &&
             !container.classList.contains('user-scrolling')) {
@@ -8203,14 +8230,17 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             const container = root?.querySelector('.lyrics-container');
             if (!container) return;
             const line = this.getAmCurrentLine();
-            if (!force && (el.isProgrammaticScroll || el.lineSprings?.size)) return;
             const fullscreen = el.parentElement?.id === 'fullLyricsContent';
+            if (!force && (el.lineSprings?.size || (!fullscreen && el.isProgrammaticScroll))) return;
             if (fullscreen && !container.clientHeight) return;
-            const offCenter = fullscreen && line && Math.abs(container.scrollTop - this.getFullscreenAmScrollTop(container, line)) > 1;
-            if (line && ((force && firstSnap) || offCenter || this.amLineNeedsScroll(container, line))) {
+            if (line && ((force && firstSnap) || this.amLineNeedsScroll(container, line))) {
                 this.scrollAmLineIntoView(container, line, force && firstSnap); firstSnap = false;
             }
         };
+        if (el.parentElement?.id === 'fullLyricsContent') {
+            requestAnimationFrame(snap);
+            return;
+        }
         // am-lyrics resets scrollTop itself right after load, so snap a few times
         requestAnimationFrame(() => requestAnimationFrame(snap));
         setTimeout(snap, 150);
@@ -8244,21 +8274,31 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         style.setProperty('--am-lyrics-wide-line-spacing', spacing);
         style.setProperty('--am-lyrics-inline-padding', fullScreen ? '0px' : '4px');
         style.setProperty('--lyrics-scroll-padding-top', fullScreen ? '50%' : '8px');
-        // am-lyrics 1.8.7 aligns line tops to this offset before animating the scroll.
-        // Adjust the offset for the destination line so wrapped lines center too.
-        if (fullScreen && !this.amEl._youtifyCentered && typeof this.amEl.scrollToActiveLineYouLy === 'function') {
-            const nativeScroll = this.amEl.scrollToActiveLineYouLy;
-            this.amEl._youtifyCentered = true;
-            this.amEl.scrollToActiveLineYouLy = function (line, ...args) {
-                const height = this.lyricsContainer?.clientHeight;
-                if (height && line && this.hasAttribute('data-yl-fullscreen')) {
-                    this.style.setProperty('--lyrics-scroll-padding-top', Math.max(0, (height - line.offsetHeight) / 2) + 'px');
-                }
-                return nativeScroll.call(this, line, ...args);
-            };
-        }
+        if (fullScreen) this.installFullscreenAmScroll();
         style.setProperty('--am-lyrics-highlight-radius', '7px');
         style.setProperty('--am-lyrics-highlight-surface', fullScreen ? 'transparent' : 'rgba(var(--shadow-glow, 255,255,255), 0.12)');
+    }
+    installFullscreenAmScroll() {
+        const el = this.amEl;
+        if (el._youtifyFullscreenScroll || typeof el.animateScrollYouLy !== 'function' ||
+            typeof el.scrollToActiveLineYouLy !== 'function') return;
+        const animate = el.animateScrollYouLy.bind(el);
+        el._youtifyFullscreenScroll = true;
+        // am-lyrics 1.8.7 sends lyric, gap, and footer motion through this method.
+        // Keep one scroll engine so the footer can't compete with the active line.
+        el.animateScrollYouLy = (offset, force, duration, line) => {
+            if (el.parentElement?.id !== 'fullLyricsContent' || this.amEl !== el) {
+                return animate(offset, force, duration, line);
+            }
+            const container = el.lyricsContainer;
+            if (!container?.clientHeight) {
+                el.pendingLayoutOffsets?.clear();
+                return;
+            }
+            const follow = line && !line.classList.contains('lyrics-footer') && !el.isUserScrolling;
+            const top = follow ? this.getFullscreenAmScrollTop(container, line) : container.scrollTop;
+            return animate(-top, force, duration, line);
+        };
     }
     exitAm() {
         const el = this.amEl;
@@ -8326,9 +8366,17 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     handleTimeUpdate() {
         const seconds = this.getLyricsPlaybackSeconds();
         const off = this.hasSyncedLyrics() ? (this.amOffsetMs || 0) : 0;
-        if (this.amActive && this.amEl && this.amEl.isConnected) {
+        const el = this.amEl;
+        if (this.amActive && el?.isConnected) {
             const t = Math.max(0, Math.round(seconds * 1000 - off));
-            if (t !== this._lastAmT) { this._lastAmT = t; this.amEl.currentTime = t; }
+            if (t !== this._lastAmT) {
+                const wasOnFullscreenFooter = el.parentElement?.id === 'fullLyricsContent' &&
+                    el.footerElement?.classList.contains('active');
+                this._lastAmT = t;
+                el.currentTime = t;
+                // The renderer checks its footer before clearing it on a backwards seek.
+                if (wasOnFullscreenFooter && !el.footerElement?.classList.contains('active')) this.jumpAmToCurrentLine();
+            }
             this.syncAmWordTiming(t);
         }
         if (this.amLoop && this.currentSource === 'amlyrics' && !audio.paused) {
@@ -8374,6 +8422,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (!line) return;
             line.classList.add('active');
             if (!container.getClientRects().length || Number(container.dataset.followAfter) > Date.now() || container.querySelector('.lyrics-find')?.value) return;
+            if (container.id === 'fullLyricsContent') {
+                const view = container.getBoundingClientRect();
+                if (!Utils.lyricsBoundsNeedScroll(view, line.getBoundingClientRect(), view.height * .08)) return;
+            }
             container.scrollTo({
                 top: Utils.centeredLyricsTop(container, line),
                 behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
@@ -9155,6 +9207,7 @@ function syncFullLyricsModes() {
   const one = document.getElementById('fullLyricsRepeatOne');
   if (one) one.style.display = repeatMode === 'one' ? '' : 'none';
   if (document.getElementById('fullLyricsQueuePanel')?.hidden === false) FullLyricsPlayer.renderQueue();
+  if (document.getElementById('fullLyricsEndingInfo')) FullLyricsPlayer.syncEndingInfo();
 }
 
 const fullLyricsScriptSource = document.currentScript?.src;
@@ -9596,12 +9649,16 @@ const FullLyricsPlayer = (() => {
     const show = force ?? panel.hidden;
     panel.hidden = !show;
     if (lyrics) lyrics.hidden = show;
+    $('fullLyricsEndingInfo')?.toggleAttribute('hidden', show);
     const button = $('fullLyricsQueueButton');
     button?.setAttribute('aria-expanded', String(show));
     button?.setAttribute('aria-pressed', String(show));
     $('fullLyricsShowLyrics')?.setAttribute('aria-pressed', String(!show));
     if (show) renderQueue();
-    else if (opened) recenter();
+    else if (opened) {
+      syncEndingInfo();
+      recenter();
+    }
     return show;
   }
 
@@ -9637,8 +9694,10 @@ const FullLyricsPlayer = (() => {
         pane.querySelector('.lyrics-find')?.value) return;
     const line = pane.querySelector('.lyrics-line.active');
     if (line) {
-      const top = Utils.centeredLyricsTop(pane, line);
-      if (Math.abs(pane.scrollTop - top) > 1) pane.scrollTo({ top, behavior });
+      const view = pane.getBoundingClientRect();
+      if (Utils.lyricsBoundsNeedScroll(view, line.getBoundingClientRect(), view.height * .08)) {
+        pane.scrollTo({ top: Utils.centeredLyricsTop(pane, line), behavior });
+      }
     }
   }
 
@@ -9669,6 +9728,56 @@ const FullLyricsPlayer = (() => {
     if ($('fullLyricsTitle')) $('fullLyricsTitle').textContent = track?.title || 'No track playing';
     if ($('fullLyricsArtist')) $('fullLyricsArtist').textContent = track?.artist || 'Select a track to play';
     if ($('fullLyricsQueuePanel')?.hidden === false) renderQueue();
+    syncEndingInfo();
+  }
+
+  function syncEndingInfo() {
+    const info = $('fullLyricsEndingInfo');
+    if (!opened || !info || info.hidden) return;
+    const track = queue[currentTrackIndex];
+    const position = lyricsManager?.getLyricsPlaybackSeconds?.() ?? audio.currentTime;
+    const remaining = audio.duration - position;
+    const nextIndex = track && !audio.ended && remaining > 0 && remaining <= 10
+      ? PlayerController.getNextIndex() : -1;
+    const next = nextIndex === currentTrackIndex ? null : queue[nextIndex];
+    const card = $('fullLyricsNextTrack');
+    const credits = $('fullLyricsCredits');
+    const setText = (id, value) => {
+      const node = $(id);
+      if (node.textContent !== value) node.textContent = value;
+    };
+    card.toggleAttribute('hidden', !next);
+    if (next) {
+      credits.hidden = true;
+      setText('fullLyricsNextTitle', next.title || 'Unknown track');
+      setText('fullLyricsNextArtist', next.artist || '');
+      const art = $('fullLyricsNextArt');
+      const artwork = next.albumArt || '';
+      if (artwork !== (art.getAttribute('src') || '')) {
+        art.hidden = !artwork;
+        if (artwork) art.src = artwork;
+        else art.removeAttribute('src');
+      }
+      return;
+    }
+
+    const pane = $('fullLyricsContent');
+    const am = pane.querySelector('am-lyrics');
+    const loadedAm = am?.lyrics?.length && !am.isLoading ? am : null;
+    const fallback = pane.querySelector('.lyrics-source-label');
+    const saved = fallback && track ? lyricsManager?.cache?.get(lyricsManager.getLyricsTrackId(track))?.amData : null;
+    const source = String(loadedAm?.lyricsSource || saved?.source || fallback?.textContent || '').trim();
+    const writers = String(loadedAm?.songwriters || saved?.songwriters || '').trim();
+
+    credits.toggleAttribute('hidden', !source && !writers);
+    $('fullLyricsSourceRow').toggleAttribute('hidden', !source);
+    $('fullLyricsWritersRow').toggleAttribute('hidden', !writers);
+    setText('fullLyricsLyricsSource', source);
+    setText('fullLyricsSongwriters', writers);
+    const switchSource = $('fullLyricsSwitchSource');
+    switchSource.toggleAttribute('hidden', !loadedAm || !source ||
+      (loadedAm.availableSources?.length <= 1 && loadedAm.hasFetchedAllProviders));
+    switchSource.disabled = !!loadedAm?.isFetchingAlternatives;
   }
 
   function syncPlayback() {
@@ -9699,6 +9808,7 @@ const FullLyricsPlayer = (() => {
         : '<path d="M8.5 6.4c0-.9 1-1.4 1.8-.9l8 5.2a1.5 1.5 0 0 1 0 2.6l-8 5.2c-.8.5-1.8 0-1.8-.9z"></path>';
     }
     if (opened && hidePastLyrics) updatePastLyrics();
+    syncEndingInfo();
   }
 
   function mirrorLyrics() {
@@ -9708,9 +9818,11 @@ const FullLyricsPlayer = (() => {
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
       updatePastLyrics();
+      syncEndingInfo();
       return;
     }
     mirrorLyricsContent(source, target);
+    syncEndingInfo();
     centerFallbackLyrics(target, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth');
   }
 
@@ -9778,7 +9890,7 @@ const FullLyricsPlayer = (() => {
   }
 
   return {
-    open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, recenter,
+    open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, recenter, syncEndingInfo,
     setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
     isOpen: () => opened,
     syncBackdropMotion: () => warpedBackdrop?.sync()
@@ -9859,6 +9971,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (pane && typeof ResizeObserver !== 'undefined') new ResizeObserver(FullLyricsPlayer.recenter).observe(pane);
   else window.addEventListener('resize', FullLyricsPlayer.recenter);
+
+  const nextArt = document.getElementById('fullLyricsNextArt');
+  nextArt?.addEventListener('error', () => { nextArt.hidden = true; });
+  const sourceButton = document.getElementById('fullLyricsSwitchSource');
+  sourceButton?.addEventListener('click', async () => {
+    const am = lyricsManager?.amEl;
+    if (!am || am.parentElement?.id !== 'fullLyricsContent') return;
+    sourceButton.disabled = true;
+    try { await am.switchSource(); }
+    catch (error) { console.warn('Could not switch lyric source', error); }
+    finally { FullLyricsPlayer.syncEndingInfo(); }
+  });
 
   const cover = document.getElementById('fullLyricsArt');
   cover?.addEventListener('load', () => cover.removeAttribute('data-unavailable'));
