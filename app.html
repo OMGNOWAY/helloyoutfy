@@ -437,6 +437,7 @@
     --full-lyrics-view-left: max(calc(20 * var(--full-lyrics-unit)), env(safe-area-inset-left));
     --full-lyrics-footer-clearance: calc(calc(92 * var(--full-lyrics-unit)) + var(--full-lyrics-view-right));
     --cover-size: min(31.5vw, 58dvh, max(calc(105 * var(--full-lyrics-unit)), calc(100dvh - calc(224 * var(--full-lyrics-unit)))), calc(548 * var(--full-lyrics-unit)));
+    --full-lyrics-player-column: calc(var(--cover-size) + max(4vw, env(safe-area-inset-left)) + 64 * var(--full-lyrics-unit));
     position: fixed;
     inset: 0;
     visibility: hidden;
@@ -553,7 +554,7 @@
   #fullLyricsPlayer .full-lyrics-icon svg { display: block; width: calc(19 * var(--full-lyrics-unit)); height: calc(19 * var(--full-lyrics-unit)); }
   #fullLyricsPlayer .full-lyrics-main {
     display: grid;
-    grid-template-columns: minmax(0, .475fr) minmax(0, .525fr);
+    grid-template-columns: minmax(0, var(--full-lyrics-player-column)) minmax(0, 1fr);
     grid-template-areas: "player lyrics";
     gap: 0;
     width: 100%;
@@ -1006,11 +1007,12 @@
   @media (min-aspect-ratio: 1/1) {
     #fullLyricsPlayer:where([data-player-side="right"]) {
       --full-lyrics-column-inset: max(7.8vw, calc(var(--full-lyrics-view-left) + calc(92 * var(--full-lyrics-unit))));
-      --full-lyrics-column-end: clamp(calc(18 * var(--full-lyrics-unit)), 4vw, calc(70 * var(--full-lyrics-unit)));
+      --full-lyrics-column-end: clamp(calc(14 * var(--full-lyrics-unit)), 1.25vw, calc(26 * var(--full-lyrics-unit)));
+      --full-lyrics-player-column: calc(var(--cover-size) + max(4vw, env(safe-area-inset-right)) + 64 * var(--full-lyrics-unit));
       --full-lyrics-footer-clearance: 0px;
     }
     #fullLyricsPlayer:where([data-player-side="right"]) .full-lyrics-main {
-      grid-template-columns: minmax(0, .525fr) minmax(0, .475fr);
+      grid-template-columns: minmax(0, 1fr) minmax(0, var(--full-lyrics-player-column));
       grid-template-areas: "lyrics player";
     }
     #fullLyricsPlayer:where([data-player-side="right"]) .full-lyrics-art-side {
@@ -1089,6 +1091,7 @@
       writing-mode: vertical-lr;
       direction: rtl;
     }
+    #fullLyricsPlayer:is([data-layout="minimal"], [data-layout="immersive"]) { --full-lyrics-player-column: 47.5vw; }
     #fullLyricsPlayer[data-layout="immersive"] .full-lyrics-art-side {
       place-items: end start;
       padding-block-end: max(calc(17 * var(--full-lyrics-unit)), env(safe-area-inset-bottom));
