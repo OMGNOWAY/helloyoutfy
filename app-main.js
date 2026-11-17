@@ -2950,7 +2950,10 @@ isPlaying2 = false;
     const slider = document.querySelector('.volume-slider');
     if (slider) { slider.setAttribute('aria-valuenow', String(Math.round(currentVolume * 100))); slider.setAttribute('aria-valuetext', `${Math.round(currentVolume * 100)} percent`); }
     const fullscreenVolume = document.getElementById('fullLyricsVolume');
-    if (fullscreenVolume) fullscreenVolume.value = String(Math.round(currentVolume * 100));
+    if (fullscreenVolume) {
+      fullscreenVolume.value = String(Math.round(currentVolume * 100));
+      fullscreenVolume.style.setProperty('--full-lyrics-volume-progress', fullscreenVolume.value + '%');
+    }
     const fullscreenMute = document.getElementById('fullLyricsMute');
     if (fullscreenMute) {
       fullscreenMute.title = isMuted ? 'Unmute' : 'Mute';
@@ -7405,8 +7408,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 88%, transparent 100%);
           }
           :host([data-yl-fullscreen]) .lyrics-container {
-            padding-top: 12px !important;
-            padding-bottom: 18px !important;
+            padding-top: calc(12 * var(--full-lyrics-unit, 1px)) !important;
+            padding-bottom: calc(18 * var(--full-lyrics-unit, 1px)) !important;
           }
           :host([data-yl-fullscreen]) .lyrics-container:not(.is-unsynced) {
             padding-block: 0 !important;
@@ -8273,7 +8276,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const baseSize = fullScreen ? 'var(--full-lyrics-size, 34px)' : embedded ? '17px' : '20px';
         const plainPanel = embedded;
         const size = `calc(${baseSize} * ${plainPanel ? 1 : (this.amFontScale || 1)})`;
-        const spacing = `calc(${fullScreen ? 'clamp(12px, 2.5vh, 26px)' : '10px'} * ${plainPanel ? 1 : (this.amSpacing || 1)})`;
+        const spacing = `calc(${fullScreen ? 'clamp(12 * var(--full-lyrics-unit, 1px), 2.5dvh, 26 * var(--full-lyrics-unit, 1px))' : '10px'} * ${plainPanel ? 1 : (this.amSpacing || 1)})`;
         const style = this.amEl.style;
         this.amEl.toggleAttribute('data-yl-fullscreen', fullScreen);
         const ink = fullScreen ? 'var(--full-lyrics-ink, #fff)' : 'var(--text-primary, #ffffff)';
