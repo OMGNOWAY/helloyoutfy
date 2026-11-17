@@ -170,6 +170,142 @@ test('fullscreen backdrop keeps the latest cover when artwork decodes out of ord
   assert.equal(nodes.get('fullLyricsTitle').textContent, 'Third');
 });
 
+function endingQueueFixture(native = true) {
+  const { ctx, manager } = fixture();
+  const node = () => {
+    const classes = new Set(), attributes = new Map();
+    return {
+      style: {}, dataset: {}, hidden: false, textContent: '', clientHeight: 0, childNodes: [],
+      classList: {
+        add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name),
+        toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); }
+      },
+      setAttribute(name, value) { attributes.set(name, value); }, getAttribute: name => attributes.get(name),
+      hasAttribute: name => attributes.has(name), removeAttribute: name => attributes.delete(name),
+      toggleAttribute(name, enabled) { if (name === 'hidden') this.hidden = enabled; },
+      querySelector: () => null, querySelectorAll: () => [], focus() {},
+      append(...items) { this.childNodes.push(...items); }, replaceChildren(...items) { this.childNodes = items; }
+    };
+  };
+  const nodes = new Map(['fullLyricsPlayer', 'fullLyricsContent', 'fullLyricsEndingInfo', 'fullLyricsQueuePanel',
+    'fullLyricsQueueList', 'fullLyricsQueueButton', 'fullLyricsShowLyrics', 'fullLyricsCredits', 'fullLyricsNextTrack',
+    'fullLyricsLyricsSource', 'fullLyricsSongwriters', 'fullLyricsSourceRow', 'fullLyricsWritersRow',
+    'fullLyricsSwitchSource', 'mainContent', 'sidebar', 'player'].map(id => [id, node()]));
+  const panel = nodes.get('fullLyricsQueuePanel');
+  panel.hidden = true;
+  const lines = [0, 1].map(index => Object.assign(node(), { id: `lyrics-line-${index}`, dataset: { index: String(index) } }));
+  const am = Object.assign(node(), {
+    lyrics: [{ timestamp: 1000, endtime: 3000 }, { timestamp: 10000, endtime: 12000 }],
+    shadowRoot: { getElementById: () => ({}), querySelectorAll: () => lines },
+    lyricsSource: 'Test provider', songwriters: 'Test writer', hasFetchedAllProviders: true, availableSources: []
+  });
+  const pane = nodes.get('fullLyricsContent');
+  pane.querySelector = selector => native && selector === 'am-lyrics' ? am : null;
+  pane.querySelectorAll = () => lines;
+  ctx.document = { getElementById: id => nodes.get(id) || null, body: node(),
+    createDocumentFragment: node, createElement: node };
+  ctx.isPlaying1 = false; ctx.isPlaying2 = false;
+  ctx.userQueue = []; ctx.repeatMode = 'off'; ctx.isShuffle = false; ctx.uqReturnIndex = -1;
+  ctx.PlayerController = { getNextIndex: () => -1 };
+  manager.onTrackChange = () => {};
+  manager.placeAm = () => {};
+  manager.amEl = am;
+  manager.amTrackKey = manager.getLyricsTrackId(ctx.queue[0]);
+  manager.currentSource = native ? 'amlyrics' : 'imported-lrc';
+  manager.parsedLines = [{ startMs: 1000, durMs: 2000 }, { startMs: 10000, endMs: 12000 }];
+  ctx.lyricsManager = manager;
+  vm.runInContext(section('const FullLyricsPlayer =', 'function openFullLyricsPlayer()') + '\nthis.player = FullLyricsPlayer;', ctx);
+  ctx.player.open();
+  const advance = seconds => { ctx.audio.currentTime = seconds; ctx.player.syncPlayback(); };
+  return { ctx, player: ctx.player, manager, panel, pane, lines, am, advance };
+}
+
+test('fullscreen disappearing lyrics open Up Next after the last fade and recover after a seek', () => {
+  const { player, panel, pane, lines, advance } = endingQueueFixture();
+  advance(13);
+  assert.equal(panel.hidden, true);
+  player.setHidePastLyrics(true);
+  assert.equal(panel.hidden, false);
+  advance(1.5);
+  assert.equal(panel.hidden, true);
+  advance(5);
+  assert.equal(panel.hidden, true, 'a gap between lyrics keeps the lyrics view');
+  advance(12.09);
+  assert.equal(lines[1].classList.contains('youtify-past-lyric'), true);
+  assert.equal(panel.hidden, true, 'allow the opacity fade to finish');
+  advance(12.32);
+  assert.equal(panel.hidden, false);
+  assert.equal(pane.hidden, true);
+  player.syncEndingInfo();
+  assert.equal(panel.hidden, false);
+  advance(10.5);
+  assert.equal(panel.hidden, true);
+  assert.equal(pane.hidden, false);
+});
+
+test('fullscreen automatic queue respects manual view choices and restores lyrics on the next song', () => {
+  const { ctx, player, manager, panel, advance } = endingQueueFixture();
+  player.setHidePastLyrics(true);
+  advance(13);
+  player.toggleQueue(false);
+  advance(14);
+  assert.equal(panel.hidden, true, 'manual lyrics selection holds during the outro');
+  advance(1.5);
+  player.toggleQueue(true);
+  advance(13);
+  advance(1.5);
+  assert.equal(panel.hidden, false, 'a manually opened queue stays open when seeking');
+  player.toggleQueue(false);
+  advance(13);
+  assert.equal(panel.hidden, false);
+  ctx.queue = [{ title: 'New song', artist: 'Artist' }];
+  player.syncTrackInfo();
+  assert.equal(panel.hidden, true, 'old lyrics cannot reopen Up Next on the next song');
+  manager.amTrackKey = manager.getLyricsTrackId(ctx.queue[0]);
+  advance(13);
+  assert.equal(panel.hidden, false);
+  player.setHidePastLyrics(false);
+  assert.equal(panel.hidden, true);
+});
+
+test('fullscreen unsynced or loading lyrics do not trigger the ending queue', () => {
+  const { player, am, panel, advance } = endingQueueFixture();
+  player.setHidePastLyrics(true);
+  am.cachedIsUnsynced = true;
+  advance(13);
+  assert.equal(panel.hidden, true);
+  am.cachedIsUnsynced = false;
+  am.isLoading = true;
+  advance(14);
+  assert.equal(panel.hidden, true);
+});
+
+test('fullscreen ending queue waits for overlapping lyrics and the saved timing offset', () => {
+  const { player, manager, am, panel, advance } = endingQueueFixture();
+  manager.amOffsetMs = 1000;
+  am.lyrics[0].endtime = 15000;
+  player.setHidePastLyrics(true);
+  advance(13.5);
+  assert.equal(panel.hidden, true, 'an earlier overlapping line is still playing');
+  advance(16.2);
+  assert.equal(panel.hidden, true, 'offset and fade duration still apply');
+  advance(16.5);
+  assert.equal(panel.hidden, false);
+});
+
+test('fullscreen imported synced lyrics also disappear into Up Next', () => {
+  const { player, panel, lines, advance } = endingQueueFixture(false);
+  player.setHidePastLyrics(true);
+  advance(12.09);
+  assert.equal(lines[1].classList.contains('passed'), true);
+  assert.equal(panel.hidden, true);
+  advance(12.5);
+  assert.equal(panel.hidden, false);
+  advance(11);
+  assert.equal(panel.hidden, true);
+  assert.equal(lines[1].classList.contains('passed'), false);
+});
+
 function overlapFixture(height = 200) {
   const { ctx, manager: m } = fixture();
   const lines = [0, 1].map((index) => ({

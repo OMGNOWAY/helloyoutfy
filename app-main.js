@@ -9477,17 +9477,18 @@ const FullLyricsPlayer = (() => {
 
   const $ = id => document.getElementById(id);
   let hidePastLyrics = false;
+  let endingQueueTrack = null;
+  let automaticEndingQueue = false;
 
   function updatePastLyrics() {
     const pane = $('fullLyricsContent');
-    if (!pane || !opened) return;
+    if (!pane || !opened) return false;
     const am = pane.querySelector('am-lyrics');
-    if (!am) return; // The fallback renderer uses its .passed line classes.
-    am.toggleAttribute('data-yl-hide-past', hidePastLyrics);
-    const root = am.shadowRoot;
-    if (!root) return;
+    am?.toggleAttribute('data-yl-hide-past', hidePastLyrics);
+    const root = am ? am.shadowRoot : pane;
+    if (!root) return false;
 
-    if (!root.getElementById('youtify-hide-past-lyrics-style')) {
+    if (am && !root.getElementById('youtify-hide-past-lyrics-style')) {
       const sheet = document.createElement('style');
       sheet.id = 'youtify-hide-past-lyrics-style';
       sheet.textContent = `:host([data-yl-fullscreen][data-yl-hide-past]) .lyrics-line.youtify-past-lyric {
@@ -9509,33 +9510,44 @@ const FullLyricsPlayer = (() => {
     // Determine completed lines from the actual playback time, not from the
     // renderer's .active / currentPrimaryActiveLine markers. Those markers
     // can stay on a clicked line after seeking, keeping it visible forever.
-    const lines = root.querySelectorAll('.lyrics-line[id^="lyrics-line-"]');
-    if (!hidePastLyrics || am.cachedIsUnsynced) {
-      for (const line of lines) line.classList.remove('youtify-past-lyric');
-      return;
+    const lines = root.querySelectorAll(am ? '.lyrics-line[id^="lyrics-line-"]' : '.lyrics-line[data-index]');
+    const synced = am ? !am.cachedIsUnsynced && !am.isLoading : lyricsManager?.hasSyncedLyrics();
+    if (!hidePastLyrics || !synced) {
+      if (am) for (const line of lines) line.classList.remove('youtify-past-lyric');
+      return false;
     }
-    const data = Array.isArray(am.lyrics) ? am.lyrics : [];
-    if (!data.length) return;
+    if (!queue[currentTrackIndex]) return false;
+    if (am && lyricsManager?.amTrackKey && lyricsManager.amTrackKey !==
+        lyricsManager.getLyricsTrackId(queue[currentTrackIndex])) return false;
+    const data = am ? am.lyrics : lyricsManager?.parsedLines;
+    if (!Array.isArray(data) || !data.length || !lines.length) return false;
     const playedMs = Math.max(0,
       (Number(lyricsManager?.getLyricsPlaybackSeconds?.()) || 0) * 1000
       - (Number(lyricsManager?.amOffsetMs) || 0));
+    let allFinished = true;
+    let lastEndMs = 0;
     for (const line of lines) {
-      const index = Number(line.id.slice('lyrics-line-'.length));
+      const index = Number(am ? line.id.slice('lyrics-line-'.length) : line.dataset.index);
       const lyric = data[index];
-      const start = Number(lyric?.timestamp);
-      const explicitEnd = Number(lyric?.endtime);
+      const start = Number(lyric?.startMs ?? lyric?.timestamp);
+      const explicitEnd = Number(lyric?.endMs ?? lyric?.endtime ??
+        (Number(lyric?.durMs) > 0 ? start + Number(lyric.durMs) : NaN));
       let endMs = Number.isFinite(explicitEnd) && explicitEnd > start ? explicitEnd : NaN;
       if (!Number.isFinite(endMs)) {
         // A line without its own end time lasts until the next timed line.
         for (let j = index + 1; j < data.length; j++) {
-          const next = Number(data[j]?.timestamp);
+          const next = Number(data[j]?.startMs ?? data[j]?.timestamp);
           if (Number.isFinite(next) && next > start) { endMs = next; break; }
         }
       }
       const finished = Number.isFinite(start) && start >= 0 && start <= playedMs &&
         (audio.ended || (Number.isFinite(endMs) && endMs <= playedMs - 80));
-      line.classList.toggle('youtify-past-lyric', finished);
+      line.classList.toggle(am ? 'youtify-past-lyric' : 'passed', finished);
+      allFinished = allFinished && finished;
+      if (Number.isFinite(endMs)) lastEndMs = Math.max(lastEndMs, endMs);
     }
+    // Let the last line's .24s fade finish before replacing the pane.
+    return allFinished && (audio.ended || lastEndMs <= playedMs - 320);
   }
 
   function setHidePastLyrics(enabled) {
@@ -9549,6 +9561,7 @@ const FullLyricsPlayer = (() => {
     }
     try { localStorage.setItem('youtify_fullscreen_hide_past_lyrics', hidePastLyrics ? '1' : '0'); } catch {}
     updatePastLyrics();
+    syncEndingInfo();
   }
 
   function syncBackdrop(url) {
@@ -9664,6 +9677,7 @@ const FullLyricsPlayer = (() => {
     const panel = $('fullLyricsQueuePanel');
     const lyrics = $('fullLyricsContent');
     if (!panel) return false;
+    automaticEndingQueue = false;
     const show = force ?? panel.hidden;
     panel.hidden = !show;
     if (lyrics) lyrics.hidden = show;
@@ -9762,9 +9776,25 @@ const FullLyricsPlayer = (() => {
   }
 
   function syncEndingInfo() {
-    const info = $('fullLyricsEndingInfo');
-    if (!opened || !info || info.hidden) return;
+    if (!opened) return;
     const track = queue[currentTrackIndex];
+    const lyricsEnded = hidePastLyrics && updatePastLyrics();
+    if (!lyricsEnded || track !== endingQueueTrack) {
+      const restoreLyrics = automaticEndingQueue;
+      automaticEndingQueue = false;
+      endingQueueTrack = null;
+      if (restoreLyrics) toggleQueue(false);
+    }
+    if (lyricsEnded && track && endingQueueTrack !== track) {
+      // Remember this outro so the Lyrics button can override the automatic view.
+      endingQueueTrack = track;
+      if ($('fullLyricsQueuePanel')?.hidden) {
+        toggleQueue(true);
+        automaticEndingQueue = true;
+      }
+    }
+    const info = $('fullLyricsEndingInfo');
+    if (!info || info.hidden) return;
     const position = lyricsManager?.getLyricsPlaybackSeconds?.() ?? audio.currentTime;
     const remaining = audio.duration - position;
     const nextIndex = track && !audio.ended && remaining > 0 && remaining <= 10
@@ -9848,7 +9878,6 @@ const FullLyricsPlayer = (() => {
         ? '<rect x="6.4" y="5.3" width="4.3" height="13.4" rx="1.8"></rect><rect x="13.3" y="5.3" width="4.3" height="13.4" rx="1.8"></rect>'
         : '<path d="M8.5 6.4c0-.9 1-1.4 1.8-.9l8 5.2a1.5 1.5 0 0 1 0 2.6l-8 5.2c-.8.5-1.8 0-1.8-.9z"></path>';
     }
-    if (opened && hidePastLyrics) updatePastLyrics();
     syncEndingInfo();
   }
 
@@ -9858,7 +9887,6 @@ const FullLyricsPlayer = (() => {
     if (!opened || !source || !target) return;
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
-      updatePastLyrics();
       syncEndingInfo();
       return;
     }
@@ -9902,6 +9930,7 @@ const FullLyricsPlayer = (() => {
     if (!overlay) return;
     document.getElementById('fullLyricsPlayer').style.display = "none";
     opened = false;
+    endingQueueTrack = null;
     warpedBackdrop?.sync();
     toggleQueue(false);
     document.getElementById('mainContent').style.display = "";
