@@ -9667,17 +9667,9 @@ const FullLyricsPlayer = (() => {
   const motionAnimations = new Map();
   const revealFrames = [{ opacity: 0, translate: '0 8px' }, { opacity: 1, translate: '0 0' }];
 
-  function updateBackdropMotionButton() {
-    const button = $('fullLyricsBackgroundMotion');
-    if (!button) return;
-    button.setAttribute('aria-pressed', String(backdropMotion));
-    button.title = backdropMotion ? 'Turn background motion off' : 'Turn background motion on';
-  }
-
   function setBackdropMotion(enabled) {
     backdropMotion = enabled;
     try { localStorage.setItem('youtify_fullscreen_background_motion', backdropMotion ? 'on' : 'off'); } catch {}
-    updateBackdropMotionButton();
     warpedBackdrop?.sync();
   }
 
@@ -9687,7 +9679,6 @@ const FullLyricsPlayer = (() => {
     const overlay = $('fullLyricsPlayer');
     const { elements } = $('fullLyricsSettingsOptions');
     elements.layout.value = overlay.dataset.layout;
-    elements.side.value = overlay.dataset.playerSide;
     elements.hidePast.checked = hidePastLyrics;
     elements.motion.checked = backdropMotion;
     dialog.showModal();
@@ -9940,12 +9931,6 @@ const FullLyricsPlayer = (() => {
   function setHidePastLyrics(enabled) {
     hidePastLyrics = !!enabled;
     $('fullLyricsPlayer')?.toggleAttribute('data-hide-past-lyrics', hidePastLyrics);
-    const button = $('fullLyricsHidePast');
-    if (button) {
-      button.setAttribute('aria-pressed', String(hidePastLyrics));
-      button.setAttribute('aria-label', hidePastLyrics ? 'Show past lyrics' : 'Hide past lyrics');
-      button.title = button.getAttribute('aria-label');
-    }
     try { localStorage.setItem('youtify_fullscreen_hide_past_lyrics', hidePastLyrics ? '1' : '0'); } catch {}
     if (!hidePastLyrics) clearPastLyrics();
     syncEndingInfo();
@@ -10147,6 +10132,11 @@ const FullLyricsPlayer = (() => {
     const right = side === 'right';
     const positions = overlay.dataset.playerSide === (right ? 'right' : 'left') ? [] : captureLayoutMotion();
     overlay.dataset.playerSide = right ? 'right' : 'left';
+    const swap = $('fullLyricsSwapSide');
+    if (swap) {
+      swap.title = right ? 'Move player to the left' : 'Move player to the right';
+      swap.setAttribute('aria-label', swap.title);
+    }
     try { localStorage.setItem('youtify_fullscreen_player_side', overlay.dataset.playerSide); } catch {}
     if (opened) recenter();
     animateLayoutMotion(positions);
@@ -10355,7 +10345,6 @@ const FullLyricsPlayer = (() => {
     if (!overlay || opened) return;
 
     opened = true;
-    updateBackdropMotionButton();
     overlay.inert = false;
     overlay.style.display = '';
     // Commit the hidden state so the first opening can transition as well.
@@ -10381,7 +10370,7 @@ const FullLyricsPlayer = (() => {
     document.getElementById('mainContent').style.display = "none";
     document.getElementById('sidebar').style.display = "none";
     document.getElementById('player').style.display = "none";
-    $('fullLyricsClose')?.focus({ preventScroll: true });
+    overlay.focus?.({ preventScroll: true });
   }
 
   function close() {
@@ -10400,7 +10389,7 @@ const FullLyricsPlayer = (() => {
     document.getElementById('mainContent').style.display = "";
     document.getElementById('sidebar').style.display = "";
     document.getElementById('player').style.display = "";
-    overlay.classList.remove('open');
+    overlay.classList.remove('open', 'full-lyrics-toolbar-near');
     overlay.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('full-lyrics-open');
     $('playerImg')?.focus({ preventScroll: true });
@@ -10425,10 +10414,9 @@ const FullLyricsPlayer = (() => {
 
   return {
     open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, setPlayerSide, recenter, syncEndingInfo,
-    setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
+    setHidePastLyrics, updatePastLyrics,
     isOpen: () => opened,
     openSourcePicker, closeSourcePicker, openSettings, syncSettingsLyrics, setBackdropMotion,
-    toggleBackdropMotion: () => setBackdropMotion(!backdropMotion),
     syncBackdropMotion: () => warpedBackdrop?.sync()
   };
 })();
@@ -10478,9 +10466,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let hidePastPreference = false;
   try { hidePastPreference = localStorage.getItem('youtify_fullscreen_hide_past_lyrics') === '1'; } catch {}
   FullLyricsPlayer.setHidePastLyrics(hidePastPreference);
-  document.getElementById('fullLyricsHidePast')?.addEventListener('click', () => {
-    FullLyricsPlayer.setHidePastLyrics(!FullLyricsPlayer.isHidePastLyrics());
-  });
 
   const queueButton = document.getElementById('fullLyricsQueueButton');
   if (queueButton) queueButton.onclick = () => FullLyricsPlayer.toggleQueue();
@@ -10493,6 +10478,9 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch {}
   FullLyricsPlayer.setLayout(layout);
   FullLyricsPlayer.setPlayerSide(playerSide);
+  document.getElementById('fullLyricsSwapSide')?.addEventListener('click', () => {
+    FullLyricsPlayer.setPlayerSide(fullLyricsOverlay.dataset.playerSide === 'right' ? 'left' : 'right');
+  });
   const pane = document.getElementById('fullLyricsContent');
   if (pane) {
     // An active line can finish while the pointer is still where the user clicked.
@@ -10512,7 +10500,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const nextArt = document.getElementById('fullLyricsNextArt');
   nextArt?.addEventListener('error', () => { nextArt.hidden = true; });
   document.getElementById('fullLyricsSwitchSource')?.addEventListener('click', FullLyricsPlayer.openSourcePicker);
-  document.getElementById('fullLyricsBackgroundMotion')?.addEventListener('click', FullLyricsPlayer.toggleBackdropMotion);
   document.getElementById('fullLyricsSourceClose')?.addEventListener('click', FullLyricsPlayer.closeSourcePicker);
   const sourcePicker = document.getElementById('fullLyricsSourcePicker');
   sourcePicker?.addEventListener('close', () => {
@@ -10533,7 +10520,6 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
       }
       case 'layout': FullLyricsPlayer.setLayout(input.value); break;
-      case 'side': FullLyricsPlayer.setPlayerSide(input.value); break;
       case 'hidePast': FullLyricsPlayer.setHidePastLyrics(input.checked); break;
       case 'motion': FullLyricsPlayer.setBackdropMotion(input.checked); break;
       case 'spacing': lyricsManager?.setSpacing(Number(input.value)); break;
