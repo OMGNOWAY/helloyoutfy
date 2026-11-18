@@ -7808,13 +7808,20 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         }
         this.installAmBarStyles();
         const bar = this.ensureAmBar();
-        this.amJump.textContent = host.id === 'fullLyricsContent' ? 'Resume sync' : '\u2193 Jump to current line';
+        const fullscreen = host.id === 'fullLyricsContent';
+        this.amJump.textContent = fullscreen ? 'Resume sync' : '\u2193 Jump to current line';
         if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
         host.classList.add('yl-host');
         if (this.amEl.parentElement === host) host.insertBefore(this.amGlow, this.amEl); else host.appendChild(this.amGlow);
-        host.appendChild(bar);
+        if (fullscreen) {
+            this.closeAmMenu();
+            bar.remove();
+            this.amMenu.remove();
+        } else {
+            host.appendChild(bar);
+            host.appendChild(this.amMenu);
+        }
         host.appendChild(this.amJump);
-        host.appendChild(this.amMenu);
         host.appendChild(this.amSearch);
         this.refreshAmBar();
         this.applyAmFocus();
@@ -7840,6 +7847,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         if (['search', 'share', 'lrc'].includes(act)) this.closeAmMenu();
     }
     refreshAmBar() {
+        if (typeof FullLyricsPlayer !== 'undefined') FullLyricsPlayer.syncSettingsLyrics();
         const bar = this.amBar;
         if (!bar) return;
         const v = (this.amOffsetMs || 0) / 1000;
@@ -7854,7 +7862,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     // pops the toolbar open for a moment (keyboard nudges, toggles) even when the mouse isn't over it
     flashAmBar() {
         const bar = this.amBar;
-        if (!bar) return;
+        if (!bar?.isConnected) return;
         bar.classList.add('show');
         clearTimeout(this.amBarTimer);
         this.amBarTimer = setTimeout(() => { if (!this.amMenu?.classList.contains('open')) bar.classList.remove('show'); }, 2200);
@@ -8311,7 +8319,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     // ---- line spacing (menu cycles compact / normal / airy) ----
     cycleSpacing() {
         const vals = [0.6, 1, 1.6];
-        this.amSpacing = vals[(vals.indexOf(this.amSpacing) + 1) % vals.length];
+        this.setSpacing(vals[(vals.indexOf(this.amSpacing) + 1) % vals.length]);
+    }
+    setSpacing(spacing) {
+        this.amSpacing = spacing;
         try { localStorage.setItem('youtifiy_lyrics_spacing', String(this.amSpacing)); } catch (e) {}
         const host = this.amEl?.parentElement;
         if (host) { this.styleAmForHost(host); this.jumpAmToCurrentLine(); }
@@ -8641,7 +8652,10 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             btn.style.display = '';
             btn.disabled = this.isFetching;
             const label = this.isFetching ? 'Loading lyrics…' : hasLyrics ? 'Refresh lyrics' : 'Find lyrics';
-            if (btn.hasAttribute('data-icon-only')) {
+            const text = btn.querySelector?.('[data-lyrics-fetch-label]');
+            if (text) {
+                text.textContent = label;
+            } else if (btn.hasAttribute('data-icon-only')) {
                 btn.title = label;
                 btn.setAttribute('aria-label', label);
             } else {
@@ -8649,6 +8663,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             }
             btn.setAttribute('aria-busy', String(this.isFetching));
         });
+        if (typeof FullLyricsPlayer !== 'undefined') FullLyricsPlayer.syncSettingsLyrics();
     }
     showLoading(msg = 'Loading lyrics...') {
         const c = document.getElementById('lyricsContent');
@@ -9670,11 +9685,48 @@ const FullLyricsPlayer = (() => {
     const dialog = $('fullLyricsSettingsDialog');
     if (!opened || !dialog || dialog.open || $('fullLyricsSourcePicker')?.open) return;
     const overlay = $('fullLyricsPlayer');
-    $('fullLyricsSettingsLayout').value = overlay.dataset.layout;
-    $('fullLyricsSettingsSide').value = overlay.dataset.playerSide;
-    $('fullLyricsSettingsHidePast').checked = hidePastLyrics;
-    $('fullLyricsSettingsMotion').checked = backdropMotion;
+    const { elements } = $('fullLyricsSettingsOptions');
+    elements.layout.value = overlay.dataset.layout;
+    elements.side.value = overlay.dataset.playerSide;
+    elements.hidePast.checked = hidePastLyrics;
+    elements.motion.checked = backdropMotion;
     dialog.showModal();
+    syncSettingsLyrics();
+  }
+
+  function syncSettingsLyrics() {
+    if (!$('fullLyricsSettingsDialog')?.open || !lyricsManager) return;
+    const settings = $('fullLyricsSettingsOptions');
+    const { elements } = settings;
+    const track = queue[currentTrackIndex];
+    const { amEl, amTrackKey, amActive, amOffsetMs, amFontScale, amSpacing, amFocus, amLoop, parsedLines } = lyricsManager;
+    const hasLyrics = !!(amActive && amEl?.parentElement?.id === 'fullLyricsContent' && parsedLines?.length &&
+      track && amTrackKey === lyricsManager.getLyricsTrackId(track));
+    const synced = hasLyrics && !amEl.cachedIsUnsynced;
+    const offset = hasLyrics ? (amOffsetMs || 0) / 1000 : 0;
+    const font = amFontScale || 1;
+    $('fullLyricsSettingsFont').value = Math.round(font * 100) + '%';
+    const offsetText = (offset > 0 ? '+' : '') + offset.toFixed(1) + 's';
+    const resetOffset = $('fullLyricsSettingsOffset');
+    resetOffset.textContent = offsetText;
+    resetOffset.setAttribute('aria-label', `Reset sync offset (${offsetText})`);
+    $('fullLyricsSettingsTimingHint').hidden = !!synced;
+    elements.spacing.value = String(amSpacing || 1);
+    elements.focus.checked = !!amFocus;
+    elements.loop.checked = !!synced && !!amLoop;
+    elements.loop.disabled = !synced;
+    for (const button of settings.querySelectorAll('[data-am-action]')) {
+      switch (button.dataset.amAction) {
+        case 'font-down': button.disabled = font <= .7; break;
+        case 'font-up': button.disabled = font >= 1.8; break;
+        case 'off-down': button.disabled = !synced || offset <= -10; break;
+        case 'off-up': button.disabled = !synced || offset >= 10; break;
+        case 'off-val':
+        case 'search':
+        case 'lrc': button.disabled = !synced; break;
+        default: button.disabled = !hasLyrics;
+      }
+    }
   }
 
   function closeSourcePicker() {
@@ -9699,11 +9751,13 @@ const FullLyricsPlayer = (() => {
       button.className = 'full-lyrics-source-option';
       button.setAttribute('aria-pressed', String(current));
       button.disabled = loading || applying;
-      const name = document.createElement('span');
+      const copy = document.createElement('span');
+      const name = document.createElement('strong');
       name.textContent = source.source;
       const detail = document.createElement('small');
-      detail.textContent = timing + (current ? ' · Current' : '');
-      button.append(name, detail);
+      detail.textContent = timing;
+      copy.append(name, detail);
+      button.append(copy);
       button.addEventListener('click', async () => {
         if (sourcePicker !== state || state.loading || state.applying) return;
         state.applying = true;
@@ -10082,9 +10136,6 @@ const FullLyricsPlayer = (() => {
     if (!overlay) return;
     const positions = overlay.dataset.layout === layout ? [] : captureLayoutMotion();
     overlay.dataset.layout = layout;
-    overlay.querySelectorAll('[data-full-layout]').forEach(button => {
-      button.setAttribute('aria-pressed', String(button.dataset.fullLayout === layout));
-    });
     try { localStorage.setItem('youtify_fullscreen_layout', layout); } catch {}
     if (opened) recenter();
     animateLayoutMotion(positions);
@@ -10096,11 +10147,6 @@ const FullLyricsPlayer = (() => {
     const right = side === 'right';
     const positions = overlay.dataset.playerSide === (right ? 'right' : 'left') ? [] : captureLayoutMotion();
     overlay.dataset.playerSide = right ? 'right' : 'left';
-    const button = $('fullLyricsSwapSide');
-    if (button) {
-      button.title = right ? 'Move player to the left' : 'Move player to the right';
-      button.setAttribute('aria-label', button.title);
-    }
     try { localStorage.setItem('youtify_fullscreen_player_side', overlay.dataset.playerSide); } catch {}
     if (opened) recenter();
     animateLayoutMotion(positions);
@@ -10144,6 +10190,7 @@ const FullLyricsPlayer = (() => {
 
     if (!opened) return;
     if (sourcePicker && sourcePicker.track !== track) closeSourcePicker();
+    syncSettingsLyrics();
     const artwork = track?.albumArt || (track && img?.style.display !== 'none' && img?.getAttribute('src')) || '';
     const cover = $('fullLyricsArt');
     if (artwork && cover?.getAttribute('src') !== artwork) {
@@ -10380,7 +10427,7 @@ const FullLyricsPlayer = (() => {
     open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, setPlayerSide, recenter, syncEndingInfo,
     setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
     isOpen: () => opened,
-    openSourcePicker, closeSourcePicker, openSettings, setBackdropMotion,
+    openSourcePicker, closeSourcePicker, openSettings, syncSettingsLyrics, setBackdropMotion,
     toggleBackdropMotion: () => setBackdropMotion(!backdropMotion),
     syncBackdropMotion: () => warpedBackdrop?.sync()
   };
@@ -10446,13 +10493,6 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch {}
   FullLyricsPlayer.setLayout(layout);
   FullLyricsPlayer.setPlayerSide(playerSide);
-  const swapSide = document.getElementById('fullLyricsSwapSide');
-  swapSide?.addEventListener('click', () => {
-    FullLyricsPlayer.setPlayerSide(fullLyricsOverlay?.dataset.playerSide === 'right' ? 'left' : 'right');
-  });
-  document.querySelectorAll('#fullLyricsPlayer [data-full-layout]').forEach(button => {
-    button.onclick = () => FullLyricsPlayer.setLayout(button.dataset.fullLayout);
-  });
   const pane = document.getElementById('fullLyricsContent');
   if (pane) {
     // An active line can finish while the pointer is still where the user clicked.
@@ -10482,14 +10522,37 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsDialog = document.getElementById('fullLyricsSettingsDialog');
   document.getElementById('fullLyricsSettingsButton')?.addEventListener('click', FullLyricsPlayer.openSettings);
   document.getElementById('fullLyricsSettingsClose')?.addEventListener('click', () => settingsDialog?.close());
-  for (const [id, apply] of [
-    ['fullLyricsSettingsLayout', input => FullLyricsPlayer.setLayout(input.value)],
-    ['fullLyricsSettingsSide', input => FullLyricsPlayer.setPlayerSide(input.value)],
-    ['fullLyricsSettingsHidePast', input => FullLyricsPlayer.setHidePastLyrics(input.checked)],
-    ['fullLyricsSettingsMotion', input => FullLyricsPlayer.setBackdropMotion(input.checked)]
-  ]) {
-    document.getElementById(id)?.addEventListener('change', event => apply(event.currentTarget));
-  }
+  const settingsOptions = document.getElementById('fullLyricsSettingsOptions');
+  settingsOptions?.addEventListener('change', ({ target: input }) => {
+    switch (input.name) {
+      case 'section': {
+        const showLyricsTools = input.value === 'lyrics';
+        document.getElementById('fullLyricsSettingsAppearance').hidden = showLyricsTools;
+        document.getElementById('fullLyricsSettingsLyrics').hidden = !showLyricsTools;
+        settingsDialog.scrollTop = 0;
+        break;
+      }
+      case 'layout': FullLyricsPlayer.setLayout(input.value); break;
+      case 'side': FullLyricsPlayer.setPlayerSide(input.value); break;
+      case 'hidePast': FullLyricsPlayer.setHidePastLyrics(input.checked); break;
+      case 'motion': FullLyricsPlayer.setBackdropMotion(input.checked); break;
+      case 'spacing': lyricsManager?.setSpacing(Number(input.value)); break;
+      case 'focus': lyricsManager?.toggleFocus(); break;
+      case 'loop': lyricsManager?.toggleLineLoop(); break;
+    }
+  });
+  settingsOptions?.addEventListener('click', event => {
+    const button = event.target.closest('[data-am-action]');
+    if (!button || button.disabled || !lyricsManager) return;
+    const action = button.dataset.amAction;
+    if (['search', 'copy', 'share', 'lrc'].includes(action)) settingsDialog.close();
+    if (action === 'search') {
+      FullLyricsPlayer.toggleQueue(false);
+      lyricsManager.openAmSearch();
+      return;
+    }
+    lyricsManager.onAmBarAction(action, event);
+  });
 
   const cover = document.getElementById('fullLyricsArt');
   cover?.addEventListener('load', () => cover.removeAttribute('data-unavailable'));

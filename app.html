@@ -435,7 +435,9 @@
     --full-lyrics-column-end: max(4vw, env(safe-area-inset-right));
     --full-lyrics-view-right: max(clamp(calc(14 * var(--full-lyrics-unit)), 2.7vw, calc(42 * var(--full-lyrics-unit))), env(safe-area-inset-right));
     --full-lyrics-view-left: max(calc(20 * var(--full-lyrics-unit)), env(safe-area-inset-left));
-    --full-lyrics-footer-clearance: calc(calc(92 * var(--full-lyrics-unit)) + var(--full-lyrics-view-right));
+    --full-lyrics-controls-width: calc(168 * var(--full-lyrics-unit));
+    --full-lyrics-footer-clearance: calc(var(--full-lyrics-controls-width) + var(--full-lyrics-view-right));
+    --full-lyrics-footer-inset: 0px;
     --cover-size: min(31.5vw, 58dvh, max(calc(105 * var(--full-lyrics-unit)), calc(100dvh - calc(224 * var(--full-lyrics-unit)))), calc(548 * var(--full-lyrics-unit)));
     --full-lyrics-column-gap: calc(104 * var(--full-lyrics-unit));
     --full-lyrics-player-column: calc(var(--cover-size) + max(4vw, env(safe-area-inset-left)) + var(--full-lyrics-column-gap));
@@ -816,7 +818,7 @@
     align-items: end;
     min-width: 0;
     padding: 0 max(var(--full-lyrics-column-end), var(--full-lyrics-footer-clearance))
-      calc(clamp(calc(10 * var(--full-lyrics-unit)), 3.1dvh, calc(26 * var(--full-lyrics-unit))) + env(safe-area-inset-bottom)) var(--full-lyrics-column-inset);
+      calc(clamp(calc(10 * var(--full-lyrics-unit)), 3.1dvh, calc(26 * var(--full-lyrics-unit))) + env(safe-area-inset-bottom)) max(var(--full-lyrics-column-inset), var(--full-lyrics-footer-inset));
     color: var(--full-lyrics-muted);
   }
   #fullLyricsPlayer .full-lyrics-credits {
@@ -848,89 +850,228 @@
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon { width: calc(22 * var(--full-lyrics-unit)); height: calc(22 * var(--full-lyrics-unit)); flex: none; }
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon svg { width: calc(14 * var(--full-lyrics-unit)); height: calc(14 * var(--full-lyrics-unit)); }
   #fullLyricsPlayer .full-lyrics-dialog {
+    --menu-fill: color-mix(in srgb, var(--full-lyrics-ink) 8%, transparent);
+    --menu-selected: color-mix(in srgb, var(--full-lyrics-ink) 19%, transparent);
+    --menu-border: color-mix(in srgb, var(--full-lyrics-ink) 15%, transparent);
     box-sizing: border-box;
     position: fixed;
-    width: min(26rem, calc(100vw - 2rem));
-    max-height: min(33rem, calc(100dvh - 2rem));
+    width: min(28rem, calc(100vw - 1.5rem));
+    max-height: min(36rem, calc(100dvh - 1.5rem));
     margin: auto;
-    padding: 1rem;
+    padding: clamp(1rem, 4vw, 1.5rem);
     overflow: auto;
+    overscroll-behavior: contain;
     color: var(--full-lyrics-ink);
-    --full-lyrics-dialog-tint: color-mix(in srgb, var(--bg-secondary, #161d27) 85%, #10151d);
-    background: linear-gradient(var(--full-lyrics-dialog-tint), var(--full-lyrics-dialog-tint)), #10151d;
-    border: 1px solid #ffffff2b;
-    border-radius: 1rem;
-    font-size: 1rem;
-    box-shadow: 0 1rem 3rem #0009;
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--bg-secondary, #253543) 65%, transparent), transparent 75%),
+      var(--full-lyrics-menu-base, #151822);
+    border: 1px solid var(--menu-border);
+    border-radius: 1.25rem;
+    font-size: .9375rem;
+    line-height: 1.35;
+    box-shadow: 0 1rem 3rem #0007;
   }
-  #fullLyricsPlayer .full-lyrics-dialog::backdrop { background: #0006; }
+  #fullLyricsPlayer .full-lyrics-dialog[open] {
+    animation: full-lyrics-row-in .22s cubic-bezier(.22, 1, .36, 1);
+  }
+  #fullLyricsPlayer .full-lyrics-dialog::backdrop { background: #0007; }
   #fullLyricsPlayer .full-lyrics-dialog-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: .5rem;
-    margin-bottom: .65rem;
+    gap: .75rem;
+    margin-bottom: 1rem;
   }
-  #fullLyricsPlayer .full-lyrics-dialog-header h2 { margin: 0; font-size: 1.25rem; }
-  #fullLyricsPlayer .full-lyrics-dialog-close { width: 2.25rem; height: 2.25rem; }
+  #fullLyricsPlayer .full-lyrics-dialog-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    line-height: 1.14;
+  }
+  #fullLyricsPlayer .full-lyrics-dialog-close {
+    width: 2.25rem;
+    height: 2.25rem;
+    background: var(--menu-fill);
+  }
   #fullLyricsPlayer .full-lyrics-dialog-close svg { width: 1rem; height: 1rem; }
-  #fullLyricsPlayer .full-lyrics-settings-rows {
+  #fullLyricsPlayer .full-lyrics-settings-rows,
+  #fullLyricsPlayer .full-lyrics-settings-section { display: grid; gap: .85rem; }
+  #fullLyricsPlayer .full-lyrics-setting-stepper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    min-height: 2.25rem;
+  }
+  #fullLyricsPlayer .full-lyrics-stepper-buttons {
+    display: flex;
+    align-items: center;
+    gap: .15rem;
+    flex: none;
+    padding: .15rem;
+    border: 1px solid var(--menu-border);
+    border-radius: 1.25rem;
+    background: var(--menu-fill);
+    font-variant-numeric: tabular-nums;
+  }
+  #fullLyricsPlayer .full-lyrics-stepper-buttons :is(button, output) {
     display: grid;
-    gap: .375rem;
+    place-items: center;
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0 .3rem;
+    border: 0;
+    border-radius: 1rem;
+    background: transparent;
+    color: inherit;
+    font-size: .875rem;
+  }
+  #fullLyricsPlayer .full-lyrics-stepper-buttons button { cursor: pointer; }
+  #fullLyricsPlayer .full-lyrics-stepper-buttons button:hover { background: var(--menu-selected); }
+  #fullLyricsPlayer .full-lyrics-stepper-buttons button:disabled,
+  #fullLyricsPlayer .full-lyrics-settings-action:disabled,
+  #fullLyricsPlayer .full-lyrics-setting:has(input:disabled) { opacity: .5; cursor: default; }
+  #fullLyricsPlayer .full-lyrics-stepper-buttons :is(output, [data-am-action="off-val"]) { min-width: 3.2em; }
+  #fullLyricsPlayer .full-lyrics-settings-tabs { margin-bottom: .15rem; }
+  #fullLyricsPlayer .full-lyrics-settings-rows fieldset {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-rows legend { padding: 0 0 .4rem; }
+  #fullLyricsPlayer .full-lyrics-segments {
+    display: flex;
+    gap: .15rem;
+    padding: .2rem;
+    border: 1px solid var(--menu-border);
+    border-radius: 1.5rem;
+    background: var(--menu-fill);
+  }
+  #fullLyricsPlayer .full-lyrics-segments label {
+    flex: 1 1 0;
+    min-width: 0;
+    position: relative;
+  }
+  #fullLyricsPlayer .full-lyrics-segments label span {
+    display: grid;
+    min-height: 2.1rem;
+    place-items: center;
+    padding-inline: .2rem;
+    border-radius: 1.25rem;
+    color: var(--full-lyrics-muted);
+    font-size: clamp(.7rem, 3.5vw, .875rem);
+    text-align: center;
+    cursor: pointer;
+  }
+  #fullLyricsPlayer .full-lyrics-segments input:checked + span,
+  #fullLyricsPlayer .full-lyrics-segments label:hover span {
+    color: inherit;
+    background: var(--menu-selected);
+  }
+  #fullLyricsPlayer :is(.full-lyrics-segments, .full-lyrics-setting) input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  #fullLyricsPlayer .full-lyrics-dialog button:focus-visible,
+  #fullLyricsPlayer .full-lyrics-dialog input:focus-visible + span {
+    outline: 2px solid var(--full-lyrics-ink);
+    outline-offset: 2px;
   }
   #fullLyricsPlayer .full-lyrics-setting {
+    display: flex;
+    position: relative;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    min-height: 2.25rem;
+    cursor: pointer;
+  }
+  #fullLyricsPlayer .full-lyrics-setting-switch {
+    flex: none;
+    box-sizing: border-box;
+    width: 2.5rem;
+    height: 1.4rem;
+    padding: .2rem;
+    border-radius: 1rem;
+    background: var(--menu-selected);
+    transition: background .18s ease;
+  }
+  #fullLyricsPlayer .full-lyrics-setting-switch::before {
+    content: '';
+    display: block;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background: var(--full-lyrics-muted);
+    transition: translate .18s ease;
+  }
+  #fullLyricsPlayer .full-lyrics-setting input:checked + span {
+    background: var(--full-lyrics-ink);
+  }
+  #fullLyricsPlayer .full-lyrics-setting input:checked + span::before {
+    translate: 1.1rem 0;
+    background: var(--full-lyrics-menu-base, #151822);
+  }
+  #fullLyricsPlayer .full-lyrics-settings-hint {
+    margin: .3rem 0 0;
+    color: var(--full-lyrics-muted);
+    font-size: .78rem;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-toggles,
+  #fullLyricsPlayer .full-lyrics-settings-actions {
+    padding-top: .55rem;
+    border-top: 1px solid var(--menu-border);
+  }
+  #fullLyricsPlayer .full-lyrics-settings-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+    gap: .15rem;
+  }
+  #fullLyricsPlayer :is(.full-lyrics-source-option, .full-lyrics-settings-action) {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: .75rem;
-    padding: .6rem .75rem;
-    border: 1px solid #ffffff1a;
-    border-radius: .55rem;
-    background: #ffffff0a;
-  }
-  #fullLyricsPlayer .full-lyrics-setting small {
-    display: block;
-    margin-top: .15rem;
-    color: var(--full-lyrics-muted);
-  }
-  #fullLyricsPlayer .full-lyrics-setting select {
-    flex: none;
-    max-width: 50%;
-    padding: .35rem .45rem;
-    border: 1px solid #ffffff30;
-    border-radius: .4rem;
-    background: #18202b;
-    color: var(--full-lyrics-ink);
-    color-scheme: dark;
-    font: inherit;
-  }
-  #fullLyricsPlayer .full-lyrics-setting select:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-  #fullLyricsPlayer .full-lyrics-setting input {
-    flex: none;
-    width: 1.2em;
-    height: 1.2em;
-    margin: 0;
-    accent-color: var(--full-lyrics-ink);
-    cursor: pointer;
-  }
-  #fullLyricsPlayer .full-lyrics-source-options { display: grid; gap: .375rem; }
-  #fullLyricsPlayer .full-lyrics-source-option {
-    display: grid;
-    gap: .15rem;
-    padding: .6rem .75rem;
-    border: 1px solid #ffffff1a;
-    border-radius: .55rem;
-    background: #ffffff0a;
+    width: 100%;
+    padding: .55rem .65rem;
+    border: 0;
+    border-radius: .65rem;
+    background: transparent;
     color: inherit;
+    font-size: inherit;
     text-align: left;
     cursor: pointer;
   }
-  #fullLyricsPlayer .full-lyrics-source-option:hover,
-  #fullLyricsPlayer .full-lyrics-source-option[aria-pressed="true"] { background: #ffffff20; }
+  #fullLyricsPlayer :is(.full-lyrics-source-option, .full-lyrics-settings-action):hover,
+  #fullLyricsPlayer .full-lyrics-source-option[aria-pressed="true"] { background: var(--menu-fill); }
+  #fullLyricsPlayer .full-lyrics-settings-action svg {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    color: var(--full-lyrics-muted);
+  }
+  #fullLyricsPlayer .full-lyrics-source-options { display: grid; gap: .15rem; }
   #fullLyricsPlayer .full-lyrics-source-option:disabled { cursor: wait; }
+  #fullLyricsPlayer .full-lyrics-source-option > span { min-width: 0; overflow-wrap: anywhere; }
+  #fullLyricsPlayer .full-lyrics-source-option small { display: block; font-size: .8rem; }
+  #fullLyricsPlayer .full-lyrics-source-option[aria-pressed="true"]::after {
+    content: '';
+    flex: none;
+    width: .4rem;
+    height: .7rem;
+    margin-inline-end: .2rem;
+    border: solid currentColor;
+    border-width: 0 2px 2px 0;
+    rotate: 45deg;
+  }
   #fullLyricsPlayer .full-lyrics-source-option small,
   #fullLyricsPlayer #fullLyricsSourceStatus { color: var(--full-lyrics-muted); }
-  #fullLyricsPlayer #fullLyricsSourceStatus { margin: .6rem 0 0; font-size: .875rem; }
+  #fullLyricsPlayer #fullLyricsSourceStatus { margin: .6rem .65rem 0; font-size: .8rem; }
   #fullLyricsPlayer #fullLyricsSourceStatus:empty { display: none; }
   #fullLyricsPlayer .full-lyrics-next-track {
     display: flex;
@@ -1099,6 +1240,7 @@
       --full-lyrics-column-end: clamp(calc(14 * var(--full-lyrics-unit)), 1.25vw, calc(26 * var(--full-lyrics-unit)));
       --full-lyrics-player-column: calc(var(--cover-size) + max(4vw, env(safe-area-inset-right)) + var(--full-lyrics-column-gap));
       --full-lyrics-footer-clearance: 0px;
+      --full-lyrics-footer-inset: calc(var(--full-lyrics-controls-width) + var(--full-lyrics-view-left));
     }
     #fullLyricsPlayer:where([data-player-side="right"]) .full-lyrics-main {
       grid-template-columns: minmax(0, 1fr) minmax(0, var(--full-lyrics-player-column));
@@ -1229,7 +1371,6 @@
       --full-lyrics-column-inset: calc(22 * var(--full-lyrics-unit));
       --full-lyrics-column-end: calc(22 * var(--full-lyrics-unit));
     }
-    #fullLyricsPlayer #fullLyricsSwapSide { display: none; }
     #fullLyricsPlayer .full-lyrics-main {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr);
@@ -1287,18 +1428,15 @@
     #fullLyricsPlayer #fullLyricsPlayBtn svg { width: calc(20 * var(--full-lyrics-unit)); height: calc(20 * var(--full-lyrics-unit)); }
     #fullLyricsPlayer .full-lyrics-volume { display: none; }
   }
-  @media (max-aspect-ratio: 1/1) {
-    #fullLyricsPlayer [data-full-layout="compact"] { display: none; }
-  }
   @media (min-aspect-ratio: 1/1) {
     #fullLyricsPlayer[data-layout="compact"] {
       --full-lyrics-size: clamp(calc(24 * var(--full-lyrics-unit)), min(4.1vw, 6dvh), calc(48 * var(--full-lyrics-unit)));
       --full-lyrics-column-inset: max(calc(22 * var(--full-lyrics-unit)), calc((100vw - min(65vw, calc(900 * var(--full-lyrics-unit)))) / 2));
       --full-lyrics-column-end: var(--full-lyrics-column-inset);
-      --full-lyrics-footer-clearance: 0px;
+      --full-lyrics-footer-clearance: calc(var(--full-lyrics-controls-width) + var(--full-lyrics-view-right));
+      --full-lyrics-footer-inset: 0px;
       --cover-size: clamp(calc(74 * var(--full-lyrics-unit)), 15dvh, calc(132 * var(--full-lyrics-unit)));
     }
-    #fullLyricsPlayer[data-layout="compact"] #fullLyricsSwapSide { display: none; }
     #fullLyricsPlayer[data-layout="compact"] .full-lyrics-main {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr);
@@ -1348,9 +1486,20 @@
     #fullLyricsPlayer[data-layout="compact"] .full-lyrics-volume { display: none; }
     #fullLyricsPlayer[data-layout="compact"] .full-lyrics-queue { right: var(--full-lyrics-view-right); left: auto; }
   }
+  @media (max-aspect-ratio: 1/1) and (max-width: 600px) {
+    #fullLyricsPlayer .full-lyrics-lyrics-side {
+      grid-template-rows: minmax(0, 1fr)
+        calc(clamp(calc(100 * var(--full-lyrics-unit)), 15dvh, calc(116 * var(--full-lyrics-unit))) + env(safe-area-inset-bottom));
+    }
+    #fullLyricsPlayer .full-lyrics-ending-info {
+      padding: 0 var(--full-lyrics-column-end)
+        calc(60 * var(--full-lyrics-unit) + env(safe-area-inset-bottom)) var(--full-lyrics-column-inset);
+    }
+  }
   body.performance-mode #fullLyricsPlayer {
     --full-lyrics-ink: var(--text-primary, #fff);
     --full-lyrics-muted: var(--text-secondary, #ffffffa6);
+    --full-lyrics-menu-base: var(--bg-primary, #111820);
     background: var(--bg-primary, #111820) !important;
   }
   body.performance-mode #fullLyricsPlayer #fullLyricsPlayBtn {
@@ -1361,6 +1510,7 @@
     filter: var(--full-lyrics-backdrop-filter) !important;
   }
   body.performance-mode #fullLyricsPlayer :is(.full-lyrics-topbar, .full-lyrics-queue) { background: var(--bg-secondary, #222); }
+  body.performance-mode #fullLyricsPlayer .full-lyrics-dialog { animation: none; }
   body.full-lyrics-open #ycAdmBtn {
     --full-lyrics-unit: min(calc(100vw / 1366), calc(100dvh / 768));
     top: calc(14 * var(--full-lyrics-unit));
@@ -1410,39 +1560,12 @@
       <div class="full-lyrics-album">
         <div class="full-lyrics-cover">
           <img id="fullLyricsArt" class="full-lyrics-art" alt="">
-          <div class="full-lyrics-topbar">
-            <button id="fullLyricsClose" class="full-lyrics-icon" type="button" onclick="closeFullLyricsPlayer()" aria-label="Close lyrics player" title="Close lyrics player">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-            </button>
-            <button class="full-lyrics-icon lyrics-fetch-btn" data-icon-only type="button" onclick="fetchCurrentTrackLyrics()" aria-label="Fetch lyrics" title="Fetch lyrics">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 5v6h-6M4 19v-6h6m9.5-2A8 8 0 0 0 6 6m-1.5 7A8 8 0 0 0 18 18"/></svg>
-            </button>
-            <button class="full-lyrics-icon lyrics-popout-btn" type="button" onclick="openLyricsPopout()" aria-label="Pop out lyrics" title="Pop out lyrics">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 4h7v7m0-7-9 9m9-1v7H4V4h7"/></svg>
-            </button>
-            <button id="fullLyricsSettingsButton" class="full-lyrics-icon" type="button" aria-label="Big lyrics settings" title="Big lyrics settings" aria-haspopup="dialog" aria-controls="fullLyricsSettingsDialog">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3h4l.7 2.5 2 .9 2.3-1.2 2 3.5-1.8 1.7v2.3l1.8 1.7-2 3.5-2.3-1.2-2 .9L14 20h-4l-.7-2.4-2-.9-2.3 1.2-2-3.5 1.8-1.7v-2.3L3 8.7l2-3.5 2.3 1.2 2-.9z"/><circle cx="12" cy="11.5" r="3"/></svg>
-            </button>
+          <div class="full-lyrics-topbar" role="group" aria-label="Lyric display toggles">
             <button id="fullLyricsHidePast" class="full-lyrics-icon" type="button" aria-pressed="false" aria-label="Hide past lyrics" title="Hide past lyrics">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M3 12h12M3 17h7"/><path d="m17 15 4 4m0-4-4 4"/></svg>
             </button>
             <button id="fullLyricsBackgroundMotion" class="full-lyrics-icon" type="button" aria-pressed="true" aria-label="Background motion" title="Turn background motion off">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8c3.5 0 4.5-3 8-3s4.5 3 10 3M3 13c3.5 0 4.5-3 8-3s4.5 3 10 3M3 18c3.5 0 4.5-3 8-3s4.5 3 10 3"/></svg>
-            </button>
-            <button id="fullLyricsSwapSide" class="full-lyrics-icon" type="button" aria-label="Move player to the right" title="Move player to the right">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h18m-4-4 4 4-4 4M21 16H3m4-4-4 4 4 4"/></svg>
-            </button>
-            <button class="full-lyrics-icon" type="button" data-full-layout="compact" aria-pressed="false" aria-label="Compact layout" title="Compact layout">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18v16H3zM6 7h4v4H6zm7 1h5M6 14h12M6 17h9"/></svg>
-            </button>
-            <button class="full-lyrics-icon" type="button" data-full-layout="classic" aria-pressed="true" aria-label="Classic layout" title="Classic layout">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 5h18v14H3zM10 5v14m3-9h5m-5 4h5"/></svg>
-            </button>
-            <button class="full-lyrics-icon" type="button" data-full-layout="minimal" aria-pressed="false" aria-label="Minimal layout" title="Minimal layout">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 5h18v14H3zM6 8h6v6H6zm8 1h4m-4 4h4M7 16h4"/></svg>
-            </button>
-            <button class="full-lyrics-icon" type="button" data-full-layout="immersive" aria-pressed="false" aria-label="Immersive layout" title="Immersive layout">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/></svg>
             </button>
           </div>
         </div>
@@ -1528,39 +1651,115 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
       </button>
     </div>
-    <div class="full-lyrics-settings-rows">
-      <label class="full-lyrics-setting">
-        <span>Layout</span>
-        <select id="fullLyricsSettingsLayout">
-          <option value="classic">Classic</option>
-          <option value="minimal">Minimal</option>
-          <option value="immersive">Immersive</option>
-          <option value="compact">Compact</option>
-        </select>
-      </label>
-      <label class="full-lyrics-setting">
-        <span>Player side<small id="fullLyricsSettingsSideHint">In side-by-side layouts</small></span>
-        <select id="fullLyricsSettingsSide" aria-label="Player side" aria-describedby="fullLyricsSettingsSideHint">
-          <option value="left">Left</option>
-          <option value="right">Right</option>
-        </select>
-      </label>
-      <label class="full-lyrics-setting">
-        <span>Hide past lyrics</span>
-        <input id="fullLyricsSettingsHidePast" type="checkbox" role="switch">
-      </label>
-      <label class="full-lyrics-setting">
-        <span>Background motion</span>
-        <input id="fullLyricsSettingsMotion" type="checkbox" role="switch">
-      </label>
-    </div>
+    <form id="fullLyricsSettingsOptions" class="full-lyrics-settings-rows">
+      <fieldset aria-label="Settings section">
+        <div class="full-lyrics-segments full-lyrics-settings-tabs">
+          <label><input type="radio" name="section" value="appearance" checked><span>Appearance</span></label>
+          <label><input type="radio" name="section" value="lyrics"><span>Lyrics</span></label>
+        </div>
+      </fieldset>
+      <div id="fullLyricsSettingsAppearance" class="full-lyrics-settings-section">
+        <fieldset>
+          <legend>Layout</legend>
+          <div class="full-lyrics-segments">
+            <label><input type="radio" name="layout" value="classic"><span>Classic</span></label>
+            <label><input type="radio" name="layout" value="minimal"><span>Minimal</span></label>
+            <label><input type="radio" name="layout" value="immersive"><span>Immersive</span></label>
+            <label><input type="radio" name="layout" value="compact"><span>Compact</span></label>
+          </div>
+        </fieldset>
+        <fieldset aria-describedby="fullLyricsSettingsSideHint">
+          <legend>Player side</legend>
+          <div class="full-lyrics-segments">
+            <label><input type="radio" name="side" value="left"><span>Left</span></label>
+            <label><input type="radio" name="side" value="right"><span>Right</span></label>
+          </div>
+          <p id="fullLyricsSettingsSideHint" class="full-lyrics-settings-hint">In side-by-side layouts</p>
+        </fieldset>
+        <div class="full-lyrics-settings-toggles">
+          <label class="full-lyrics-setting">
+            <span>Hide past lyrics</span>
+            <input id="fullLyricsSettingsHidePast" name="hidePast" type="checkbox" role="switch">
+            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+          </label>
+          <label class="full-lyrics-setting">
+            <span>Background motion</span>
+            <input id="fullLyricsSettingsMotion" name="motion" type="checkbox" role="switch">
+            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+          </label>
+        </div>
+      </div>
+      <div id="fullLyricsSettingsLyrics" class="full-lyrics-settings-section" hidden>
+        <div>
+          <div class="full-lyrics-setting-stepper">
+            <span id="fullLyricsFontLabel">Text size</span>
+            <div class="full-lyrics-stepper-buttons" role="group" aria-labelledby="fullLyricsFontLabel">
+              <button type="button" data-am-action="font-down" aria-label="Smaller text">A−</button>
+              <output id="fullLyricsSettingsFont" aria-live="off">100%</output>
+              <button type="button" data-am-action="font-up" aria-label="Larger text">A+</button>
+            </div>
+          </div>
+          <div class="full-lyrics-setting-stepper">
+            <span id="fullLyricsOffsetLabel">Sync offset</span>
+            <div class="full-lyrics-stepper-buttons" role="group" aria-labelledby="fullLyricsOffsetLabel">
+              <button type="button" data-am-action="off-down" aria-label="Lyrics earlier" title="Shift for larger steps">−</button>
+              <button type="button" id="fullLyricsSettingsOffset" data-am-action="off-val" aria-label="Reset sync offset">0.0s</button>
+              <button type="button" data-am-action="off-up" aria-label="Lyrics later" title="Shift for larger steps">+</button>
+            </div>
+          </div>
+          <p id="fullLyricsSettingsTimingHint" class="full-lyrics-settings-hint" hidden>Sync offset and line looping need synced lyrics.</p>
+        </div>
+        <fieldset>
+          <legend>Line spacing</legend>
+          <div class="full-lyrics-segments">
+            <label><input type="radio" name="spacing" value="0.6"><span>Compact</span></label>
+            <label><input type="radio" name="spacing" value="1"><span>Normal</span></label>
+            <label><input type="radio" name="spacing" value="1.6"><span>Airy</span></label>
+          </div>
+        </fieldset>
+        <div class="full-lyrics-settings-toggles">
+          <label class="full-lyrics-setting">
+            <span>Focus mode</span>
+            <input name="focus" type="checkbox" role="switch">
+            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+          </label>
+          <label class="full-lyrics-setting">
+            <span>Loop current line</span>
+            <input name="loop" type="checkbox" role="switch">
+            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="full-lyrics-settings-actions">
+          <button class="full-lyrics-settings-action" type="button" data-am-action="search">Search lyrics</button>
+          <button class="full-lyrics-settings-action" type="button" data-am-action="copy">Copy lyrics</button>
+          <button class="full-lyrics-settings-action" type="button" data-am-action="share">Save line as image</button>
+          <button class="full-lyrics-settings-action" type="button" data-am-action="lrc">Export .lrc</button>
+        </div>
+        <div class="full-lyrics-settings-actions">
+          <button class="full-lyrics-settings-action lyrics-fetch-btn" type="button" onclick="this.closest('dialog').close(); fetchCurrentTrackLyrics()">
+            <span data-lyrics-fetch-label>Find lyrics</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 5v6h-6M4 19v-6h6m9.5-2A8 8 0 0 0 6 6m-1.5 7A8 8 0 0 0 18 18"/></svg>
+          </button>
+          <button class="full-lyrics-settings-action lyrics-popout-btn" type="button" onclick="this.closest('dialog').close(); openLyricsPopout()">
+            <span>Pop out lyrics</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 4h7v7m0-7-9 9m9-1v7H4V4h7"/></svg>
+          </button>
+        </div>
+      </div>
+    </form>
   </dialog>
-  <div class="full-lyrics-queue" role="group" aria-label="Fullscreen view">
+  <div class="full-lyrics-queue" role="group" aria-label="Big lyrics controls">
     <button id="fullLyricsShowLyrics" class="full-lyrics-icon" type="button" aria-controls="fullLyricsContent" aria-pressed="true" aria-label="Lyrics" title="Lyrics">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h16v11H9l-4 4v-4H4zM8 9h8m-8 3h6"/></svg>
     </button>
     <button id="fullLyricsQueueButton" class="full-lyrics-icon" type="button" aria-controls="fullLyricsQueuePanel" aria-expanded="false" aria-pressed="false" aria-label="Up Next" title="Up Next">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 5h18M3 10h18M3 15h9m4-1 5 3-5 3z"/></svg>
+    </button>
+    <button id="fullLyricsSettingsButton" class="full-lyrics-icon" type="button" aria-label="Big lyrics settings" title="Big lyrics settings" aria-haspopup="dialog" aria-controls="fullLyricsSettingsDialog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3h4l.7 2.5 2 .9 2.3-1.2 2 3.5-1.8 1.7v2.3l1.8 1.7-2 3.5-2.3-1.2-2 .9L14 20h-4l-.7-2.4-2-.9-2.3 1.2-2-3.5 1.8-1.7v-2.3L3 8.7l2-3.5 2.3 1.2 2-.9z"/><circle cx="12" cy="11.5" r="3"/></svg>
+    </button>
+    <button id="fullLyricsClose" class="full-lyrics-icon" type="button" onclick="closeFullLyricsPlayer()" aria-label="Close lyrics player" title="Close lyrics player">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
     </button>
   </div>
 </div>
