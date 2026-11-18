@@ -774,6 +774,65 @@ test('am-lyrics persists word timing, backing vocals, and credits through an Ind
   next.el.lyrics[0].text[0].text = 'Changed renderer word';
   assert.equal(stored.amData.lines[0].text[0].text, 'Saved ');
 });
+test('a picker choice is saved per song and restored without looking up lyrics again', async () => {
+  const first = cachedRendererFixture();
+  const db = lyricDB(), preferences = new Map();
+  first.ctx.localStorage = { getItem: key => preferences.get(key), setItem: (key, value) => preferences.set(key, value) };
+  first.manager.db = db;
+  delete first.manager.saveLyricsToDB;
+  const other = { source: 'LRCLIB', lines: [{ timestamp: 1500, endtime: 5000,
+    text: [{ text: 'Chosen lyrics', timestamp: 1500, endtime: 5000, lineSynced: true }] }] };
+  const el = first.manager.amEl = first.el;
+  el.lyrics = wordLyrics();
+  el.availableSources = [{ source: 'Initial', lines: el.lyrics }, other];
+  el.currentSourceIndex = 0;
+  el.lyricsSource = 'Initial';
+  el.applySourceAtIndex = async index => {
+    el.currentSourceIndex = index;
+    el.lyricsSource = el.availableSources[index].source;
+    el.lyrics = el.availableSources[index].lines;
+  };
+  assert.equal(await first.manager.selectAmSource(el, first.track, other), true);
+  assert.equal(first.manager.preferredAmSource(first.track), 'LRCLIB');
+  assert.equal(first.manager.preferredAmSource({ title: 'Another song', artist: first.track.artist }), '');
+  const next = cachedRendererFixture();
+  next.manager.db = db;
+  await next.manager.onTrackChange();
+  assert.equal(next.el.lyricsSource, 'LRCLIB');
+  assert.equal(next.el.lyrics[0].text[0].text, 'Chosen lyrics');
+  assert.equal(next.el.hasFetchedAllProviders, false, 'cached lyrics can still discover alternate providers');
+  assert.equal(next.requests(), 0);
+});
+test('discovering lyric providers leaves the current lyrics untouched until a choice is made', async () => {
+  const { manager: m, track } = fixture();
+  const original = { source: 'Original', lines: wordLyrics() };
+  const other = { source: 'Alternate', lines: [{ timestamp: 0, endtime: 0, text: [{ text: 'Alternate lyrics' }] }] };
+  let resolve, lookups = 0, footerUpdates = 0;
+  const el = m.amEl = {
+    lyrics: original.lines, lyricsSource: original.source, currentSourceIndex: 0, availableSources: [original],
+    _updateFooter() { footerUpdates++; },
+    async applySourceAtIndex() { throw Error('Discovery must not apply a source'); },
+    async switchSource() {
+      lookups++;
+      this._updateFooter();
+      await new Promise(done => { resolve = done; });
+      this.availableSources = [other, original];
+      this.hasFetchedAllProviders = true;
+      await this.applySourceAtIndex(0);
+    }
+  };
+  m.installAmSourceSwitch(el);
+  const first = m.discoverAmSources(el, track);
+  const second = m.discoverAmSources(el, track);
+  await Promise.resolve();
+  assert.equal(lookups, 1);
+  resolve();
+  await Promise.all([first, second]);
+  assert.equal(footerUpdates, 0);
+  assert.equal(el.lyrics, original.lines);
+  assert.equal(el.currentSourceIndex, 1);
+  assert.deepEqual(el.availableSources, [other, original]);
+});
 test('old line-only saved lyrics load online without calling a provider', async () => {
   const { manager: m, track } = fixture(); let searches = 0;
   m.getLyricsFromDB = async () => ({ source: 'saved-amlyrics', lyrics: [], parsedLines: [{ text: 'Old saved line', startMs: 1000 }] });

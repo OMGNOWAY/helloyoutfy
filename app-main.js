@@ -6464,7 +6464,8 @@ class UnifiedLyricsManager {
             el.songwriters = snapshot.songwriters || '';
             el.availableSources = [{ lines: el.lyrics, source: el.lyricsSource, songwriters: el.songwriters, contributors: snapshot.contributors }];
             el.currentSourceIndex = 0;
-            el.hasFetchedAllProviders = true;
+            // Saved lyrics display immediately. Look up alternatives only if needed.
+            el.hasFetchedAllProviders = ['imported-lrc', 'imported-text'].includes(data.source);
             el.cachedIsUnsynced = snapshot.unsynced;
             this.currentSource = 'amlyrics';
             this.amActive = true;
@@ -6749,15 +6750,22 @@ class UnifiedLyricsManager {
             // 1) am-lyrics first (no API key needed)
             console.log(`[Lyrics] ${force ? 'Manual refresh requested' : 'No saved lyrics available'}; fetching with am-lyrics: ${track.title || 'Unknown song'} — ${track.artist || 'Unknown artist'}`);
             this.showLoading('Loading lyrics...');
-            const amLines = await this.tryAm(track, generation);
+            let amLines = await this.tryAm(track, generation);
             if (!isFresh()) return;
             if (amLines === null) { this.isLoading = false; return; } // superseded by a newer track
             if (amLines) {
                 console.log('✅ Using am-lyrics');
                 this.currentSource = 'amlyrics';
+                this.amTrackKey = this.fetchingKey;
+                const el = this.amEl;
+                if (el && this.preferredAmSource(track)) {
+                    try { await this.restorePreferredAmSource(el, track); }
+                    catch (error) { console.warn('Could not restore preferred lyric source', error); }
+                    if (!isFresh()) return;
+                    amLines = el.lyrics;
+                }
                 this.parsedLines = this.amLinesToParsed(amLines);
                 this.currentLyrics = this.parsedLines;
-                this.amTrackKey = this.fetchingKey;
                 const saved = { lyrics: this.parsedLines, parsedLines: this.parsedLines, source: this.amEl?.cachedIsUnsynced ? 'saved-amlyrics-text' : 'saved-amlyrics',
                     amData: { version: 1, lines: JSON.parse(JSON.stringify(amLines)), ...Utils.amLyricsCredits(this.amEl) } };
                 await this.rememberLyrics(track, saved);
@@ -7348,7 +7356,16 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     installAmSourceSwitch(el) {
         const applySource = el.applySourceAtIndex?.bind(el);
         if (!applySource) return;
+        const updateFooter = el._updateFooter?.bind(el);
+        if (updateFooter) el._updateFooter = (...args) => {
+            // Discovery uses our dialog's status. The native footer is hidden,
+            // and writing to it directly can break Lit's text bindings.
+            if (!el._youtifySourceDiscovery) updateFooter(...args);
+        };
         el.applySourceAtIndex = async index => {
+            // Native discovery ends by cycling to a provider. The picker
+            // needs the list without changing the one the listener is using.
+            if (el._youtifySourceDiscovery) return;
             const next = el.availableSources?.[index];
             if (!next || !el.isConnected || el.isLoading || next.lines === el.lyrics) return applySource(index);
             const signal = el.fetchAbortController?.signal;
@@ -7373,6 +7390,89 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             this.handleTimeUpdate();
             if (el.parentElement?.id === 'fullLyricsContent') this.jumpAmToCurrentLine(true);
         };
+    }
+    preferredAmSource(track) {
+        try { return JSON.parse(localStorage.getItem('youtify_lyric_sources') || '{}')[this.getLyricsTrackId(track)] || ''; }
+        catch { return ''; }
+    }
+    async discoverAmSources(el, track) {
+        if (el._youtifySourceDiscovery) return el._youtifySourceDiscovery;
+        if (el.hasFetchedAllProviders || typeof el.switchSource !== 'function') return;
+        if (!el.fetchAbortController || el.fetchAbortController.signal.aborted) el.fetchAbortController = new AbortController();
+        const { signal } = el.fetchAbortController;
+        const hadSpicy = el.hasFetchedSpicyLyrics;
+        const stale = () => signal.aborted || this.amEl !== el || !this.isCurrentLyricsTrack(track);
+        el._youtifySourceDiscovery = Promise.resolve().then(async () => {
+            if (stale()) return;
+            if (el.__amSaved) {
+                const [candidate] = this.amCandidates(track);
+                if (!candidate) { el.hasFetchedAllProviders = true; return; }
+                el.songTitle = candidate.title;
+                el.songArtist = candidate.artist;
+                el.songAlbum = track.album || '';
+                el.songDurationMs = Math.round((Number(track.duration) || Number(audio.duration) || 0) * 1000);
+                el.query = candidate.artist ? `${candidate.title} - ${candidate.artist}` : candidate.title;
+                // Native alternate discovery assumes the initial lrc.red lookup
+                // has already run. A cached renderer has not made that lookup.
+                if (!el.availableSources.some(source => source.source === 'lrc.red')) {
+                    const red = await el.constructor.fetchLyricsFromLrcRed?.(candidate.title, candidate.artist, el.isrc,
+                        { album: el.songAlbum, durationMs: el.songDurationMs }, el.query, signal);
+                    if (stale()) return;
+                    if (red?.lines?.length) el.availableSources = [...el.availableSources, red];
+                }
+            }
+            const displayed = el.availableSources.find(source => source.source === el.lyricsSource);
+            await el.switchSource();
+            if (stale() || !displayed) return;
+            // Keep the displayed version selected if discovery found a second
+            // copy of the same provider and ranked it above the saved copy.
+            const index = el.availableSources.findIndex(source => source.source === displayed.source);
+            if (index >= 0) {
+                if (el.availableSources[index] !== displayed) {
+                    el.availableSources = el.availableSources.map((source, i) => i === index ? displayed : source);
+                }
+                el.currentSourceIndex = index;
+            }
+        }).catch(error => {
+            el.hasFetchedAllProviders = false;
+            el.hasFetchedSpicyLyrics = hadSpicy;
+            throw error;
+        }).finally(() => {
+            if (signal.aborted) {
+                el.isFetchingAlternatives = false;
+                el.hasFetchedSpicyLyrics = hadSpicy;
+            }
+            el._youtifySourceDiscovery = null;
+        });
+        return el._youtifySourceDiscovery;
+    }
+    async restorePreferredAmSource(el, track) {
+        const key = source => el.constructor.getSourceKey?.(source) || String(source).toLowerCase();
+        const preference = key(this.preferredAmSource(track));
+        if (!preference || preference === key(el.lyricsSource)) return;
+        const find = () => el.availableSources?.findIndex(source => key(source.source) === preference) ?? -1;
+        if (find() < 0) await this.discoverAmSources(el, track);
+        const index = find();
+        if (index >= 0 && this.amEl === el && this.isCurrentLyricsTrack(track)) await el.applySourceAtIndex(index);
+    }
+    async selectAmSource(el, track, source) {
+        if (this.amEl !== el || !this.isCurrentLyricsTrack(track)) return false;
+        const index = el.availableSources.indexOf(source);
+        if (index < 0) return false;
+        if (/^Local(?:\s|$)/i.test(source.source) && el.lyricsSource === source.source) return true;
+        if (el.currentSourceIndex !== index || el.lyricsSource !== source.source) await el.applySourceAtIndex(index);
+        if (this.amEl !== el || !this.isCurrentLyricsTrack(track) || el.lyricsSource !== source.source) return false;
+        try {
+            const preferences = JSON.parse(localStorage.getItem('youtify_lyric_sources') || '{}');
+            preferences[this.getLyricsTrackId(track)] = source.source;
+            localStorage.setItem('youtify_lyric_sources', JSON.stringify(preferences));
+        } catch {}
+        const parsedLines = this.amLinesToParsed(el.lyrics);
+        await this.rememberLyrics(track, {
+            lyrics: parsedLines, parsedLines, source: el.cachedIsUnsynced ? 'saved-amlyrics-text' : 'saved-amlyrics',
+            amData: { version: 1, lines: JSON.parse(JSON.stringify(el.lyrics)), ...Utils.amLyricsCredits(el) }
+        });
+        return true;
     }
     handleAmContextMenu(event) {
         const line = event.composedPath?.().find(node => node?.classList?.contains('lyrics-line'));
@@ -9287,7 +9387,7 @@ function syncFullLyricsModes() {
 
 const fullLyricsScriptSource = document.currentScript?.src;
 
-function createFullLyricsBackground(canvas, isOpen) {
+function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let renderer, scriptLoad, artwork, frame, image, tap, analyser, samples;
   let hasImage = false;
@@ -9295,6 +9395,7 @@ function createFullLyricsBackground(canvas, isOpen) {
   let sizeDirty = true;
   let lastPaint = null;
   let performanceMode = document.body.classList.contains('performance-mode');
+  let motionEnabled = isMotionEnabled();
   let phase = 0, level = .35, playingAmount = 0, analysisAmount = 0;
 
   function canDraw() {
@@ -9302,7 +9403,7 @@ function createFullLyricsBackground(canvas, isOpen) {
   }
 
   function shouldAnimate() {
-    return !performanceMode && !reducedMotion.matches;
+    return motionEnabled && !performanceMode && !reducedMotion.matches;
   }
 
   function hasMotion() {
@@ -9463,9 +9564,11 @@ function createFullLyricsBackground(canvas, isOpen) {
 
   function sync() {
     const nextMode = document.body.classList.contains('performance-mode');
-    if (nextMode !== performanceMode) {
+    const nextMotion = isMotionEnabled();
+    if (nextMode !== performanceMode || nextMotion !== motionEnabled) {
+      sizeDirty = sizeDirty || nextMode !== performanceMode;
       performanceMode = nextMode;
-      sizeDirty = true;
+      motionEnabled = nextMotion;
       updateMotion();
     }
     if (!canDraw()) { stop(); return; }
@@ -9536,6 +9639,9 @@ const FullLyricsPlayer = (() => {
   let backdropRequest = 0;
   let visibleBackdrop = 0;
   let warpedBackdrop, queueSnapshot, queueRenderFrame, resumeQueueRender;
+  let backdropMotion = true;
+  try { backdropMotion = localStorage.getItem('youtify_fullscreen_background_motion') !== 'off'; } catch {}
+  let sourcePicker;
 
   const $ = id => document.getElementById(id);
   let hidePastLyrics = false;
@@ -9545,6 +9651,95 @@ const FullLyricsPlayer = (() => {
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const motionAnimations = new Map();
   const revealFrames = [{ opacity: 0, translate: '0 8px' }, { opacity: 1, translate: '0 0' }];
+
+  function updateBackdropMotionButton() {
+    const button = $('fullLyricsBackgroundMotion');
+    if (!button) return;
+    button.setAttribute('aria-pressed', String(backdropMotion));
+    button.title = backdropMotion ? 'Turn background motion off' : 'Turn background motion on';
+  }
+
+  function toggleBackdropMotion() {
+    backdropMotion = !backdropMotion;
+    try { localStorage.setItem('youtify_fullscreen_background_motion', backdropMotion ? 'on' : 'off'); } catch {}
+    updateBackdropMotionButton();
+    warpedBackdrop?.sync();
+  }
+
+  function closeSourcePicker() {
+    sourcePicker = null;
+    const dialog = $('fullLyricsSourcePicker');
+    if (dialog?.open) dialog.close();
+  }
+
+  function renderSourcePicker(state) {
+    if (sourcePicker !== state) return;
+    const { el, loading, applying, message } = state;
+    const list = $('fullLyricsSourceOptions');
+    const fragment = document.createDocumentFragment();
+    for (const [index, source] of (el.availableSources ?? []).entries()) {
+      if (!source.lines?.length || !source.source) continue;
+      const current = index === el.currentSourceIndex && source.source === el.lyricsSource;
+      const rank = el.constructor.getTimingRank?.(source.lines);
+      const timing = ['Word synced', 'Line synced', 'Plain text'][rank] ||
+        (source.lines.some(line => line.timestamp || line.endtime) ? 'Line synced' : 'Plain text');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'full-lyrics-source-option';
+      button.setAttribute('aria-pressed', String(current));
+      button.disabled = loading || applying;
+      const name = document.createElement('span');
+      name.textContent = source.source;
+      const detail = document.createElement('small');
+      detail.textContent = timing + (current ? ' · Current' : '');
+      button.append(name, detail);
+      button.addEventListener('click', async () => {
+        if (sourcePicker !== state || state.loading || state.applying) return;
+        state.applying = true;
+        renderSourcePicker(state);
+        try {
+          if (await lyricsManager.selectAmSource(el, state.track, source)) {
+            if (sourcePicker === state) closeSourcePicker();
+            syncEndingInfo();
+          } else {
+            state.message = 'That source is no longer available.';
+          }
+        } catch (error) {
+          console.warn('Could not switch lyric source', error);
+          state.message = 'Could not switch lyrics. Try again.';
+        } finally {
+          state.applying = false;
+          renderSourcePicker(state);
+        }
+      });
+      fragment.append(button);
+    }
+    list.replaceChildren(fragment);
+    const status = $('fullLyricsSourceStatus');
+    status.textContent = loading ? 'Checking other providers…' : applying ? 'Switching lyrics…' : message || '';
+  }
+
+  async function openSourcePicker() {
+    const dialog = $('fullLyricsSourcePicker');
+    const el = lyricsManager?.amEl;
+    const track = queue[currentTrackIndex];
+    if (!opened || !dialog || dialog.open || !track || !el?.lyrics?.length || el.isLoading ||
+        lyricsManager.isFetching || el.parentElement?.id !== 'fullLyricsContent') return;
+    const state = sourcePicker = { el, track, loading: !el.hasFetchedAllProviders };
+    renderSourcePicker(state);
+    dialog.showModal();
+    if (!state.loading) return;
+    try {
+      await lyricsManager.discoverAmSources(el, track);
+      if (el.availableSources?.length <= 1) state.message = 'No alternate sources found for this song.';
+    } catch (error) {
+      console.warn('Could not look up lyric sources', error);
+      state.message = 'Could not check other providers. Reopen to try again.';
+    } finally {
+      state.loading = false;
+      renderSourcePicker(state);
+    }
+  }
 
   function animateMotion(node, frames, duration = 300) {
     if (!opened || !node?.animate || reducedMotion?.matches ||
@@ -9937,6 +10132,7 @@ const FullLyricsPlayer = (() => {
     const img = $('playerImg');
 
     if (!opened) return;
+    if (sourcePicker && sourcePicker.track !== track) closeSourcePicker();
     const artwork = track?.albumArt || (track && img?.style.display !== 'none' && img?.getAttribute('src')) || '';
     const cover = $('fullLyricsArt');
     if (artwork && cover?.getAttribute('src') !== artwork) {
@@ -9948,7 +10144,7 @@ const FullLyricsPlayer = (() => {
     syncBackdrop(artwork);
     const canvas = $('fullLyricsCanvas');
     if (canvas) {
-      warpedBackdrop ??= createFullLyricsBackground(canvas, () => opened);
+      warpedBackdrop ??= createFullLyricsBackground(canvas, () => opened, () => backdropMotion);
       warpedBackdrop.setArtwork(artwork);
     }
 
@@ -10038,9 +10234,8 @@ const FullLyricsPlayer = (() => {
     setText('fullLyricsLyricsSource', provider);
     setText('fullLyricsSongwriters', writers);
     const switchSource = $('fullLyricsSwitchSource');
-    switchSource.toggleAttribute('hidden', !loadedAm || !source ||
-      (loadedAm.availableSources?.length <= 1 && loadedAm.hasFetchedAllProviders));
-    switchSource.disabled = !!loadedAm?.isFetchingAlternatives;
+    switchSource.toggleAttribute('hidden', !loadedAm || !source);
+    switchSource.disabled = !!lyricsManager?.isFetching;
   }
 
   function syncPlayback() {
@@ -10102,6 +10297,7 @@ const FullLyricsPlayer = (() => {
     if (!overlay || opened) return;
 
     opened = true;
+    updateBackdropMotionButton();
     overlay.inert = false;
     overlay.style.display = '';
     // Commit the hidden state so the first opening can transition as well.
@@ -10134,6 +10330,7 @@ const FullLyricsPlayer = (() => {
     const overlay = $('fullLyricsPlayer');
     if (!overlay || !opened) return;
     opened = false;
+    closeSourcePicker();
     overlay.inert = true;
     for (const animation of motionAnimations.values()) animation.cancel();
     motionAnimations.clear();
@@ -10171,6 +10368,7 @@ const FullLyricsPlayer = (() => {
     open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, setPlayerSide, recenter, syncEndingInfo,
     setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
     isOpen: () => opened,
+    openSourcePicker, closeSourcePicker, toggleBackdropMotion,
     syncBackdropMotion: () => warpedBackdrop?.sync()
   };
 })();
@@ -10260,14 +10458,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const nextArt = document.getElementById('fullLyricsNextArt');
   nextArt?.addEventListener('error', () => { nextArt.hidden = true; });
-  const sourceButton = document.getElementById('fullLyricsSwitchSource');
-  sourceButton?.addEventListener('click', async () => {
-    const am = lyricsManager?.amEl;
-    if (!am || am.parentElement?.id !== 'fullLyricsContent') return;
-    sourceButton.disabled = true;
-    try { await am.switchSource(); }
-    catch (error) { console.warn('Could not switch lyric source', error); }
-    finally { FullLyricsPlayer.syncEndingInfo(); }
+  document.getElementById('fullLyricsSwitchSource')?.addEventListener('click', FullLyricsPlayer.openSourcePicker);
+  document.getElementById('fullLyricsBackgroundMotion')?.addEventListener('click', FullLyricsPlayer.toggleBackdropMotion);
+  document.getElementById('fullLyricsSourceClose')?.addEventListener('click', FullLyricsPlayer.closeSourcePicker);
+  const sourcePicker = document.getElementById('fullLyricsSourcePicker');
+  sourcePicker?.addEventListener('close', () => {
+    if (!sourcePicker.open) FullLyricsPlayer.closeSourcePicker();
   });
 
   const cover = document.getElementById('fullLyricsArt');
@@ -10321,7 +10517,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && FullLyricsPlayer.isOpen()) {
+  if (e.key === 'Escape' && FullLyricsPlayer.isOpen() && !document.getElementById('fullLyricsSourcePicker')?.open) {
     e.preventDefault();
     const queueButton = document.getElementById('fullLyricsQueueButton');
     if (queueButton?.getAttribute('aria-expanded') === 'true') {

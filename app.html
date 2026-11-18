@@ -847,6 +847,51 @@
   #fullLyricsPlayer #fullLyricsLyricsSource { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon { width: calc(22 * var(--full-lyrics-unit)); height: calc(22 * var(--full-lyrics-unit)); flex: none; }
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon svg { width: calc(14 * var(--full-lyrics-unit)); height: calc(14 * var(--full-lyrics-unit)); }
+  #fullLyricsPlayer #fullLyricsSourcePicker {
+    box-sizing: border-box;
+    position: fixed;
+    width: min(26rem, calc(100vw - 2rem));
+    max-height: min(33rem, calc(100dvh - 2rem));
+    margin: auto;
+    padding: 1rem;
+    overflow: auto;
+    color: var(--full-lyrics-ink);
+    background: color-mix(in srgb, var(--bg-secondary, #161d27) 85%, #10151d);
+    border: 1px solid #ffffff2b;
+    border-radius: 1rem;
+    font-size: 1rem;
+    box-shadow: 0 1rem 3rem #0009;
+  }
+  #fullLyricsPlayer #fullLyricsSourcePicker::backdrop { background: #0006; }
+  #fullLyricsPlayer .full-lyrics-source-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .65rem;
+  }
+  #fullLyricsPlayer .full-lyrics-source-header h2 { margin: 0; font-size: 1.25rem; }
+  #fullLyricsPlayer #fullLyricsSourceClose { width: 2.25rem; height: 2.25rem; }
+  #fullLyricsPlayer #fullLyricsSourceClose svg { width: 1rem; height: 1rem; }
+  #fullLyricsPlayer .full-lyrics-source-options { display: grid; gap: .375rem; }
+  #fullLyricsPlayer .full-lyrics-source-option {
+    display: grid;
+    gap: .15rem;
+    padding: .6rem .75rem;
+    border: 1px solid #ffffff1a;
+    border-radius: .55rem;
+    background: #ffffff0a;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  #fullLyricsPlayer .full-lyrics-source-option:hover,
+  #fullLyricsPlayer .full-lyrics-source-option[aria-pressed="true"] { background: #ffffff20; }
+  #fullLyricsPlayer .full-lyrics-source-option:disabled { cursor: wait; }
+  #fullLyricsPlayer .full-lyrics-source-option small,
+  #fullLyricsPlayer #fullLyricsSourceStatus { color: var(--full-lyrics-muted); }
+  #fullLyricsPlayer #fullLyricsSourceStatus { margin: .6rem 0 0; font-size: .875rem; }
+  #fullLyricsPlayer #fullLyricsSourceStatus:empty { display: none; }
   #fullLyricsPlayer .full-lyrics-next-track {
     display: flex;
     align-items: center;
@@ -1338,6 +1383,9 @@
             <button id="fullLyricsHidePast" class="full-lyrics-icon" type="button" aria-pressed="false" aria-label="Hide past lyrics" title="Hide past lyrics">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M3 12h12M3 17h7"/><path d="m17 15 4 4m0-4-4 4"/></svg>
             </button>
+            <button id="fullLyricsBackgroundMotion" class="full-lyrics-icon" type="button" aria-pressed="true" aria-label="Background motion" title="Turn background motion off">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8c3.5 0 4.5-3 8-3s4.5 3 10 3M3 13c3.5 0 4.5-3 8-3s4.5 3 10 3M3 18c3.5 0 4.5-3 8-3s4.5 3 10 3"/></svg>
+            </button>
             <button id="fullLyricsSwapSide" class="full-lyrics-icon" type="button" aria-label="Move player to the right" title="Move player to the right">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h18m-4-4 4 4-4 4M21 16H3m4-4-4 4 4 4"/></svg>
             </button>
@@ -1400,7 +1448,7 @@
           <p id="fullLyricsWritersRow">Written by <span id="fullLyricsSongwriters"></span></p>
           <p id="fullLyricsSourceRow">
             <span id="fullLyricsLyricsSource"></span>
-            <button id="fullLyricsSwitchSource" type="button" class="full-lyrics-icon" aria-label="Switch lyrics source" title="Switch lyrics source" hidden>
+            <button id="fullLyricsSwitchSource" type="button" class="full-lyrics-icon" aria-label="Choose lyrics source" title="Choose lyrics source" aria-haspopup="dialog" aria-controls="fullLyricsSourcePicker" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4m-4 4 4-4 4 4m6-4v16m-4-4 4 4 4-4"/></svg>
             </button>
           </p>
@@ -1420,6 +1468,16 @@
       </section>
     </div>
   </div>
+  <dialog id="fullLyricsSourcePicker" aria-labelledby="fullLyricsSourceTitle">
+    <div class="full-lyrics-source-header">
+      <h2 id="fullLyricsSourceTitle">Lyrics source</h2>
+      <button id="fullLyricsSourceClose" class="full-lyrics-icon" type="button" aria-label="Close lyrics source picker" autofocus>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div id="fullLyricsSourceOptions" class="full-lyrics-source-options"></div>
+    <p id="fullLyricsSourceStatus" role="status"></p>
+  </dialog>
   <div class="full-lyrics-queue" role="group" aria-label="Fullscreen view">
     <button id="fullLyricsShowLyrics" class="full-lyrics-icon" type="button" aria-controls="fullLyricsContent" aria-pressed="true" aria-label="Lyrics" title="Lyrics">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h16v11H9l-4 4v-4H4zM8 9h8m-8 3h6"/></svg>
