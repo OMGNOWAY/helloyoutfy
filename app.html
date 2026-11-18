@@ -1502,7 +1502,7 @@
   body.performance-mode #fullLyricsPlayer #fullLyricsPlayBtn {
     color: var(--bg-primary, #111820);
   }
-  /* The backdrop only repaints when the still frame or fallback artwork changes. */
+  /* Keep the fullscreen artwork treatment in performance mode. */
   body.performance-mode #fullLyricsPlayer .full-lyrics-backdrop :is(canvas, img.shown) {
     filter: var(--full-lyrics-backdrop-filter) !important;
   }

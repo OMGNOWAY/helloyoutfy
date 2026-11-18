@@ -9418,7 +9418,7 @@ function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true
   }
 
   function shouldAnimate() {
-    return motionEnabled && !performanceMode && !reducedMotion.matches;
+    return motionEnabled && !reducedMotion.matches;
   }
 
   function hasMotion() {
@@ -9460,8 +9460,9 @@ function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true
     if (!canDraw() || !renderer) return;
     const animate = shouldAnimate();
     if (!image && !hasImage) return;
-    // Allow for fractional refresh intervals so 60 Hz doesn't skip every third frame.
-    if (animate && !needsPaint && lastPaint !== null && now - lastPaint < 1000 / 30 - .75) {
+    // Allow for fractional display refresh intervals when capping background draws.
+    const frameRate = performanceMode ? 15 : 30;
+    if (animate && !needsPaint && lastPaint !== null && now - lastPaint < 1000 / frameRate - .75) {
       schedule();
       return;
     }
@@ -9470,7 +9471,7 @@ function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true
       if (sizeDirty) {
         const width = canvas.clientWidth, height = canvas.clientHeight;
         if (!width || !height) return;
-        // The soft color field scales well from a smaller still frame.
+        // The soft color field stays readable at a lower render resolution.
         const maxWidth = performanceMode ? 320 : 1280;
         const maxHeight = performanceMode ? 200 : 800;
         const scale = Math.min(window.devicePixelRatio || 1, maxWidth / width, maxHeight / height);
@@ -9493,11 +9494,11 @@ function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true
       const dt = lastPaint === null ? 0 : Math.min(.1, (now - lastPaint) / 1000);
       const approach = (from, to, seconds) => from + (to - from) * -Math.expm1(-dt / seconds);
       if (animate) {
-        const loudness = sampleAudio();
+        const loudness = performanceMode ? null : sampleAudio();
         const target = loudness ?? .35;
         level = approach(level, target, target > level ? 1.1 : 2.8);
         playingAmount = approach(playingAmount, audio.paused ? 0 : 1, .6);
-        analysisAmount = approach(analysisAmount, loudness === null ? 0 : 1, .8);
+        analysisAmount = performanceMode ? 0 : approach(analysisAmount, loudness === null ? 0 : 1, .8);
         const rate = 1.5 * (1.44 + (.66 + 2.1 * level - 1.44) * analysisAmount);
         phase += dt * (.1 + (rate - .1) * playingAmount);
         renderer.scale = 1 + .0375 * level * playingAmount * analysisAmount;
