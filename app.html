@@ -428,6 +428,8 @@
     --full-lyrics-unit: min(calc(100vw / 1366), calc(100dvh / 768));
     font-size: calc(16 * var(--full-lyrics-unit));
     --full-lyrics-ink: #fff;
+    --full-lyrics-float-color: #151822;
+    --full-lyrics-float-border: #ffffff26;
     --full-lyrics-muted: #ffffffcc;
     --full-lyrics-size: clamp(calc(21 * var(--full-lyrics-unit)), 3vw, calc(52 * var(--full-lyrics-unit)));
     --full-lyrics-edge-space: 50dvh;
@@ -510,9 +512,9 @@
     gap: calc(2 * var(--full-lyrics-unit));
     height: auto;
     padding: calc(3 * var(--full-lyrics-unit));
-    border: calc(1 * var(--full-lyrics-unit)) solid #ffffff26;
+    border: calc(1 * var(--full-lyrics-unit)) solid var(--full-lyrics-float-border);
     border-radius: calc(24 * var(--full-lyrics-unit));
-    background: #15182231;
+    background: color-mix(in srgb, var(--full-lyrics-float-color) 19%, transparent);
   }
   /* Mouse users see the controls only when the cursor is nearby.
      Keep them accessible on touch devices and during keyboard navigation. */
@@ -860,28 +862,28 @@
     width: min(24rem, calc(100vw - 1.5rem));
     max-height: calc(100dvh - 1.5rem);
     margin: auto;
-    padding: .75rem;
+    padding: .875rem;
     overflow: auto;
     overscroll-behavior: contain;
     color: var(--full-lyrics-ink);
-    background: var(--full-lyrics-menu-base, #161616);
-    border: 1px solid var(--menu-border);
-    border-radius: .875rem;
+    background: var(--full-lyrics-float-color);
+    border: 1px solid var(--full-lyrics-float-border);
+    border-radius: 1.125rem;
     font-size: .875rem;
     line-height: 1.4;
-    box-shadow: 0 .5rem 1.75rem #0008;
+    box-shadow: inset 0 1px 0 #ffffff0d, 0 .65rem 2rem #0006;
   }
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     body:not(.performance-mode) #fullLyricsPlayer .full-lyrics-dialog {
-      background: #121212e6;
-      -webkit-backdrop-filter: blur(14px);
-      backdrop-filter: blur(14px);
+      background: color-mix(in srgb, var(--full-lyrics-float-color) 49%, transparent);
+      -webkit-backdrop-filter: blur(26px) saturate(1.14) brightness(.66);
+      backdrop-filter: blur(26px) saturate(1.14) brightness(.66);
     }
   }
   #fullLyricsPlayer .full-lyrics-dialog[open] {
     animation: full-lyrics-row-in .22s cubic-bezier(.22, 1, .36, 1);
   }
-  #fullLyricsPlayer .full-lyrics-dialog::backdrop { background: #0003; }
+  #fullLyricsPlayer .full-lyrics-dialog::backdrop { background: #0002; }
   #fullLyricsPlayer .full-lyrics-dialog-header {
     display: flex;
     justify-content: space-between;
@@ -901,8 +903,59 @@
     height: 2rem;
   }
   #fullLyricsPlayer .full-lyrics-dialog-close svg { width: .875rem; height: .875rem; }
-  #fullLyricsPlayer .full-lyrics-settings-rows,
-  #fullLyricsPlayer .full-lyrics-settings-section { display: grid; gap: .6rem; }
+  #fullLyricsPlayer #fullLyricsSettingsDialog[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-header .full-lyrics-dialog-header {
+    margin: 0;
+    padding-bottom: .15rem;
+    border: 0;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem .875rem;
+    padding: .15rem .4rem .6rem;
+    border-bottom: 1px solid var(--menu-border);
+    font-size: .8rem;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-links a {
+    color: var(--full-lyrics-muted);
+    text-decoration: underline;
+    text-decoration-color: var(--menu-selected);
+    text-underline-offset: .22em;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-links a:hover {
+    color: var(--full-lyrics-ink);
+    text-decoration-color: currentColor;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-rows {
+    display: grid;
+    min-height: 0;
+    gap: .75rem;
+    padding: .25rem .4rem .2rem;
+    margin: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: var(--menu-selected) transparent;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-section {
+    display: grid;
+    gap: .55rem;
+    padding-block-start: .55rem;
+  }
+  #fullLyricsPlayer .full-lyrics-settings-section + .full-lyrics-settings-section {
+    border-top: 1px solid var(--menu-border);
+  }
+  #fullLyricsPlayer .full-lyrics-settings-section h3 {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.3;
+  }
   #fullLyricsPlayer .full-lyrics-setting-stepper {
     display: flex;
     align-items: center;
@@ -936,11 +989,8 @@
   #fullLyricsPlayer .full-lyrics-stepper-buttons button { cursor: pointer; }
   #fullLyricsPlayer .full-lyrics-stepper-buttons button:hover { background: var(--menu-selected); }
   #fullLyricsPlayer .full-lyrics-stepper-buttons button:disabled,
-  #fullLyricsPlayer .full-lyrics-settings-action:disabled,
-  #fullLyricsPlayer .full-lyrics-setting:has(input:disabled) { opacity: .5; cursor: default; }
+  #fullLyricsPlayer .full-lyrics-settings-action:disabled { opacity: .5; cursor: default; }
   #fullLyricsPlayer .full-lyrics-stepper-buttons :is(output, [data-am-action="off-val"]) { min-width: 3.2em; }
-  #fullLyricsPlayer .full-lyrics-settings-tabs { margin-bottom: .15rem; }
-  #fullLyricsPlayer .full-lyrics-settings-tabs label span { min-height: 1.85rem; }
   #fullLyricsPlayer .full-lyrics-settings-rows fieldset {
     min-inline-size: 0;
     margin: 0;
@@ -986,7 +1036,7 @@
     opacity: 0;
     cursor: pointer;
   }
-  #fullLyricsPlayer .full-lyrics-dialog button:focus-visible,
+  #fullLyricsPlayer .full-lyrics-dialog :is(button, a, h3):focus-visible,
   #fullLyricsPlayer .full-lyrics-dialog input:focus-visible + span {
     outline: 2px solid var(--full-lyrics-ink);
     outline-offset: 2px;
@@ -1031,13 +1081,10 @@
     color: var(--full-lyrics-muted);
     font-size: .78rem;
   }
-  #fullLyricsPlayer .full-lyrics-settings-toggles,
-  #fullLyricsPlayer .full-lyrics-settings-actions {
-    padding-top: .55rem;
-    border-top: 1px solid var(--menu-border);
-  }
   #fullLyricsPlayer .full-lyrics-settings-actions {
     display: grid;
+    padding-top: .45rem;
+    border-top: 1px solid var(--menu-border);
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
     gap: .15rem;
   }
@@ -1183,9 +1230,9 @@
     display: flex;
     gap: calc(3 * var(--full-lyrics-unit));
     padding: calc(3 * var(--full-lyrics-unit));
-    border: calc(1 * var(--full-lyrics-unit)) solid #ffffff26;
+    border: calc(1 * var(--full-lyrics-unit)) solid var(--full-lyrics-float-border);
     border-radius: calc(24 * var(--full-lyrics-unit));
-    background: #1518225c;
+    background: color-mix(in srgb, var(--full-lyrics-float-color) 36%, transparent);
   }
   #fullLyricsPlayer .full-lyrics-queue-panel {
     min-height: 0;
@@ -1507,7 +1554,10 @@
     filter: var(--full-lyrics-backdrop-filter) !important;
   }
   body.performance-mode #fullLyricsPlayer :is(.full-lyrics-topbar, .full-lyrics-queue) { background: var(--bg-secondary, #222); }
-  body.performance-mode #fullLyricsPlayer .full-lyrics-dialog { animation: none; }
+  body.performance-mode #fullLyricsPlayer .full-lyrics-dialog {
+    background: color-mix(in srgb, var(--full-lyrics-menu-base) 79%, transparent);
+    animation: none;
+  }
   body.full-lyrics-open #ycAdmBtn {
     --full-lyrics-unit: min(calc(100vw / 1366), calc(100dvh / 768));
     top: calc(14 * var(--full-lyrics-unit));
@@ -1645,20 +1695,21 @@
     <p id="fullLyricsSourceStatus" role="status"></p>
   </dialog>
   <dialog id="fullLyricsSettingsDialog" class="full-lyrics-dialog" aria-labelledby="fullLyricsSettingsTitle">
-    <div class="full-lyrics-dialog-header">
-      <h2 id="fullLyricsSettingsTitle">Big lyrics settings</h2>
-      <button id="fullLyricsSettingsClose" class="full-lyrics-icon full-lyrics-dialog-close" type="button" aria-label="Close big lyrics settings" autofocus>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-      </button>
+    <div class="full-lyrics-settings-header">
+      <div class="full-lyrics-dialog-header">
+        <h2 id="fullLyricsSettingsTitle">Big lyrics settings</h2>
+        <button id="fullLyricsSettingsClose" class="full-lyrics-icon full-lyrics-dialog-close" type="button" aria-label="Close big lyrics settings" autofocus>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <nav class="full-lyrics-settings-links" aria-label="Jump to a settings section">
+        <a href="#fullLyricsSettingsAppearance">Appearance</a>
+        <a href="#fullLyricsSettingsLyrics">Lyrics</a>
+      </nav>
     </div>
     <form id="fullLyricsSettingsOptions" class="full-lyrics-settings-rows">
-      <fieldset aria-label="Settings section">
-        <div class="full-lyrics-segments full-lyrics-settings-tabs">
-          <label><input type="radio" name="section" value="appearance" checked><span>Appearance</span></label>
-          <label><input type="radio" name="section" value="lyrics"><span>Lyrics</span></label>
-        </div>
-      </fieldset>
-      <div id="fullLyricsSettingsAppearance" class="full-lyrics-settings-section">
+      <section class="full-lyrics-settings-section" aria-labelledby="fullLyricsSettingsAppearance">
+        <h3 id="fullLyricsSettingsAppearance" tabindex="-1">Appearance</h3>
         <fieldset>
           <legend>Layout</legend>
           <div class="full-lyrics-segments">
@@ -1668,20 +1719,14 @@
             <label><input type="radio" name="layout" value="compact"><span>Compact</span></label>
           </div>
         </fieldset>
-        <div class="full-lyrics-settings-toggles">
-          <label class="full-lyrics-setting">
-            <span>Hide past lyrics</span>
-            <input id="fullLyricsSettingsHidePast" name="hidePast" type="checkbox" role="switch">
-            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
-          </label>
-          <label class="full-lyrics-setting">
-            <span>Background motion</span>
-            <input id="fullLyricsSettingsMotion" name="motion" type="checkbox" role="switch">
-            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
-          </label>
-        </div>
-      </div>
-      <div id="fullLyricsSettingsLyrics" class="full-lyrics-settings-section" hidden>
+        <label class="full-lyrics-setting">
+          <span>Background motion</span>
+          <input id="fullLyricsSettingsMotion" name="motion" type="checkbox" role="switch">
+          <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+        </label>
+      </section>
+      <section class="full-lyrics-settings-section" aria-labelledby="fullLyricsSettingsLyrics">
+        <h3 id="fullLyricsSettingsLyrics" tabindex="-1">Lyrics</h3>
         <div>
           <div class="full-lyrics-setting-stepper">
             <span id="fullLyricsFontLabel">Text size</span>
@@ -1699,7 +1744,7 @@
               <button type="button" data-am-action="off-up" aria-label="Lyrics later" title="Shift for larger steps">+</button>
             </div>
           </div>
-          <p id="fullLyricsSettingsTimingHint" class="full-lyrics-settings-hint" hidden>Sync offset and line looping need synced lyrics.</p>
+          <p id="fullLyricsSettingsTimingHint" class="full-lyrics-settings-hint" hidden>Sync offset needs synced lyrics.</p>
         </div>
         <fieldset>
           <legend>Line spacing</legend>
@@ -1709,24 +1754,16 @@
             <label><input type="radio" name="spacing" value="1.6"><span>Airy</span></label>
           </div>
         </fieldset>
-        <div class="full-lyrics-settings-toggles">
-          <label class="full-lyrics-setting">
-            <span>Focus mode</span>
-            <input name="focus" type="checkbox" role="switch">
-            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
-          </label>
-          <label class="full-lyrics-setting">
-            <span>Loop current line</span>
-            <input name="loop" type="checkbox" role="switch">
-            <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
-          </label>
-        </div>
-        <div class="full-lyrics-settings-actions">
-          <button class="full-lyrics-settings-action" type="button" data-am-action="search">Search lyrics</button>
-          <button class="full-lyrics-settings-action" type="button" data-am-action="copy">Copy lyrics</button>
-          <button class="full-lyrics-settings-action" type="button" data-am-action="share">Save line as image</button>
-          <button class="full-lyrics-settings-action" type="button" data-am-action="lrc">Export .lrc</button>
-        </div>
+        <label class="full-lyrics-setting">
+          <span>Focus mode</span>
+          <input name="focus" type="checkbox" role="switch">
+          <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+        </label>
+        <label class="full-lyrics-setting">
+          <span>Hide past lyrics</span>
+          <input id="fullLyricsSettingsHidePast" name="hidePast" type="checkbox" role="switch">
+          <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
+        </label>
         <div class="full-lyrics-settings-actions">
           <button class="full-lyrics-settings-action lyrics-fetch-btn" type="button" onclick="this.closest('dialog').close(); fetchCurrentTrackLyrics()">
             <span data-lyrics-fetch-label>Find lyrics</span>
@@ -1737,7 +1774,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 4h7v7m0-7-9 9m9-1v7H4V4h7"/></svg>
           </button>
         </div>
-      </div>
+      </section>
     </form>
   </dialog>
   <div class="full-lyrics-queue" role="group" aria-label="Fullscreen view">
