@@ -4283,7 +4283,7 @@ class AlbumManager {
           return `<div class="album-card" onclick='showAlbumDetail(${JSON.stringify(Utils.escapeHtml(album.title)).replace(/'/g,"&apos;")},${JSON.stringify(Utils.escapeHtml(album.artist)).replace(/'/g,"&apos;")})'>${coverHtml}<h4>${Utils.escapeHtml(album.title)}</h4><p>${Utils.escapeHtml(display)} • ${album.tracks.length} songs</p></div>`;
         }).join('')}
       </div>`;
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === 'albums'));
   }
 
   static showDetail(albumTitle, albumArtist) {
@@ -4915,7 +4915,7 @@ class PlaylistManager {
     const circle = 'border-radius:50%;width:56px;height:56px;font-size:20px;display:flex;align-items:center;justify-content:center;';
     main.innerHTML = `
       <div class="header"><div class="search-container"><button class="btn secondary" onclick="PlaylistManager.show()" style="margin-right:12px;">← Back to Playlists</button></div><div class="user-profile"></div></div>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:32px;padding:24px;background:linear-gradient(to bottom,var(--bg-tertiary),transparent);border-radius:12px;">
+      <div class="layout-playlist-hero" style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:32px;padding:24px;background:linear-gradient(to bottom,var(--bg-tertiary),transparent);border-radius:12px;">
         ${PlaylistManager.coverHTML(pl, resolved, 'lg')}
         <div style="display:flex;flex-direction:column;justify-content:flex-end;min-width:0;">
           <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);margin-bottom:8px;">Playlist</div>
@@ -4923,7 +4923,7 @@ class PlaylistManager {
           <div style="color:var(--text-secondary);font-size:14px;">${pl.items.length} song${pl.items.length === 1 ? '' : 's'}${secs > 0 ? ', ' + Utils.formatDuration(secs) : ''}${missing > 0 ? ` • ${missing} not loaded right now` : ''}</div>
         </div>
       </div>
-      <div style="display:flex;gap:16px;margin-bottom:32px;padding:0 24px;flex-wrap:wrap;">
+      <div class="layout-playlist-actions" style="display:flex;gap:16px;margin-bottom:32px;padding:0 24px;flex-wrap:wrap;">
         <button class="btn primary" onclick="PlaylistManager.play('${id}')" style="${circle}" title="Play"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="7 4 19 12 7 20 7 4"></polygon></svg></button>
         <button class="btn secondary" onclick="PlaylistManager.play('${id}',true)" style="${circle}" title="Shuffle"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg></button>
         <button class="btn secondary" onclick="PlaylistManager.queueAll('${id}')" style="${circle}" title="Add to Up Next"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
@@ -4932,7 +4932,7 @@ class PlaylistManager {
         <button class="btn secondary" onclick="PlaylistManager.remove('${id}')" style="${circle}" title="Delete playlist"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
         <button class="btn primary" onclick="PlaylistManager.openLibraryPicker('${id}')" style="height:56px;padding:0 22px;border-radius:28px;" title="Add songs from your library">+ Add songs</button>
       </div>
-      <div style="padding:0 24px;">
+      <div class="layout-playlist-tracks" style="padding:0 24px;">
         ${pl.items.length === 0 ? `
           <div class="empty-state">
             <div class="empty-title">This playlist is empty</div>
@@ -5753,20 +5753,20 @@ class ViewManager {
     <div id="searchView" style="display:none">
       <div class="search-panel">
         <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Search YouTube</h2>
-        <div class="search-panel-header">
-          <input class="search-panel-input" id="ytSearchInput" placeholder="Search for songs, artists, albums...">
-          <button class="btn primary" onclick="searchYouTube()">Search</button>
-        </div>
+        <form class="search-panel-header" onsubmit="event.preventDefault(); searchYouTube()">
+          <input class="search-panel-input" id="ytSearchInput" aria-label="Search YouTube" placeholder="Search for songs, artists, albums...">
+          <button class="btn primary" type="submit">Search</button>
+        </form>
         <div class="search-results" id="searchResults"></div>
       </div>
     </div>
     <div id="downloadsView" style="display:none">
       <div class="search-panel">
         <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Downloads</h2>
-        <div class="search-panel-header">
-          <input class="search-panel-input" id="ytUrlInput" placeholder="Enter YouTube URL or ID...">
-          <button class="btn primary" onclick="addDownload()">Add Download</button>
-        </div>
+        <form class="search-panel-header" onsubmit="event.preventDefault(); addDownload()">
+          <input class="search-panel-input" id="ytUrlInput" aria-label="YouTube URL or ID" placeholder="Enter YouTube URL or ID...">
+          <button class="btn primary" type="submit">Add Download</button>
+        </form>
         <div class="search-results" id="downloadList"><div class="empty-state"><div class="empty-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg></div><div class="empty-title">No downloads yet</div></div></div>
       </div>
     </div>
@@ -5822,11 +5822,6 @@ class ViewManager {
         const q = e.target.value.toLowerCase().trim();
         QueueManager.render(q);
       });
-
-      const ytSearch = document.getElementById('ytSearchInput');
-      const ytUrl    = document.getElementById('ytUrlInput');
-      if (ytSearch) ytSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchYouTube(); });
-      if (ytUrl)    ytUrl.addEventListener('keydown', (e)    => { if (e.key === 'Enter') addDownload(); });
 
       document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === 'home'));
       QueueManager.render();
@@ -9038,19 +9033,6 @@ document.getElementById('searchInput')?.addEventListener('input', (e) => {
   QueueManager.render(q);
 });
 
-document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    item.classList.add('active');
-    currentView = item.dataset.view;
-    if (currentView !== 'none') {
-      document.getElementById('homeView').style.display      = currentView === 'home'      ? 'block' : 'none';
-      document.getElementById('searchView').style.display    = currentView === 'search'    ? 'block' : 'none';
-      document.getElementById('downloadsView').style.display = currentView === 'downloads' ? 'block' : 'none';
-    }
-  });
-});
-
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -9083,10 +9065,6 @@ window.addEventListener('load', () => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  const ytSearch = document.getElementById('ytSearchInput');
-  const ytUrl    = document.getElementById('ytUrlInput');
-  if (ytSearch) ytSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchYouTube(); });
-  if (ytUrl)    ytUrl.addEventListener('keydown', (e)    => { if (e.key === 'Enter') addDownload(); });
   try { const h = localStorage.getItem('youtifiy_history'); if (h) playHistory = JSON.parse(h); document.getElementById('crossfadeValue').textContent = localStorage.getItem('youtifiy_crossfade'); document.getElementById('crossfadeSlider').value = localStorage.getItem('youtifiy_crossfade'); } catch (e) {}
   initMiniPlayer();
   initLyrics();
@@ -17827,7 +17805,13 @@ class WinterSnakeGame {
 
 // Keyboard access for the library navigation and both playback timelines.
 (function improvePlayerAccess() {
-    document.querySelectorAll('#app .nav-item[onclick]').forEach(item => {
+    document.querySelectorAll('#sidebar :is(.nav-item, .nav-item-click)[onclick]').forEach(item => {
+        const label = item.querySelector('.nav-text, .btn-text')?.textContent.trim() ||
+            (item.getAttribute('onclick') === 'DevConsole.toggle()' ? 'Developer console' : '');
+        if (label) {
+            item.title = label;
+            item.setAttribute('aria-label', label);
+        }
         item.tabIndex = 0; item.setAttribute('role', 'button');
         item.addEventListener('keydown', event => {
             if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); item.click(); }

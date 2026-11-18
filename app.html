@@ -274,6 +274,306 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
   border: 1px solid var(--border);
   border-radius: 10px;
 }
+#layoutMobileToolsToggle, #layoutMobileTools:popover-open { display: none; }
+
+/* Shared translucent surfaces for the Big Lyrics app layout. */
+body.big-lyrics-layout {
+  color-scheme: dark;
+  --layout-ink: #faf9fe;
+  --layout-muted: #c5c8d3;
+  --layout-edge: #ffffff26;
+  --layout-stroke: #ffffff15;
+  --layout-surface: #121621a6;
+  --layout-inset-surface: #1015205e;
+  --layout-hover: #ffffff16;
+  --layout-focus: #ffffff33;
+  --text-primary: var(--layout-ink) !important;
+  --text-secondary: var(--layout-muted) !important;
+  --text-muted: #c0c4d1 !important;
+  --accent: #c9dcf3;
+  --accent-primary: var(--accent);
+  --accent-hover: #e3eeff;
+  --accent-secondary: #9bb9d8;
+  --accent-grad-2: #a9bbd4;
+  --shadow-glow: 141, 169, 204;
+  --glass-tint: #9ba8bd;
+  --glass-border-color: var(--layout-edge);
+  --glass-bg: var(--layout-surface) !important;
+  --glass-bg-soft: var(--layout-inset-surface) !important;
+  --bg-primary: #10141d;
+  --bg-secondary: #192031;
+  --bg-hover: #ffffff19;
+  --bg-elevated: #242b3a;
+  --border: var(--layout-edge);
+  --border-hover: #ffffff42;
+}
+body.big-lyrics-layout #app {
+  --text-primary: var(--layout-ink);
+  --text-secondary: var(--layout-muted);
+  --text-muted: #c0c4d1;
+  --border: var(--layout-edge);
+}
+body.big-lyrics-layout :is(#app, #ycPanel) .btn.primary {
+  background: #f3f6ff !important;
+  color: #172130 !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout :is(#app, #ycPanel) .btn.primary:hover { background: #dce8f9 !important; }
+body.big-lyrics-layout :is(#app, #ycPanel) .btn.secondary {
+  background: #ffffff0d !important;
+  border-color: var(--layout-edge) !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout :is(#app, #ycPanel) .btn.secondary:hover { background: var(--layout-hover) !important; }
+body.big-lyrics-layout #app :is(button, a, [tabindex], input, select):focus-visible {
+  outline: 2px solid #d6e7ff;
+  outline-offset: 3px;
+}
+body.big-lyrics-layout #app .sidebar .logo {
+  color: #f5f7ff !important;
+  background: #ffffff13 !important;
+  border: 1px solid var(--layout-edge);
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #app .sidebar :is(.nav-item, .nav-item-click) {
+  border-radius: 12px;
+}
+body.big-lyrics-layout #app .sidebar :is(.nav-item, .nav-item-click):is(.active, :hover) {
+  color: var(--layout-ink) !important;
+  border-color: var(--layout-edge) !important;
+  background: var(--layout-hover) !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #app .sidebar .nav-item::before { display: none; }
+body.big-lyrics-layout #app .sidebar .nav-item-click[title="Settings"] { margin-inline-start: auto !important; }
+
+body.big-lyrics-layout #mainContent :is(.queue-title, h2.section-title, .search-panel > h2, .album-hero h1, .layout-playlist-hero h1) {
+  color: var(--layout-ink) !important;
+  font-size: clamp(1.7rem, 3.2vw, 2.85rem) !important;
+  line-height: 1.12;
+  letter-spacing: -.015em;
+  text-transform: none;
+}
+body.big-lyrics-layout #mainContent .search-panel {
+  padding: 4px 0 18px;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #mainContent :is(.search-panel-input, .search-input) {
+  color: var(--layout-ink) !important;
+  background: var(--layout-inset-surface) !important;
+  border-color: var(--layout-edge) !important;
+}
+body.big-lyrics-layout #mainContent :is(.search-panel-input, .search-input)::placeholder { color: var(--layout-muted); opacity: .82; }
+body.big-lyrics-layout #mainContent .search-results {
+  gap: 8px;
+  margin-top: 14px;
+}
+body.big-lyrics-layout #mainContent :is(.result-item, .top-track-item, .tracklist-row, .pl-row) {
+  min-width: 0;
+  background: var(--layout-inset-surface) !important;
+  border: 1px solid var(--layout-stroke) !important;
+  box-shadow: none !important;
+  border-radius: 13px !important;
+}
+body.big-lyrics-layout #mainContent :is(.result-item, .top-track-item, .tracklist-row, .pl-row):is(:hover, .playing) {
+  background: var(--layout-hover) !important;
+  border-color: var(--layout-edge) !important;
+}
+body.big-lyrics-layout #mainContent .top-track-plays { background: #ffffff12 !important; }
+body.big-lyrics-layout #mainContent .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+body.big-lyrics-layout #mainContent :is(.stats-card, .settings-section) {
+  background: var(--layout-inset-surface) !important;
+  border: 1px solid var(--layout-edge) !important;
+  box-shadow: none !important;
+  border-radius: 16px;
+  min-width: 0;
+}
+body.big-lyrics-layout #mainContent .stats-card h4 { overflow-wrap: anywhere; }
+body.big-lyrics-layout #mainContent .album-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: clamp(10px, 1.65vw, 22px);
+}
+body.big-lyrics-layout #mainContent .album-card {
+  padding: 9px 9px 12px;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  border-radius: 14px;
+}
+body.big-lyrics-layout #mainContent .album-card:hover {
+  background: var(--layout-hover) !important;
+  border-color: var(--layout-stroke) !important;
+}
+body.big-lyrics-layout #mainContent .album-card h4 { margin: 0 2px 3px; color: var(--layout-ink); }
+body.big-lyrics-layout #mainContent .album-card p { margin: 0 2px; color: var(--layout-muted); }
+body.big-lyrics-layout #mainContent :is(.album-hero, .layout-playlist-hero) {
+  align-items: end;
+  gap: clamp(12px, 2.2vw, 28px) !important;
+  padding: 6px 0 0 !important;
+  background: none !important;
+}
+body.big-lyrics-layout #mainContent .album-hero {
+  border: 0 !important;
+  box-shadow: none;
+}
+body.big-lyrics-layout #mainContent :is(.album-hero, .layout-playlist-hero) > :first-child {
+  flex: 0 0 auto;
+  width: clamp(104px, 15vw, 195px) !important;
+  height: auto !important;
+  aspect-ratio: 1;
+  border-radius: 14px !important;
+  object-fit: cover;
+  overflow: hidden;
+}
+body.big-lyrics-layout #mainContent :is(.album-actions, .layout-playlist-actions) { padding-inline: 0 !important; }
+body.big-lyrics-layout #mainContent :is(.album-tracklist, .layout-playlist-tracks) {
+  background: transparent !important;
+  padding-inline: 0 !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+body.big-lyrics-layout #mainContent .tracklist-header { border-color: var(--layout-stroke) !important; }
+
+body.big-lyrics-layout :is(.modal, .lyrics-panel, .effects-panel, .yc-panel, .uq-panel, #devConsole, #changelogModal > div) {
+  color: var(--layout-ink);
+  background: var(--layout-surface) !important;
+  border: 1px solid var(--layout-edge) !important;
+  box-shadow: 0 18px 58px #0005 !important;
+}
+body.big-lyrics-layout.performance-mode :is(.modal, .lyrics-panel, .effects-panel, .yc-panel, .uq-panel, #devConsole, #changelogModal > div) {
+  background: #182131f5 !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout :is(.modal-overlay, #changelogModal) {
+  background: #080c166e;
+}
+body.big-lyrics-layout #settingsModal .modal {
+  padding: clamp(16px, 3vw, 28px);
+  border-radius: 24px;
+}
+body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
+  background: var(--layout-inset-surface) !important;
+  border: 1px solid var(--layout-stroke) !important;
+  border-radius: 15px;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #settingsModal .settings-section-title { color: var(--layout-ink); }
+body.big-lyrics-layout #appLayoutSelect {
+  color: var(--layout-ink);
+  background: #202939;
+  border-color: var(--layout-edge);
+  min-height: 36px;
+}
+body.big-lyrics-layout #ycPanel :is(.yc-head, .yc-compose, .yc-body) { border-color: var(--layout-edge); }
+body.big-lyrics-layout #ycPanel .yc-tab.active { color: var(--layout-ink); background: var(--layout-hover); }
+body.big-lyrics-layout #ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
+body.big-lyrics-layout #player .player-embed-header { gap: 8px; flex-wrap: wrap; }
+body.big-lyrics-layout #player .player-embed-label { color: var(--layout-ink); }
+body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line {
+  border-radius: 8px;
+  background: transparent;
+  opacity: .65;
+}
+body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active {
+  opacity: 1;
+  color: var(--layout-ink);
+  background: var(--layout-hover);
+}
+
+@media (min-width: 861px) {
+  body.big-lyrics-layout #app > .sidebar { height: 56px; align-self: start; }
+  body.big-lyrics-layout #app #player { border-radius: 0; }
+  body.big-lyrics-layout #app #player .player-track { padding-top: 2px; }
+  body.big-lyrics-layout #app #player #playerEmbed { min-height: 154px; }
+}
+@media (min-width: 901px) and (max-width: 1240px) {
+  body.big-lyrics-layout.yc-chat-open #app { margin-right: 0; }
+}
+@media (max-width: 860px) {
+  body.big-lyrics-layout #app { padding-bottom: calc(226px + env(safe-area-inset-bottom)) !important; }
+  body.big-lyrics-layout #app .sidebar {
+    gap: 2px;
+    overflow: visible;
+  }
+  body.big-lyrics-layout #app .sidebar .nav { min-width: 0; gap: 0; }
+  body.big-lyrics-layout #app .sidebar :is(.nav-item, .nav-item-click) { padding-inline: 4px; }
+  body.big-lyrics-layout #layoutMobileToolsToggle {
+    display: grid;
+    place-items: center;
+    flex: 0 0 38px;
+    height: 41px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--layout-ink);
+    cursor: pointer;
+  }
+  body.big-lyrics-layout #layoutMobileToolsToggle:is(:hover, [aria-expanded="true"]) {
+    background: var(--layout-hover);
+  }
+  body.big-lyrics-layout #layoutMobileTools:popover-open {
+    position: fixed;
+    inset: auto 16px calc(90px + env(safe-area-inset-bottom)) auto;
+    display: grid;
+    gap: 3px;
+    margin: 0;
+    padding: 6px;
+    min-width: 164px;
+    border: 1px solid var(--layout-edge);
+    border-radius: 14px;
+    background: var(--layout-surface);
+    backdrop-filter: blur(24px) saturate(125%);
+    box-shadow: 0 12px 30px #0006;
+  }
+  body.big-lyrics-layout #layoutMobileTools button {
+    padding: 9px 12px;
+    color: var(--layout-ink);
+    background: transparent;
+    border: 0;
+    border-radius: 9px;
+    text-align: start;
+    font: inherit;
+    cursor: pointer;
+  }
+  body.big-lyrics-layout #layoutMobileTools button:is(:hover, :focus-visible) {
+    background: var(--layout-hover);
+  }
+  body.big-lyrics-layout.performance-mode #layoutMobileTools:popover-open {
+    background: #182131f5;
+    backdrop-filter: none;
+  }
+  body.big-lyrics-layout #app #player {
+    height: auto !important;
+    padding: 8px 12px !important;
+    gap: 5px;
+  }
+  body.big-lyrics-layout #player .player-track { min-height: 0; gap: 9px; }
+  body.big-lyrics-layout #player .player-controls-section { margin: 0; padding: 0; gap: 1px; }
+  body.big-lyrics-layout #player :is(.player-controls, .progress-section, .player-right) { margin: 0; padding: 0; }
+  body.big-lyrics-layout #player .progress-section { order: -1; }
+  body.big-lyrics-layout #mainContent :is(.search-panel > h2, h2.section-title, .album-hero h1, .layout-playlist-hero h1) {
+    font-size: clamp(1.5rem, 7vw, 2.15rem) !important;
+  }
+  body.big-lyrics-layout #mainContent .album-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.big-lyrics-layout #mainContent :is(.album-hero, .layout-playlist-hero) > :first-child {
+    width: clamp(90px, 29vw, 140px) !important;
+  }
+  body.big-lyrics-layout #mainContent :is(.album-hero, .layout-playlist-hero) > :last-child { min-width: 0; }
+  body.big-lyrics-layout #mainContent .search-panel-header { gap: 8px; }
+  body.big-lyrics-layout #mainContent .result-item { padding: 9px; gap: 8px; }
+  body.big-lyrics-layout #mainContent .result-item .btn { font-size: .8rem; padding-inline: 9px; }
+  body.big-lyrics-layout #mainContent .result-thumb { width: 54px; height: 48px; }
+}
+@media (max-width: 480px) {
+  body.big-lyrics-layout #mainContent :is(.tracklist-header, .tracklist-row) {
+    grid-template-columns: 26px minmax(0, 1fr) auto !important;
+    gap: 9px !important;
+    padding-inline: 8px !important;
+  }
+  body.big-lyrics-layout #mainContent :is(.tracklist-header, .tracklist-row) > :nth-child(3) { display: none; }
+}
 </style>
 <div class="app" id="app">
   <aside class="sidebar" id="sidebar">
@@ -332,7 +632,7 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
 </svg></span>
         <span class="nav-text">Stats</span>
       </div>
-      <div class="nav-item" data-view="none" onclick="returnTo('album')">
+      <div class="nav-item" data-view="albums" onclick="returnTo('album')">
         <span class="nav-icon">
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="12" cy="12" r="10"></circle>
@@ -388,6 +688,15 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
       <input type="file" id="folderInput" webkitdirectory="" directory="" multiple="">
       </div>
 
+    <button id="layoutMobileToolsToggle" type="button" popovertarget="layoutMobileTools" aria-label="More app tools">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+    </button>
+    <div id="layoutMobileTools" popover>
+      <button type="button" onclick="this.parentElement.hidePopover(); YoutifyChat.toggle()">Chat</button>
+      <button type="button" onclick="this.parentElement.hidePopover(); openFolderPicker()">Import Folder</button>
+      <button type="button" onclick="this.parentElement.hidePopover(); showChangelogModal(true)">Changelog</button>
+      <button type="button" onclick="this.parentElement.hidePopover(); DevConsole.toggle()">Developer console</button>
+    </div>
     <div class="nav-item-click" data-view="none" onclick="openSettings()" style="margin-top:auto;">
       <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="12" cy="12" r="3"></circle>
@@ -458,10 +767,10 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
     <div id="searchView" style="display:none">
       <div class="search-panel">
         <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Search YouTube</h2>
-        <div class="search-panel-header">
-          <input class="search-panel-input" id="ytSearchInput" placeholder="Search for songs, artists, albums...">
-          <button class="btn primary" onclick="searchYouTube()">Search</button>
-        </div>
+        <form class="search-panel-header" onsubmit="event.preventDefault(); searchYouTube()">
+          <input class="search-panel-input" id="ytSearchInput" aria-label="Search YouTube" placeholder="Search for songs, artists, albums...">
+          <button class="btn primary" type="submit">Search</button>
+        </form>
         <div class="search-results" id="searchResults"></div>
       </div>
     </div>
@@ -469,10 +778,10 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
     <div id="downloadsView" style="display:none">
       <div class="search-panel">
         <h2 style="margin-bottom:24px;font-size:32px;font-weight:800">Downloads</h2>
-        <div class="search-panel-header">
-          <input class="search-panel-input" id="ytUrlInput" placeholder="Enter YouTube URL or ID...">
-          <button class="btn primary" onclick="addDownload()">Add Download</button>
-        </div>
+        <form class="search-panel-header" onsubmit="event.preventDefault(); addDownload()">
+          <input class="search-panel-input" id="ytUrlInput" aria-label="YouTube URL or ID" placeholder="Enter YouTube URL or ID...">
+          <button class="btn primary" type="submit">Add Download</button>
+        </form>
         <div class="search-results" id="downloadList">
           <div class="empty-state">
             <div class="empty-icon"><span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2125,6 +2434,17 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Layout</div>
+      <div class="setting-toggle-row">
+        <label class="setting-toggle-label" for="appLayoutSelect">App layout</label>
+        <select id="appLayoutSelect">
+          <option value="classic">Classic</option>
+          <option value="big-lyrics">Big Lyrics</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">Theme</div>
       <div class="theme-grid" id="themeGrid">
         <div class="color-swatch" data-theme="dark" style="background:#201f1f" onclick="changeTheme('dark')" title="Dark"></div>
@@ -2139,17 +2459,6 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn secondary" onclick="openThemeMaker()" id="ctb">Create Theme</button>
         <button class="btn secondary" onclick="importThemeUI()">Import Theme</button>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-section-title">Layout</div>
-      <div class="setting-toggle-row">
-        <label class="setting-toggle-label" for="appLayoutSelect">App layout</label>
-        <select id="appLayoutSelect">
-          <option value="classic">Classic</option>
-          <option value="big-lyrics">Big Lyrics</option>
-        </select>
       </div>
     </div>
 
