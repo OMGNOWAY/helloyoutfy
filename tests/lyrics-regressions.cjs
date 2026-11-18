@@ -326,13 +326,54 @@ test('fullscreen imported synced lyrics also disappear into Up Next', () => {
   const { player, panel, lines, advance } = endingQueueFixture(false);
   player.setHidePastLyrics(true);
   advance(12.09);
-  assert.equal(lines[1].classList.contains('passed'), true);
+  assert.equal(lines[1].classList.contains('youtify-past-lyric'), true);
   assert.equal(panel.hidden, true);
   advance(12.5);
   assert.equal(panel.hidden, false);
   advance(11);
   assert.equal(panel.hidden, true);
   assert.equal(lines[1].classList.contains('passed'), false);
+});
+
+test('fullscreen reuses fade boundaries until the native renderer replaces its rows', () => {
+  const { player, am, lines, advance } = endingQueueFixture();
+  let queries = 0;
+  am.cachedLineArray = lines;
+  am.shadowRoot.querySelectorAll = () => { queries++; return am.cachedLineArray; };
+  player.setHidePastLyrics(true);
+  assert.equal(queries, 1);
+  advance(4);
+  assert(lines[0].classList.contains('youtify-past-lyric'));
+  advance(4.25);
+  advance(1.5);
+  assert(!lines[0].classList.contains('youtify-past-lyric'));
+  assert.equal(queries, 1);
+  am.cachedLineArray = [...lines];
+  advance(4);
+  assert.equal(queries, 2);
+  assert(lines[0].classList.contains('youtify-past-lyric'));
+});
+
+test('fullscreen long queues yield between batches and reuse rows after switching views', () => {
+  const { ctx, player } = endingQueueFixture();
+  const frames = [];
+  ctx.requestAnimationFrame = callback => { frames.push(callback); return frames.length; };
+  ctx.cancelAnimationFrame = () => {};
+  ctx.queue.push(...Array.from({ length: 70 }, (_, i) => ({ uid: String(i), title: 'Track ' + i })));
+  const list = ctx.document.getElementById('fullLyricsQueueList');
+  player.toggleQueue(true);
+  const first = list.childNodes[0];
+  assert.equal(first.childNodes.length, 32, 'heading and first visible batch are available synchronously');
+  player.toggleQueue(false);
+  frames.shift()();
+  assert.equal(list.childNodes.length, 1, 'hidden queue does not keep building rows');
+  player.toggleQueue(true);
+  while (frames.length) frames.shift()();
+  assert.equal(list.childNodes[0], first);
+  assert.equal(list.childNodes.reduce((n, fragment) => n + fragment.childNodes.length, 0), 71);
+  player.renderQueue();
+  assert.equal(list.childNodes[0], first);
+  assert.equal(frames.length, 0);
 });
 
 function overlapFixture(height = 200) {
@@ -514,8 +555,37 @@ function speedFixture() {
     return animation;
   };
   const tick = ms => { ctx.audio.currentTime = ms / 1000; m.handleTimeUpdate(); };
-  return { ctx, m, Renderer, animations, addAnimation, tick };
+  return { ctx, m, Renderer, animations, container, addAnimation, tick };
 }
+test('fullscreen word timing scans active lines and retains finishing effects across line changes', () => {
+  const { ctx, m, container, addAnimation, tick } = speedFixture();
+  const active = addAnimation(), offscreen = addAnimation();
+  active.effect.target.nodeType = offscreen.effect.target.nodeType = 1;
+  container.contains = () => true;
+  container.getAnimations = () => { throw Error('Do not scan all fullscreen lyrics'); };
+  const line = { getAnimations: () => [active] };
+  const el = m.amEl;
+  el.parentElement = { id: 'fullLyricsContent', hidden: false };
+  el.activeLineIndices = [0];
+  el.cachedLineArray = [line];
+  el._getLineElement = () => line;
+  tick(500);
+  assert.equal(active.currentTime, 500);
+  assert.equal(offscreen.clockWrites, 0);
+  el.activeLineIndices = [];
+  ctx.audio.paused = true;
+  tick(550);
+  assert.equal(active.playbackRate, 0);
+  el.parentElement.hidden = true;
+  ctx.audio.paused = false;
+  tick(850);
+  assert.equal(el.currentTime, 550);
+  el.parentElement.hidden = false;
+  tick(850);
+  assert.equal(el.currentTime, 850);
+  assert.equal(active.currentTime, 850);
+  assert.equal(active.playbackRate, 1);
+});
 for (const rate of [0.5, 0.75, 1, 1.5, 2]) {
   test(`word highlighting follows ${rate}x playback without per-frame jumps`, () => {
     const { ctx, addAnimation, tick } = speedFixture();

@@ -2964,12 +2964,10 @@ isPlaying2 = false;
 
   static updateProgressBar() {
     const fill     = document.getElementById('progressFill');
-    const ffill     = document.getElementById('fullLyricsProgressFill');
     const current  = document.getElementById('currentTime');
     const duration = document.getElementById('duration');
     const percent = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.max(0, Math.min(100, audio.currentTime / audio.duration * 100)) : 0;
     if (fill) fill.style.width = percent + '%';
-    if (ffill) ffill.style.width = percent + '%';
     if (current)  current.textContent  = Utils.formatTime(audio.currentTime);
     if (duration) duration.textContent = Utils.formatTime(audio.duration);
     if (lyricsManager?.isOpen) lyricsManager.handleTimeUpdate();
@@ -5074,7 +5072,6 @@ function rebindAudioListeners() {
   // Guard with a one-time marker per physical element instead.
   if (!audio.dataset.coreListenersBound) {
     audio.addEventListener('timeupdate', () => PlayerController.updateProgressBar());
-    audio.addEventListener('timeupdate', () => FullLyricsPlayer.syncPlayback());
     audio.addEventListener('ended', (e) => {
       // During a crossfade the old physical element can still emit `ended` after
       // the references have been swapped. Only the currently-active element may
@@ -5088,14 +5085,11 @@ function rebindAudioListeners() {
       if (d) d.textContent = Utils.formatTime(audio.duration);
     });
     audio.dataset.coreListenersBound = '1';
-    audio.addEventListener('loadedmetadata', () => FullLyricsPlayer.syncPlayback());
   }
 
   // Rebind lyrics manager if it's active (also guarded per-element)
   if (lyricsManager && !audio.dataset.lyricsListenersBound) {
     audio.addEventListener('timeupdate', lyricsManager.handleTimeUpdate);
-    audio.addEventListener('timeupdate', () => FullLyricsPlayer.syncPlayback());
-    audio.addEventListener('loadedmetadata', () => FullLyricsPlayer.syncPlayback());
     audio.addEventListener('loadedmetadata', () => {
       lyricsManager.songDuration = audio.duration || 0;
     });
@@ -7873,13 +7867,14 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
     updateAmJump() {
         const el = this.amEl, jump = this.amJump;
         if (!el || !el.isConnected) return;
+        const full = el.parentElement?.id === 'fullLyricsContent' ? el.parentElement : null;
+        if (full?.hidden) return;
         const container = el.shadowRoot?.querySelector('.lyrics-container');
         const line = this.getAmCurrentLine();
         const show = !el.cachedIsUnsynced && !!container && !!line && this.amLineNeedsScroll(container, line);
-        const full = el.parentElement?.id === 'fullLyricsContent' ? el.parentElement : null;
         const browsingFullscreen = full && line && el.isUserScrolling && !el.cachedIsUnsynced;
-        jump?.classList.toggle('show', !full?.hidden && (show || Boolean(browsingFullscreen)));
-        if (!full?.hidden && show && Date.now() >= (this.amScrollUntil || 0) && !audio.paused && el.autoScroll !== false && !el.isLoading &&
+        jump?.classList.toggle('show', show || Boolean(browsingFullscreen));
+        if (show && Date.now() >= (this.amScrollUntil || 0) && !audio.paused && el.autoScroll !== false && !el.isLoading &&
             !el.isUserScrolling && !el.isClickSeeking && !el.isProgrammaticScroll &&
             !el.lineSprings?.size &&
             !container.classList.contains('user-scrolling')) {
@@ -8369,6 +8364,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         this._amJumpToken = (this._amJumpToken || 0) + 1;
         this._lastAmT = null;
         this.amWordTimingStates = new WeakMap();
+        this.amWordTimingScope = null;
         clearTimeout(this.amBarTimer);
         this.amScrollUntil = 0;
         this.amLoop = null;
@@ -8389,17 +8385,37 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         // The pinned am-lyrics 1.8.7 renderer starts word effects on the browser
         // timeline at 1x. Its WeakMaps distinguish media-timed effects from UI
         // animations: never change scroll springs, focus, or highlight classes.
-        const container = el?.shadowRoot?.querySelector('.lyrics-container');
+        const container = el?.lyricsContainer ?? el?.shadowRoot?.querySelector('.lyrics-container');
         if (!container?.getAnimations || el.cachedIsUnsynced || el.rewindingLines?.size) return;
         const timing = el.constructor;
         const speed = Number(audio.playbackRate);
         const rate = audio.paused || audio.ended ? 0 : Number.isFinite(speed) && speed > 0 ? speed : 1;
         const states = this.amWordTimingStates ||= new WeakMap();
-        for (const animation of container.getAnimations({ subtree: true })) {
+        const fullscreen = el.parentElement?.id === 'fullLyricsContent';
+        const scoped = fullscreen && Array.isArray(el.activeLineIndices) && typeof el._getLineElement === 'function';
+        let scope = this.amWordTimingScope;
+        let animations;
+        if (scoped) {
+            if (scope?.el !== el || scope.container !== container || scope.lines !== el.cachedLineArray) {
+                scope = this.amWordTimingScope = { el, container, lines: el.cachedLineArray, running: new Set() };
+            }
+            const active = new Set(el.activeLineIndices.map(index => el._getLineElement(index)));
+            for (const line of el.preActiveLineElements ?? []) active.add(line);
+            animations = new Set(scope.running);
+            for (const line of active) {
+                for (const animation of line?.getAnimations({ subtree: true }) ?? []) animations.add(animation);
+            }
+            scope.running.clear();
+        } else {
+            this.amWordTimingScope = null;
+            animations = container.getAnimations({ subtree: true });
+        }
+        for (const animation of animations) {
             if (animation.playState === 'idle') continue;
+            const target = animation.effect?.target;
+            if (scoped && (target?.nodeType !== 1 || !container.contains(target))) continue;
             let epoch = timing.wipeClocks?.get(animation) ?? timing.normalRiseClocks?.get(animation);
             if (epoch === undefined) {
-                const target = animation.effect?.target;
                 const char = target?.classList?.contains('char-motion') ? target.querySelector('.char') : target;
                 const motion = char && timing.characterAnimations?.get(char);
                 if (motion?.animation === animation) epoch = motion.start;
@@ -8420,6 +8436,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             // every frame; only correct genuine drift (e.g. buffering).
             if (changed || Math.abs(Number(animation.currentTime) - position) > 80) animation.currentTime = position;
             if (changed) states.set(animation, { rate, epoch });
+            // A word's rise can finish after its line loses focus.
+            if (scoped && position < end) scope.running.add(animation);
         }
     }
 
@@ -8427,7 +8445,8 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
         const seconds = this.getLyricsPlaybackSeconds();
         const off = this.hasSyncedLyrics() ? (this.amOffsetMs || 0) : 0;
         const el = this.amEl;
-        if (this.amActive && el?.isConnected) {
+        const lyricsHidden = el?.parentElement?.id === 'fullLyricsContent' && el.parentElement.hidden;
+        if (this.amActive && el?.isConnected && !lyricsHidden) {
             const t = Math.max(0, Math.round(seconds * 1000 - off));
             if (t !== this._lastAmT) {
                 const wasOnFullscreenFooter = el.parentElement?.id === 'fullLyricsContent' &&
@@ -9286,6 +9305,10 @@ function createFullLyricsBackground(canvas, isOpen) {
     return !performanceMode && !reducedMotion.matches;
   }
 
+  function hasMotion() {
+    return shouldAnimate() && (!audio.paused || playingAmount > .01 || renderer.isTransitioning);
+  }
+
   function detachAudio() {
     if (tap && analyser) tap.disconnect(analyser);
     tap = analyser = samples = null;
@@ -9378,11 +9401,12 @@ function createFullLyricsBackground(canvas, isOpen) {
       stop();
       return;
     }
-    if (animate) schedule();
+    if (hasMotion()) schedule();
+    else if (animate) lastPaint = null;
   }
 
   function schedule() {
-    if (frame == null && canDraw() && renderer && (image || hasImage) && (shouldAnimate() || needsPaint || sizeDirty)) {
+    if (frame == null && canDraw() && renderer && (image || hasImage) && (hasMotion() || needsPaint || sizeDirty)) {
       frame = requestAnimationFrame(render);
     }
   }
@@ -9511,10 +9535,11 @@ const FullLyricsPlayer = (() => {
   let backdropURL = null;
   let backdropRequest = 0;
   let visibleBackdrop = 0;
-  let warpedBackdrop, queueSignature;
+  let warpedBackdrop, queueSnapshot, queueRenderFrame, resumeQueueRender;
 
   const $ = id => document.getElementById(id);
   let hidePastLyrics = false;
+  let pastLyricsState;
   let endingQueueTrack = null;
   let automaticEndingQueue = false;
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -9563,14 +9588,61 @@ const FullLyricsPlayer = (() => {
     motionAnimations.clear();
   });
 
-  function updatePastLyrics() {
-    const pane = $('fullLyricsContent');
-    if (!pane || !opened) return false;
-    const am = pane.querySelector('am-lyrics');
-    am?.toggleAttribute('data-yl-hide-past', hidePastLyrics);
-    const root = am ? am.shadowRoot : pane;
-    if (!root) return false;
+  function clearPastLyrics() {
+    if (!pastLyricsState) return;
+    const { am, entries, count } = pastLyricsState;
+    am?.toggleAttribute('data-yl-hide-past', false);
+    for (let i = 0; i < count; i++) entries[i].line.classList.remove('youtify-past-lyric');
+    pastLyricsState = null;
+  }
 
+  function updatePastLyrics() {
+    if (!opened) return false;
+    const pane = $('fullLyricsContent');
+    const am = pane?.querySelector('am-lyrics');
+    const root = am ? am.shadowRoot : pane;
+    const track = queue[currentTrackIndex];
+    const data = am ? am.lyrics : lyricsManager?.parsedLines;
+    const synced = am ? !am.cachedIsUnsynced && !am.isLoading : lyricsManager?.hasSyncedLyrics();
+    if (!hidePastLyrics || !root || !track || !synced || !data?.length ||
+        (am && lyricsManager?.amTrackKey && lyricsManager.amTrackKey !== lyricsManager.getLyricsTrackId(track))) {
+      clearPastLyrics();
+      return false;
+    }
+    // The native renderer replaces its line cache on redraw. The fallback
+    // renderer supplies a revision for each new set of rows.
+    const revision = am ? am.cachedLineArray : pane.dataset.lyricsRevision;
+    const ended = !!audio.ended;
+    if (!pastLyricsState || pastLyricsState.root !== root || pastLyricsState.data !== data ||
+        pastLyricsState.revision !== revision || pastLyricsState.track !== track || pastLyricsState.ended !== ended) {
+      clearPastLyrics();
+      am?.toggleAttribute('data-yl-hide-past', true);
+      const lines = root.querySelectorAll(am ? '.lyrics-line[id^="lyrics-line-"]' : '.lyrics-line[data-index]');
+      if (!lines.length) return false;
+      let lastEndMs = 0;
+      const entries = Array.from(lines, line => {
+        const index = Number(am ? line.id.slice('lyrics-line-'.length) : line.dataset.index);
+        const lyric = data[index];
+        const start = Number(lyric?.startMs ?? lyric?.timestamp);
+        const explicitEnd = Number(lyric?.endMs ?? lyric?.endtime ??
+          (Number(lyric?.durMs) > 0 ? start + Number(lyric.durMs) : NaN));
+        let endMs = Number.isFinite(explicitEnd) && explicitEnd > start ? explicitEnd : NaN;
+        if (!Number.isFinite(endMs)) {
+          for (let j = index + 1; j < data.length; j++) {
+            const next = Number(data[j]?.startMs ?? data[j]?.timestamp);
+            if (Number.isFinite(next) && next > start) { endMs = next; break; }
+          }
+        }
+        if (Number.isFinite(endMs)) lastEndMs = Math.max(lastEndMs, endMs);
+        let at = Infinity;
+        if (Number.isFinite(start) && start >= 0) {
+          if (ended) at = start;
+          else if (Number.isFinite(endMs)) at = Math.max(start, endMs + 80);
+        }
+        return { line, at };
+      }).sort((a, b) => a.at - b.at);
+      pastLyricsState = { am, root, data, revision, track, ended, entries, lastEndMs, count: 0 };
+    }
     if (am && !root.getElementById('youtify-hide-past-lyrics-style')) {
       const sheet = document.createElement('style');
       sheet.id = 'youtify-hide-past-lyrics-style';
@@ -9590,47 +9662,19 @@ const FullLyricsPlayer = (() => {
       root.appendChild(sheet);
     }
 
-    // Determine completed lines from the actual playback time, not from the
-    // renderer's .active / currentPrimaryActiveLine markers. Those markers
-    // can stay on a clicked line after seeking, keeping it visible forever.
-    const lines = root.querySelectorAll(am ? '.lyrics-line[id^="lyrics-line-"]' : '.lyrics-line[data-index]');
-    const synced = am ? !am.cachedIsUnsynced && !am.isLoading : lyricsManager?.hasSyncedLyrics();
-    if (!hidePastLyrics || !synced) {
-      if (am) for (const line of lines) line.classList.remove('youtify-past-lyric');
-      return false;
-    }
-    if (!queue[currentTrackIndex]) return false;
-    if (am && lyricsManager?.amTrackKey && lyricsManager.amTrackKey !==
-        lyricsManager.getLyricsTrackId(queue[currentTrackIndex])) return false;
-    const data = am ? am.lyrics : lyricsManager?.parsedLines;
-    if (!Array.isArray(data) || !data.length || !lines.length) return false;
     const playedMs = Math.max(0,
       (Number(lyricsManager?.getLyricsPlaybackSeconds?.()) || 0) * 1000
       - (Number(lyricsManager?.amOffsetMs) || 0));
-    let allFinished = true;
-    let lastEndMs = 0;
-    for (const line of lines) {
-      const index = Number(am ? line.id.slice('lyrics-line-'.length) : line.dataset.index);
-      const lyric = data[index];
-      const start = Number(lyric?.startMs ?? lyric?.timestamp);
-      const explicitEnd = Number(lyric?.endMs ?? lyric?.endtime ??
-        (Number(lyric?.durMs) > 0 ? start + Number(lyric.durMs) : NaN));
-      let endMs = Number.isFinite(explicitEnd) && explicitEnd > start ? explicitEnd : NaN;
-      if (!Number.isFinite(endMs)) {
-        // A line without its own end time lasts until the next timed line.
-        for (let j = index + 1; j < data.length; j++) {
-          const next = Number(data[j]?.startMs ?? data[j]?.timestamp);
-          if (Number.isFinite(next) && next > start) { endMs = next; break; }
-        }
-      }
-      const finished = Number.isFinite(start) && start >= 0 && start <= playedMs &&
-        (audio.ended || (Number.isFinite(endMs) && endMs <= playedMs - 80));
-      line.classList.toggle(am ? 'youtify-past-lyric' : 'passed', finished);
-      allFinished = allFinished && finished;
-      if (Number.isFinite(endMs)) lastEndMs = Math.max(lastEndMs, endMs);
+    const state = pastLyricsState;
+    const { entries } = state;
+    // Touch only rows crossing a fade boundary, including on backwards seeks.
+    while (state.count < entries.length && entries[state.count].at !== Infinity && entries[state.count].at <= playedMs) {
+      entries[state.count++].line.classList.add('youtify-past-lyric');
     }
-    // Let the last line's .24s fade finish before replacing the pane.
-    return allFinished && (audio.ended || lastEndMs <= playedMs - 320);
+    while (state.count > 0 && entries[state.count - 1].at > playedMs) {
+      entries[--state.count].line.classList.remove('youtify-past-lyric');
+    }
+    return state.count === entries.length && (ended || state.lastEndMs <= playedMs - 320);
   }
 
   function setHidePastLyrics(enabled) {
@@ -9643,7 +9687,7 @@ const FullLyricsPlayer = (() => {
       button.title = button.getAttribute('aria-label');
     }
     try { localStorage.setItem('youtify_fullscreen_hide_past_lyrics', hidePastLyrics ? '1' : '0'); } catch {}
-    updatePastLyrics();
+    if (!hidePastLyrics) clearPastLyrics();
     syncEndingInfo();
   }
 
@@ -9697,17 +9741,29 @@ const FullLyricsPlayer = (() => {
       if (queue[index]) upcoming = [{ track: queue[index], index, automatic: true }];
     }
 
-    const signature = JSON.stringify([queued, upcoming].map(rows => rows.map(({ track, index, automatic }) =>
-      [index, automatic, track.uid, track.title, track.artist, track.albumArt, track.duration])));
-    if (signature === queueSignature) return;
-    queueSignature = signature;
+    // Compare displayed fields directly. Imported album art can be megabytes
+    // of base64, and serializing it made even an unchanged queue expensive.
+    const repeatingCurrent = repeatMode === 'one';
+    const groups = [queued, upcoming].map(rows => rows.map(({ track, index, automatic }) =>
+      [index, automatic, track.uid, track.title, track.artist, track.albumArt, track.duration]));
+    if (queueSnapshot?.repeatingCurrent === repeatingCurrent && groups.every((group, g) => {
+      const previous = queueSnapshot.groups[g];
+      return group.length === previous.length && group.every((row, i) =>
+        row.every((value, j) => value === previous[i][j]));
+    })) {
+      resumeQueueRender?.();
+      return;
+    }
+    queueSnapshot = { groups, repeatingCurrent };
+    if (queueRenderFrame != null) cancelAnimationFrame(queueRenderFrame);
+    queueRenderFrame = null;
+    resumeQueueRender = null;
 
-    const fragment = document.createDocumentFragment();
-    function addRows(rows, heading) {
+    function* addRows(rows, heading) {
       if (!rows.length) return;
       const caption = document.createElement('p');
       caption.textContent = heading;
-      fragment.append(caption);
+      yield caption;
       for (const { track, index, queued: isQueued, automatic } of rows) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -9740,20 +9796,46 @@ const FullLyricsPlayer = (() => {
           else if (automatic && repeatMode !== 'one') nextTrack(0, false);
           else playTrackAtIndex(0, audio, index);
         };
-        fragment.append(button);
+        yield button;
       }
     }
 
-    // Repeat One repeats the current song before consuming the manual queue.
-    if (repeatMode === 'one') addRows(upcoming, 'Repeat one');
-    addRows(queued, 'Queued tracks');
-    if (repeatMode !== 'one') addRows(upcoming, queued.length ? 'After the queue' : 'Coming up');
-    if (!fragment.childNodes.length) {
-      const empty = document.createElement('p');
-      empty.textContent = 'Nothing queued';
-      fragment.append(empty);
+    function* queueNodes() {
+      // Repeat One repeats the current song before consuming the manual queue.
+      if (repeatingCurrent) yield* addRows(upcoming, 'Repeat one');
+      yield* addRows(queued, 'Queued tracks');
+      if (!repeatingCurrent) yield* addRows(upcoming, queued.length ? 'After the queue' : 'Coming up');
+      if (!queued.length && !upcoming.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'Nothing queued';
+        yield empty;
+      }
     }
-    list.replaceChildren(fragment);
+
+    const rows = queueNodes();
+    let first = true;
+    const appendChunk = () => {
+      queueRenderFrame = null;
+      if (!opened || panel?.hidden) return;
+      const fragment = document.createDocumentFragment();
+      // Build the visible rows before the first paint and yield between
+      // batches so a long list does not interrupt playback or scrolling.
+      for (let i = 0; i < 32; i++) {
+        const row = rows.next();
+        if (row.done) { resumeQueueRender = null; break; }
+        fragment.append(row.value);
+      }
+      if (first) list.replaceChildren(fragment);
+      else list.append(fragment);
+      first = false;
+      resumeQueueRender?.();
+    };
+    resumeQueueRender = () => {
+      if (queueRenderFrame == null && opened && !panel?.hidden) {
+        queueRenderFrame = requestAnimationFrame(appendChunk);
+      }
+    };
+    appendChunk();
   }
 
   function toggleQueue(force) {
@@ -9781,6 +9863,7 @@ const FullLyricsPlayer = (() => {
     $('fullLyricsShowLyrics')?.setAttribute('aria-pressed', String(!show));
     if (show) renderQueue();
     else if (opened) {
+      if (lyricsManager?.amEl?.parentElement === lyrics) lyricsManager.handleTimeUpdate();
       syncEndingInfo();
       recenter();
     }
@@ -9961,29 +10044,38 @@ const FullLyricsPlayer = (() => {
   }
 
   function syncPlayback() {
+    if (!opened) return;
     const duration = Number.isFinite(audio?.duration) ? audio.duration : 0;
     const current = Number.isFinite(audio?.currentTime) ? audio.currentTime : 0;
     const percent = duration > 0 ? Math.min(100, Math.max(0, current / duration * 100)) : 0;
-
-    if ($('fullLyricsCurrentTime')) $('fullLyricsCurrentTime').textContent = formatTime(current);
-    if ($('fullLyricsDuration')) $('fullLyricsDuration').textContent = formatTime(duration);
+    const currentText = formatTime(current), durationText = formatTime(duration);
+    const setTextIfChanged = (id, value) => {
+      const node = $(id);
+      if (node && node.textContent !== value) node.textContent = value;
+    };
+    const setAttributeIfChanged = (node, name, value) => {
+      if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+    };
+    setTextIfChanged('fullLyricsCurrentTime', currentText);
+    setTextIfChanged('fullLyricsDuration', durationText);
     const progress = $('fullLyricsProgress');
     if (progress) {
-      progress.setAttribute('aria-valuemax', String(Math.round(duration)));
-      progress.setAttribute('aria-valuenow', String(Math.min(Math.round(duration), Math.round(current))));
-      progress.setAttribute('aria-valuetext', formatTime(current) + ' of ' + formatTime(duration));
+      setAttributeIfChanged(progress, 'aria-valuemax', String(Math.round(duration)));
+      setAttributeIfChanged(progress, 'aria-valuenow', String(Math.min(Math.round(duration), Math.round(current))));
+      setAttributeIfChanged(progress, 'aria-valuetext', currentText + ' of ' + durationText);
     }
-    if ($('fullLyricsProgressFill')) $('fullLyricsProgressFill').style.width = `${percent}%`;
+    const fill = $('fullLyricsProgressFill');
+    const width = `${percent}%`;
+    if (fill && fill.style.width !== width) fill.style.width = width;
 
     const playing = isPlaying1 || isPlaying2;
     const button = $('fullLyricsPlayBtn');
-    if (button) {
-      button.title = playing ? 'Pause' : 'Play';
-      button.setAttribute('aria-label', button.title);
-    }
-    const icon = $('fullLyricsPlayIcon');
-    if (icon) {
-      icon.innerHTML = playing
+    const label = playing ? 'Pause' : 'Play';
+    if (button && button.getAttribute('aria-label') !== label) {
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      const icon = $('fullLyricsPlayIcon');
+      if (icon) icon.innerHTML = playing
         ? '<rect x="6.4" y="5.3" width="4.3" height="13.4" rx="1.8"></rect><rect x="13.3" y="5.3" width="4.3" height="13.4" rx="1.8"></rect>'
         : '<path d="M8.5 6.4c0-.9 1-1.4 1.8-.9l8 5.2a1.5 1.5 0 0 1 0 2.6l-8 5.2c-.8.5-1.8 0-1.8-.9z"></path>';
     }
@@ -9999,6 +10091,7 @@ const FullLyricsPlayer = (() => {
       syncEndingInfo();
       return;
     }
+    clearPastLyrics();
     mirrorLyricsContent(source, target);
     syncEndingInfo();
     centerFallbackLyrics(target, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth');
@@ -10045,6 +10138,7 @@ const FullLyricsPlayer = (() => {
     for (const animation of motionAnimations.values()) animation.cancel();
     motionAnimations.clear();
     endingQueueTrack = null;
+    clearPastLyrics();
     warpedBackdrop?.sync();
     toggleQueue(false);
     document.getElementById('mainContent').style.display = "";
@@ -10206,7 +10300,9 @@ document.addEventListener('DOMContentLoaded', () => {
   for (const player of [audio, audio2]) {
     for (const event of ['timeupdate', 'loadedmetadata', 'play', 'pause', 'durationchange', 'seeked', 'ended']) {
       player.addEventListener(event, () => {
-        if (player === audio) FullLyricsPlayer.syncPlayback();
+        if (player !== audio) return;
+        FullLyricsPlayer.syncPlayback();
+        if (event === 'play' || event === 'pause' || event === 'ended') FullLyricsPlayer.syncBackdropMotion();
       });
     }
   }
