@@ -1106,6 +1106,36 @@ test('switching word, line and plain lyrics creates fresh renderers instead of c
   assert.equal(made.length, 3); assert.equal(new Set(made).size, 3);
   assert.equal(m.hasSyncedLyrics(), false);
 });
+test('a provider switch clears old word effects before rendering and restores the same playback time', async () => {
+  const { ctx, manager: m } = fixture();
+  ctx.audio.currentTime = 2.5;
+  const old = wordLyrics();
+  const plain = [{ timestamp: 0, endtime: 0, text: [{ text: 'Plain lyrics' }] }];
+  const next = [{ timestamp: 1700, endtime: 4000, text: [{ text: 'New timing' }] }];
+  const savedClocks = m.amWordTimingStates = new WeakMap();
+  const renders = [];
+  const el = m.amEl = {
+    isConnected: true, isLoading: false, currentTime: 2500, lyrics: old,
+    availableSources: [{ lines: plain }, { lines: next }],
+    get updateComplete() {
+      renders.push(this.isLoading ? null : this.lyrics);
+      return Promise.resolve();
+    },
+    async applySourceAtIndex(index) {
+      this.lyrics = this.availableSources[index].lines;
+      assert.equal(this.cachedIsUnsynced, index === 0);
+    }
+  };
+  m.amActive = true;
+  m.currentSource = 'amlyrics';
+  m.installAmSourceSwitch(el);
+  await el.applySourceAtIndex(0);
+  await el.applySourceAtIndex(1);
+  assert.deepEqual(renders, [null, plain, null, next]);
+  assert.equal(el.currentTime, 2500);
+  assert.equal(m.parsedLines[0].startMs, 1700);
+  assert.notEqual(m.amWordTimingStates, savedClocks);
+});
 test('scroll callbacks from the disposed song cannot scroll a new renderer', async () => {
   const { ctx, manager: m } = fixture(); delete m.exitAm;
   const frames = [], timers = []; ctx.requestAnimationFrame = callback => frames.push(callback);
