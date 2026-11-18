@@ -1167,7 +1167,6 @@ let consecutivePlayFailures = 0;
 const MAX_CONSECUTIVE_PLAY_FAILURES = 5;
 let favoriteTracks = new Set();
 let contextTrackIndex = -1;
-let contextTrackTrigger = null;
 let isPlaying1 = false;
 isPlaying2 = false;
 let isShuffle = false;
@@ -3597,7 +3596,6 @@ class QueueManager {
           <div class="queue-track-title">${Utils.escapeHtml(track.title || 'Unknown Track')}</div>
           <div class="queue-track-artist">${Utils.escapeHtml(track.artist || 'Unknown Artist')}</div>
         </div>
-        <div class="layout-row-album">${Utils.escapeHtml(track.album || '—')}</div>
         <div class="queue-actions">
           <button class="queue-action-btn" onclick="event.stopPropagation();openTrackInfo('${track.uid}')" title="Track info"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
           <button class="queue-action-btn" onclick="event.stopPropagation();openAddToPlaylist(${index})" title="Add to playlist"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="12" y2="6"></line><line x1="3" y1="12" x2="12" y2="12"></line><line x1="3" y1="18" x2="9" y2="18"></line><line x1="18" y1="10" x2="18" y2="20"></line><line x1="13" y1="15" x2="23" y2="15"></line></svg></button>
@@ -3605,10 +3603,6 @@ class QueueManager {
           <button class="queue-action-btn" onclick="event.stopPropagation();removeFromQueue(${index})" title="Remove"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
         </div>
         <div class="queue-duration" id="duration-${track.uid}">${dur}</div>
-        <button type="button" class="layout-row-menu" title="Track actions" aria-label="Track actions" aria-haspopup="menu" aria-controls="trackContextMenu" aria-expanded="false"
-          onclick="event.stopPropagation();openTrackContextMenu(event,${index})">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-        </button>
       </div>`;
     }).join('');
 
@@ -5750,9 +5744,6 @@ class ViewManager {
               </div>
             </div>
           </div>
-        </div>
-        <div class="layout-library-columns" aria-hidden="true">
-          <span>#</span><span></span><span>Track</span><span class="layout-column-album">Album</span><span>Time</span><span></span>
         </div>
         <div class="queue-list" id="queueList">
           <div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></div><div class="empty-title">Your queue is empty</div><div class="empty-subtitle">Import some music to get started</div></div>
@@ -9125,10 +9116,7 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && contextTrackIndex >= 0) {
-    contextTrackTrigger?.focus();
-    closeTrackContextMenu();
-  }
+  if (event.key === 'Escape') closeTrackContextMenu();
 });
 
 function openTrackContextMenu(event, index) {
@@ -9137,20 +9125,14 @@ function openTrackContextMenu(event, index) {
   if (!queue[index]) return;
   const menu = document.getElementById('trackContextMenu');
   if (!menu) return;
-  const trigger = event.currentTarget?.matches('.layout-row-menu') ? event.currentTarget : null;
-  contextTrackTrigger?.setAttribute('aria-expanded', 'false');
-  contextTrackTrigger = trigger;
-  trigger?.setAttribute('aria-expanded', 'true');
   contextTrackIndex = index;
   menu.classList.add('open');
   menu.setAttribute('aria-hidden', 'false');
   const margin = 8;
-  const anchor = trigger?.getBoundingClientRect();
-  const left = Math.min(anchor ? anchor.right - menu.offsetWidth : event.clientX, window.innerWidth - menu.offsetWidth - margin);
-  const top = Math.min(anchor ? anchor.bottom + 4 : event.clientY, window.innerHeight - menu.offsetHeight - margin);
+  const left = Math.min(event.clientX, window.innerWidth - menu.offsetWidth - margin);
+  const top = Math.min(event.clientY, window.innerHeight - menu.offsetHeight - margin);
   menu.style.left = `${Math.max(margin, left)}px`;
   menu.style.top = `${Math.max(margin, top)}px`;
-  if (trigger) menu.querySelector('button')?.focus({ preventScroll: true });
 }
 
 function closeTrackContextMenu() {
@@ -9159,8 +9141,6 @@ function closeTrackContextMenu() {
     menu.classList.remove('open');
     menu.setAttribute('aria-hidden', 'true');
   }
-  contextTrackTrigger?.setAttribute('aria-expanded', 'false');
-  contextTrackTrigger = null;
   contextTrackIndex = -1;
 }
 
