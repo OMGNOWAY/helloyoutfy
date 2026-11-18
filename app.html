@@ -7,6 +7,274 @@
   <div class="art-blob" id="blob5"></div>
   <div class="art-blob" id="blob6"></div>
 </div>
+<div id="bigLyricsLayoutBackdrop" aria-hidden="true">
+  <img id="bigLyricsLayoutArtwork" alt="" hidden>
+  <canvas id="bigLyricsLayoutCanvas" width="1" height="1"></canvas>
+</div>
+<style id="bigLyricsLayoutStyles">
+/* The alternate layout uses the same player, views, and navigation. */
+#bigLyricsLayoutBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 24% 72%, #253543, #10161f 72%);
+}
+body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
+#bigLyricsLayoutBackdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, #10101526, #0b111864 55%, #09121e88);
+}
+#bigLyricsLayoutBackdrop img {
+  position: absolute;
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  object-fit: cover;
+  filter: blur(56px) saturate(1.3) brightness(.66);
+}
+#bigLyricsLayoutBackdrop canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: saturate(2.5) brightness(.65);
+  opacity: 0;
+  transition: opacity .4s ease;
+}
+#bigLyricsLayoutBackdrop canvas[data-ready] { opacity: 1; }
+body.performance-mode #bigLyricsLayoutBackdrop canvas { filter: saturate(2.5) brightness(.65) !important; }
+body.performance-mode #bigLyricsLayoutBackdrop img { filter: blur(32px) brightness(.55) !important; }
+body.big-lyrics-layout {
+  --text-primary: #fafafd !important;
+  --text-secondary: #ffffffbf !important;
+  --text-muted: #ffffff8c !important;
+  --glass-bg: #10151e6b !important;
+  --glass-bg-soft: #11182342 !important;
+}
+body.big-lyrics-layout #app {
+  --text-primary: #fafafd;
+  --text-secondary: #ffffffbf;
+  --text-muted: #ffffff8c;
+  --border: #ffffff26;
+  --glass-tint: #a1acbd;
+  --bg-tertiary: #ffffff13;
+  --bg-hover: #ffffff1b;
+}
+body.big-lyrics-layout #app > .main,
+body.big-lyrics-layout #app .queue-container {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #app #homeView > :is(.ios-home-hero, .section-header) { display: none; }
+body.big-lyrics-layout #app :is(.sidebar, .player, .player-embed, .search-input) {
+  background: #11182375 !important;
+  border: 1px solid #ffffff26 !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #app .player::before { display: none; }
+body.big-lyrics-layout #app .queue-item {
+  border-radius: 10px;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+body.big-lyrics-layout #app .queue-item:is(:hover, .playing) {
+  background: #ffffff16 !important;
+  border-color: #ffffff15 !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #app .queue-item.playing .queue-number { color: #fff; }
+body.big-lyrics-layout #app :is(.queue-action-btn, .queue-utility-btn, .player-embed-header .btn) {
+  border-color: #ffffff26 !important;
+  background: #ffffff12 !important;
+}
+body.big-lyrics-layout #app :is(.queue-action-btn, .queue-utility-btn, .player-embed-header .btn):hover {
+  background: #ffffff25 !important;
+}
+body.big-lyrics-layout #app :is(.player-btn, .lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn) {
+  color: #fff !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+body.big-lyrics-layout #app :is(.player-btn, .lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn):is(:hover, .active) {
+  background: #ffffff2b !important;
+}
+body.big-lyrics-layout #app #playPauseBtn,
+body.big-lyrics-layout #app #playPauseBtn:hover {
+  color: #121826 !important;
+  background: #fff !important;
+}
+body.big-lyrics-layout #app :is(#progressFill, #volumeFill) { background: #fff !important; }
+body.big-lyrics-layout #app .queue-title {
+  color: #fff;
+  font-size: clamp(1.5rem, 3.5vw, 3rem);
+  line-height: 1.12;
+}
+body.big-lyrics-layout #app .queue-container { padding: 0; }
+body.big-lyrics-layout #app .queue-header { align-items: center; }
+body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
+@media (hover: hover) and (pointer: fine) {
+  body.big-lyrics-layout #app .queue-actions { opacity: 0; }
+  body.big-lyrics-layout #app .queue-item:is(:hover, :focus-within, .playing) .queue-actions { opacity: 1; }
+}
+
+@media (min-width: 861px) {
+  body.big-lyrics-layout #app {
+    --layout-inset: clamp(16px, 3.7vw, 60px);
+    grid-template-columns: minmax(240px, 35%) minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: 12px clamp(18px, 5vw, 76px);
+    padding: var(--layout-inset);
+    height: 100dvh;
+  }
+  body.big-lyrics-layout #app > .sidebar {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    min-width: 0;
+    height: 62px;
+    border-radius: 22px;
+  }
+  body.big-lyrics-layout #app > .main {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    padding: 8px 4px 20px;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  body.big-lyrics-layout.sidebar-bottom #app > .sidebar { grid-row: 2 !important; }
+  body.big-lyrics-layout.sidebar-bottom #app > .main { grid-row: 1 !important; }
+  body.big-lyrics-layout.sidebar-bottom #app { grid-template-rows: minmax(0, 1fr) auto !important; }
+  body.big-lyrics-layout #app .sb-search-slot { display: none; }
+  body.big-lyrics-layout #app #sidebar > .nav-item-click[onclick^="openSettings"] {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: #151d2a !important;
+  }
+  body.big-lyrics-layout #app .main > #searchContainer:not([style*="display: none"]) {
+    display: flex !important;
+    margin-bottom: 18px;
+  }
+  body.big-lyrics-layout #app #player {
+    --layout-cover: min(100%, 420px, max(148px, calc(100dvh - 394px)));
+    grid-column: 1 !important;
+    grid-row: 1 / -1 !important;
+    align-self: stretch;
+    margin: 0;
+    padding: 0 2px 0;
+    gap: 10px;
+    background: transparent !important;
+    border: 0 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  body.big-lyrics-layout #player::-webkit-scrollbar { display: none; }
+  body.big-lyrics-layout #player .player-track { align-items: center; gap: 12px; }
+  body.big-lyrics-layout #player .player-img,
+  body.big-lyrics-layout #player .player-track:has(.player-img[style*="display: none"])::before {
+    width: var(--layout-cover);
+    height: auto;
+    aspect-ratio: 1;
+    border-radius: clamp(12px, 1.6vw, 22px);
+  }
+  body.big-lyrics-layout #player .player-track:has(.player-img[style*="display: none"])::before {
+    content: "♫";
+    display: grid;
+    place-items: center;
+    color: #ffffff63;
+    font-size: clamp(2rem, 5vw, 4.5rem);
+    background: #ffffff0d;
+    border: 1px solid #ffffff18;
+  }
+  body.big-lyrics-layout #player .player-img {
+    object-fit: cover;
+    box-shadow: 0 16px 44px #0006 !important;
+    border: 1px solid #ffffff24 !important;
+  }
+  body.big-lyrics-layout #player .player-info,
+  body.big-lyrics-layout #player .player-controls-section {
+    width: min(100%, 420px);
+    align-self: center;
+  }
+  body.big-lyrics-layout #player .player-info { text-align: left; }
+  body.big-lyrics-layout #player #playerTitle { font-size: clamp(1.25rem, 2.6vw, 2.4rem); line-height: 1.16; }
+  body.big-lyrics-layout #player #playerArtist { font-size: clamp(.85rem, 1.3vw, 1.15rem); }
+  body.big-lyrics-layout #player .player-controls-section { gap: 6px; }
+  body.big-lyrics-layout #player .progress-section { order: -1; }
+  body.big-lyrics-layout #player .player-controls { gap: clamp(4px, 1.2vw, 18px); }
+  body.big-lyrics-layout #player .player-right { order: 3; align-self: center; width: min(100%, 420px); }
+  body.big-lyrics-layout #player #playerEmbed { order: 4; min-height: 140px; margin-top: 0; border-radius: 17px; }
+  body.big-lyrics-layout #player #playerEmbedLyricsContent { font-size: .95rem; }
+}
+@media (min-width: 861px) and (max-width: 1180px) {
+  body.big-lyrics-layout #app > .sidebar,
+  body.big-lyrics-layout #app .sidebar :is(.nav, .sidebar-section) { gap: 5px; }
+  body.big-lyrics-layout #app .sidebar :is(.nav-item, .nav-item-click) {
+    width: 34px;
+    min-width: 34px;
+    min-height: 36px;
+    height: 36px;
+  }
+}
+@media (max-width: 860px) {
+  html:has(body.big-lyrics-layout),
+  body.big-lyrics-layout { padding-bottom: 0 !important; }
+  body.big-lyrics-layout #app { padding-bottom: calc(254px + env(safe-area-inset-bottom)) !important; }
+  body.big-lyrics-layout #app > .main {
+    padding-inline: clamp(10px, 3vw, 26px);
+    padding-bottom: 18px !important;
+    margin-bottom: 0 !important;
+  }
+  body.big-lyrics-layout #app .queue-header { gap: 8px; }
+  body.big-lyrics-layout #app .queue-title { font-size: clamp(1.45rem, 6vw, 2.3rem); }
+  body.big-lyrics-layout #app :is(.sidebar, .player) { background: #111823e6 !important; }
+  body.big-lyrics-layout #app #player {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+    min-height: 0;
+    padding: 9px 12px;
+    border-radius: 20px;
+  }
+  body.big-lyrics-layout #player .player-img { width: 42px; height: 42px; }
+  body.big-lyrics-layout #player .player-controls-section { order: 1; gap: 3px; }
+  body.big-lyrics-layout #player .player-btn { width: 32px; height: 32px; }
+  body.big-lyrics-layout #player #playPauseBtn { width: 40px; height: 40px; }
+  body.big-lyrics-layout #player .player-right {
+    order: 2;
+    width: 100%;
+    justify-content: center !important;
+  }
+}
+@media (max-width: 640px) {
+  body.big-lyrics-layout #app .queue-utility-btn { font-size: 0; }
+  body.big-lyrics-layout #app .queue-overflow-toggle > span { font-size: 1rem; }
+  body.big-lyrics-layout #app .queue-item {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    gap: 10px !important;
+    min-height: 58px;
+    padding: 6px 8px !important;
+  }
+  body.big-lyrics-layout #app .queue-item :is(.queue-number, .queue-actions, .queue-duration) { display: none; }
+  body.big-lyrics-layout #app .queue-img { width: 42px; height: 42px; }
+}
+#appLayoutSelect {
+  max-width: 54%;
+  padding: .45em .65em;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+</style>
 <div class="app" id="app">
   <aside class="sidebar" id="sidebar">
     <div class="brand" onclick="toggleSidebar()">
@@ -1871,6 +2139,17 @@
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn secondary" onclick="openThemeMaker()" id="ctb">Create Theme</button>
         <button class="btn secondary" onclick="importThemeUI()">Import Theme</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Layout</div>
+      <div class="setting-toggle-row">
+        <label class="setting-toggle-label" for="appLayoutSelect">App layout</label>
+        <select id="appLayoutSelect">
+          <option value="classic">Classic</option>
+          <option value="big-lyrics">Big Lyrics</option>
+        </select>
       </div>
     </div>
 

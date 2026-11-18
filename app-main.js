@@ -10417,6 +10417,7 @@ const FullLyricsPlayer = (() => {
     setHidePastLyrics, updatePastLyrics,
     isOpen: () => opened,
     openSourcePicker, closeSourcePicker, openSettings, syncSettingsLyrics, setBackdropMotion,
+    isBackdropMotionEnabled: () => backdropMotion,
     syncBackdropMotion: () => warpedBackdrop?.sync()
   };
 })();
@@ -10711,6 +10712,53 @@ function handleEffectsButtonClick() {
   }
 }
 
+
+document.addEventListener('DOMContentLoaded', () => {
+  const select = document.getElementById('appLayoutSelect');
+  const cover = document.getElementById('playerImg');
+  const artwork = document.getElementById('bigLyricsLayoutArtwork');
+  const canvas = document.getElementById('bigLyricsLayoutCanvas');
+  if (!select || !cover || !artwork || !canvas) return;
+
+  let background;
+  const isVisible = () => document.body.classList.contains('big-lyrics-layout') && !FullLyricsPlayer.isOpen();
+  const syncBackground = () => {
+    if (!isVisible()) {
+      background?.sync();
+      return;
+    }
+    const url = cover.getAttribute('src') || '';
+    if (url !== (artwork.getAttribute('src') || '')) {
+      artwork.hidden = true;
+      if (url) artwork.src = url;
+      else artwork.removeAttribute('src');
+    }
+    if (!url && !background) return;
+    background ??= createFullLyricsBackground(canvas, isVisible, FullLyricsPlayer.isBackdropMotionEnabled);
+    background.setArtwork(url);
+  };
+
+  function applyLayout() {
+    document.body.classList.toggle('big-lyrics-layout', select.value === 'big-lyrics');
+    document.dispatchEvent(new Event('youtify:app-layout-change'));
+    syncBackground();
+  }
+
+  try {
+    if (localStorage.getItem('youtify_app_layout') === 'big-lyrics') select.value = 'big-lyrics';
+  } catch {}
+  select.addEventListener('change', () => {
+    try { localStorage.setItem('youtify_app_layout', select.value); } catch {}
+    applyLayout();
+  });
+  artwork.addEventListener('load', () => { artwork.hidden = false; });
+  new MutationObserver(syncBackground).observe(cover, { attributes: true, attributeFilter: ['src'] });
+  new MutationObserver(syncBackground).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  for (const player of [audio, audio2]) {
+    for (const event of ['play', 'pause', 'ended']) player.addEventListener(event, syncBackground);
+  }
+  applyLayout();
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   ['playerImg', 'playerTitle', 'playerArtist'].forEach(id => {
@@ -17639,7 +17687,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function sync() {
     var hdr = main.querySelector('#searchContainer');
     var inMain = main.querySelector('#searchInput');
-    if (mq.matches) {
+    if (mq.matches && !document.body.classList.contains('big-lyrics-layout')) {
       if (inMain) {
         var box = inMain.closest('.search-container');
         if (box) { slot.textContent = ''; slot.appendChild(box); }
@@ -17655,6 +17703,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   new MutationObserver(sync).observe(main, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  document.addEventListener('youtify:app-layout-change', sync);
   if (mq.addEventListener) mq.addEventListener('change', sync); else mq.addListener(sync);
   sync();
   setInterval(sync, 800); // safety net: re-check now and then
