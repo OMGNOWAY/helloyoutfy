@@ -9026,6 +9026,16 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// The icon-only dock exposes real keyboard navigation, including when
+// Classic mode is selected. Space and Enter activate focused navigation items.
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || (e.key !== 'Enter' && e.key !== ' ')) return;
+  const item = e.target.closest?.('#sidebar .nav-item[role="button"], #sidebar .nav-item-click[role="button"]');
+  if (!item) return;
+  e.preventDefault();
+  item.click();
+});
+
 document.getElementById('settingsModal').addEventListener('click', (e) => { if (e.target.id === 'settingsModal') SettingsManager.close(); });
 
 document.getElementById('searchInput')?.addEventListener('input', (e) => {
