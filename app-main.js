@@ -7346,9 +7346,39 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
             if (el.__amMoving || el.__amSaved) return Promise.resolve();
             return origFetch(...args);
         };
+        this.installAmSourceSwitch(el);
         this.amEl = el;
         this.applyAmFocus();
         return el;
+    }
+    installAmSourceSwitch(el) {
+        const applySource = el.applySourceAtIndex?.bind(el);
+        if (!applySource) return;
+        el.applySourceAtIndex = async index => {
+            const next = el.availableSources?.[index];
+            if (!next || !el.isConnected || el.isLoading || next.lines === el.lyrics) return applySource(index);
+            const signal = el.fetchAbortController?.signal;
+            // am-lyrics renders rows by index. Remove the outgoing rows before
+            // applying the new timing so they can't retain old highlight paint.
+            // Lit runs both updates before paint; don't start this during lookup.
+            el.isLoading = true;
+            try { await el.updateComplete; }
+            finally { el.isLoading = false; }
+            if (this.amEl !== el || signal?.aborted) return;
+            // The template reads this non-reactive flag before updated() recomputes it.
+            el.cachedIsUnsynced = next.lines.length > 0 &&
+                next.lines.every(line => line.timestamp === 0 && line.endtime === 0);
+            await applySource(index);
+            await el.updateComplete;
+            if (this.amEl !== el || signal?.aborted) return;
+            this.parsedLines = this.amLinesToParsed(el.lyrics);
+            this.currentLyrics = this.parsedLines;
+            this.currentLineIndex = -1;
+            this._lastAmT = null;
+            this.amWordTimingStates = new WeakMap();
+            this.handleTimeUpdate();
+            if (el.parentElement?.id === 'fullLyricsContent') this.jumpAmToCurrentLine(true);
+        };
     }
     handleAmContextMenu(event) {
         const line = event.composedPath?.().find(node => node?.classList?.contains('lyrics-line'));
