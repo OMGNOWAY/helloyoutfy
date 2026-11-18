@@ -9659,11 +9659,22 @@ const FullLyricsPlayer = (() => {
     button.title = backdropMotion ? 'Turn background motion off' : 'Turn background motion on';
   }
 
-  function toggleBackdropMotion() {
-    backdropMotion = !backdropMotion;
+  function setBackdropMotion(enabled) {
+    backdropMotion = enabled;
     try { localStorage.setItem('youtify_fullscreen_background_motion', backdropMotion ? 'on' : 'off'); } catch {}
     updateBackdropMotionButton();
     warpedBackdrop?.sync();
+  }
+
+  function openSettings() {
+    const dialog = $('fullLyricsSettingsDialog');
+    if (!opened || !dialog || dialog.open || $('fullLyricsSourcePicker')?.open) return;
+    const overlay = $('fullLyricsPlayer');
+    $('fullLyricsSettingsLayout').value = overlay.dataset.layout;
+    $('fullLyricsSettingsSide').value = overlay.dataset.playerSide;
+    $('fullLyricsSettingsHidePast').checked = hidePastLyrics;
+    $('fullLyricsSettingsMotion').checked = backdropMotion;
+    dialog.showModal();
   }
 
   function closeSourcePicker() {
@@ -9723,7 +9734,7 @@ const FullLyricsPlayer = (() => {
     const dialog = $('fullLyricsSourcePicker');
     const el = lyricsManager?.amEl;
     const track = queue[currentTrackIndex];
-    if (!opened || !dialog || dialog.open || !track || !el?.lyrics?.length || el.isLoading ||
+    if (!opened || !dialog || dialog.open || $('fullLyricsSettingsDialog')?.open || !track || !el?.lyrics?.length || el.isLoading ||
         lyricsManager.isFetching || el.parentElement?.id !== 'fullLyricsContent') return;
     const state = sourcePicker = { el, track, loading: !el.hasFetchedAllProviders };
     renderSourcePicker(state);
@@ -10331,6 +10342,7 @@ const FullLyricsPlayer = (() => {
     if (!overlay || !opened) return;
     opened = false;
     closeSourcePicker();
+    $('fullLyricsSettingsDialog')?.close();
     overlay.inert = true;
     for (const animation of motionAnimations.values()) animation.cancel();
     motionAnimations.clear();
@@ -10368,7 +10380,8 @@ const FullLyricsPlayer = (() => {
     open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, setPlayerSide, recenter, syncEndingInfo,
     setHidePastLyrics, updatePastLyrics, isHidePastLyrics: () => hidePastLyrics,
     isOpen: () => opened,
-    openSourcePicker, closeSourcePicker, toggleBackdropMotion,
+    openSourcePicker, closeSourcePicker, openSettings, setBackdropMotion,
+    toggleBackdropMotion: () => setBackdropMotion(!backdropMotion),
     syncBackdropMotion: () => warpedBackdrop?.sync()
   };
 })();
@@ -10466,6 +10479,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!sourcePicker.open) FullLyricsPlayer.closeSourcePicker();
   });
 
+  const settingsDialog = document.getElementById('fullLyricsSettingsDialog');
+  document.getElementById('fullLyricsSettingsButton')?.addEventListener('click', FullLyricsPlayer.openSettings);
+  document.getElementById('fullLyricsSettingsClose')?.addEventListener('click', () => settingsDialog?.close());
+  for (const [id, apply] of [
+    ['fullLyricsSettingsLayout', input => FullLyricsPlayer.setLayout(input.value)],
+    ['fullLyricsSettingsSide', input => FullLyricsPlayer.setPlayerSide(input.value)],
+    ['fullLyricsSettingsHidePast', input => FullLyricsPlayer.setHidePastLyrics(input.checked)],
+    ['fullLyricsSettingsMotion', input => FullLyricsPlayer.setBackdropMotion(input.checked)]
+  ]) {
+    document.getElementById(id)?.addEventListener('change', event => apply(event.currentTarget));
+  }
+
   const cover = document.getElementById('fullLyricsArt');
   cover?.addEventListener('load', () => cover.removeAttribute('data-unavailable'));
   cover?.addEventListener('error', () => cover.setAttribute('data-unavailable', ''));
@@ -10518,6 +10543,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && FullLyricsPlayer.isOpen() && !document.getElementById('fullLyricsSourcePicker')?.open) {
+    if (e.defaultPrevented || document.getElementById('fullLyricsSettingsDialog')?.open) return;
     e.preventDefault();
     const queueButton = document.getElementById('fullLyricsQueueButton');
     if (queueButton?.getAttribute('aria-expanded') === 'true') {
