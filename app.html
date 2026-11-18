@@ -650,14 +650,16 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
   body.big-lyrics-layout #player .player-right {
     order: -1;
     flex: 0 0 auto !important;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 40px;
+    grid-template-rows: 39px 9px;
     align-items: center;
-    justify-content: flex-start !important;
-    flex-wrap: nowrap;
-    gap: 6px !important;
+    justify-items: stretch;
+    column-gap: 6px !important;
+    row-gap: 10px !important;
     width: 100%;
     min-width: 0 !important;
-    padding: 10px 11px !important;
+    padding: 10px 11px 13px !important;
     margin: 0 !important;
     border: none;
     border-bottom: 1px solid #ffffff20;
@@ -670,7 +672,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
     align-items: center;
     justify-content: center;
     flex: 1 1 0 !important;
-    width: auto !important;
+    width: 100% !important;
     min-width: 0 !important;
     height: 39px !important;
     padding: 0 6px !important;
@@ -719,9 +721,19 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
     box-shadow: none !important;
   }
   body.big-lyrics-layout #player .player-right .volume-btn:hover { background: #ffffff16 !important; }
-  /* Volume is a compact popover-length slider only when there's room.
-     Don't wrap it onto a second row or push the tabs together. */
-  body.big-lyrics-layout #player .player-right .volume-slider { display: none !important; }
+  /* Full-width volume slider below the tabs, always adjustable. */
+  body.big-lyrics-layout #player .player-right .volume-slider {
+    display: block !important;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: calc(100% - 16px);
+    height: 6px;
+    max-width: none;
+    min-width: 0;
+    margin: 0 8px;
+    align-self: center;
+    cursor: pointer;
+  }
 
   body.big-lyrics-layout #player #playerEmbed {
     order: 0;
