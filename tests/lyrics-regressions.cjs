@@ -243,6 +243,35 @@ test('fullscreen disappearing lyrics open Up Next after the last fade and recove
   assert.equal(pane.hidden, false);
 });
 
+test('fullscreen fading lyrics skip a new Up Next view in the final four seconds', () => {
+  for (const remaining of [4, 3, 2, 1, 0.1, 0]) {
+    const { ctx, player, manager, panel, advance } = endingQueueFixture();
+    ctx.audio.duration = 12.5 + remaining;
+    manager.amFade = true;
+    player.setHidePastLyrics(true);
+    advance(12.5);
+    assert.equal(panel.hidden, true, `no automatic queue with ${remaining}s remaining`);
+    player.toggleQueue(true);
+    player.syncEndingInfo();
+    assert.equal(panel.hidden, false, 'manual queue selection still works');
+  }
+});
+
+test('fullscreen long outros keep Up Next stable and disabling edge fade keeps the normal behavior', () => {
+  const { ctx, player, manager, panel, advance } = endingQueueFixture();
+  manager.amFade = true;
+  ctx.audio.duration = 16.6;
+  player.setHidePastLyrics(true);
+  advance(12.5);
+  assert.equal(panel.hidden, false, 'an outro longer than four seconds opens the queue');
+  advance(14);
+  assert.equal(panel.hidden, false, 'an already visible queue stays steady');
+  advance(11);
+  manager.amFade = false;
+  advance(14);
+  assert.equal(panel.hidden, false, 'edge fade must also be enabled to suppress the queue');
+});
+
 test('fullscreen automatic queue respects manual view choices and restores lyrics on the next song', () => {
   const { ctx, player, manager, panel, advance } = endingQueueFixture();
   player.setHidePastLyrics(true);
@@ -1123,7 +1152,7 @@ function crossfadeFixture(speed = 1) {
     audio: outgoing, audio2: incoming, currentVolume: 0.7, audioContext: { state: 'running', currentTime: 0 },
     queue: [{ uid: 'old' }, { uid: 'new' }], currentTrackIndex: 0, uqReturnIndex: -1,
     uqTake: () => false, shuffleRecord() {}, rebindAudioListeners() {},
-    document: { getElementById: id => {
+    document: { documentElement: { style: { viewTransitionName: '' } }, getElementById: id => {
       if (!nodes.has(id)) nodes.set(id, { style: { viewTransitionName: '' }, getClientRects: () => [1],
         animate() { throw new Error('Real song content must never fade to zero'); } });
       return nodes.get(id);
@@ -1175,12 +1204,30 @@ test('crossfade switches metadata and lyric clock at the visual midpoint while a
   assert.equal(f.outgoing.paused, false); assert.equal(f.ctx.isCrossfading, true);
   assert.deepEqual(f.updates, [['metadata', 'new'], ['lyrics', 'new', 'incoming', 2]]);
   assert.equal(f.transitions.length, 1);
+  assert.equal(f.ctx.document.documentElement.style.viewTransitionName, 'none');
   assert(f.styles[0].textContent.includes('animation-duration: 2000ms'));
   assert.equal(f.animations.length, 0);
   f.run(f.ctx.crossfadeTickHandle);
   assert.equal(f.outgoing.paused, true); assert.equal(f.ctx.isCrossfading, false);
   assert(f.transitions.every(transition => transition.skipped));
   assert([...f.nodes.values()].every(node => node.style.viewTransitionName === ''));
+  assert.equal(f.ctx.document.documentElement.style.viewTransitionName, '');
+});
+
+test('crossfade leaves the hidden fullscreen lyric pane live when returning from Up Next', async () => {
+  const f = crossfadeFixture();
+  const pane = f.ctx.document.getElementById('fullLyricsContent');
+  pane.hidden = true;
+  f.ctx.document.documentElement.style.viewTransitionName = 'page-content';
+  const { promise } = await f.launch();
+  f.prepared[0]('new-source'); await promise;
+  f.run(f.ctx.Player.crossfadeSession.midpoint);
+  assert.equal(pane.style.viewTransitionName, '');
+  assert(!f.styles[0].textContent.includes('youtify-crossfade-fullLyricsContent'));
+  assert.equal(f.ctx.document.documentElement.style.viewTransitionName, 'none');
+  assert(f.styles[0].textContent.includes('youtify-crossfade-fullLyricsTitle'));
+  f.ctx.Player.cancelCrossfade();
+  assert.equal(f.ctx.document.documentElement.style.viewTransitionName, 'page-content');
 });
 
 test('visual crossfade duration follows playback speed and reduced motion skips animations', async () => {

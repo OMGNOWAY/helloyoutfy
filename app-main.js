@@ -3015,9 +3015,16 @@ isPlaying2 = false;
       'heroTitle', 'heroArtist', 'heroArt', 'fullLyricsTitle', 'fullLyricsArtist', 'fullLyricsArt',
       'lyricsContent', 'fullLyricsContent', 'playerEmbedLyricsContent'];
     const names = [], restore = [];
+    // Keep unnamed panes live while song details blend in their own snapshots.
+    const root = document.documentElement;
+    if (root?.style) {
+      const previous = root.style.viewTransitionName;
+      root.style.viewTransitionName = 'none';
+      restore.push(() => { root.style.viewTransitionName = previous; });
+    }
     for (const id of ids) {
       const node = document.getElementById(id);
-      if (!node || !node.getClientRects().length) continue;
+      if (!node || node.hidden || !node.getClientRects().length) continue;
       const name = `youtify-crossfade-${id}`;
       const previous = node.style.viewTransitionName;
       node.style.viewTransitionName = name;
@@ -3028,8 +3035,6 @@ isPlaying2 = false;
     // Only song content blends. The rest of the page stays live and unchanged.
     style.textContent = `
       ::view-transition { pointer-events: none; }
-      ::view-transition-old(root) { display: none; }
-      ::view-transition-new(root), ::view-transition-group(root) { animation: none; }
       ${names.map(name => `::view-transition-group(${name}) { animation-duration: ${duration}ms; animation-timing-function: linear; }
         ::view-transition-old(${name}), ::view-transition-new(${name}) { animation-duration: ${duration}ms; animation-timing-function: linear; }`).join('\n')}
     `;
@@ -9850,13 +9855,17 @@ const FullLyricsPlayer = (() => {
     if (!opened) return;
     const track = queue[currentTrackIndex];
     const lyricsEnded = hidePastLyrics && updatePastLyrics();
+    const position = lyricsManager?.getLyricsPlaybackSeconds?.() ?? audio.currentTime;
+    const remaining = audio.duration - position;
+    const shortOutro = lyricsEnded && !!lyricsManager?.amFade &&
+      Number.isFinite(audio.duration) && audio.duration > 0 && remaining <= 4;
     if (!lyricsEnded || track !== endingQueueTrack) {
       const restoreLyrics = automaticEndingQueue;
       automaticEndingQueue = false;
       endingQueueTrack = null;
       if (restoreLyrics) toggleQueue(false);
     }
-    if (lyricsEnded && track && endingQueueTrack !== track) {
+    if (lyricsEnded && !shortOutro && track && endingQueueTrack !== track) {
       // Remember this outro so the Lyrics button can override the automatic view.
       endingQueueTrack = track;
       if ($('fullLyricsQueuePanel')?.hidden) {
@@ -9866,9 +9875,7 @@ const FullLyricsPlayer = (() => {
     }
     const info = $('fullLyricsEndingInfo');
     if (!info || info.hidden) return;
-    const position = lyricsManager?.getLyricsPlaybackSeconds?.() ?? audio.currentTime;
-    const remaining = audio.duration - position;
-    const nextIndex = track && !audio.ended && remaining > 0 && remaining <= 10
+    const nextIndex = track && !shortOutro && !audio.ended && remaining > 0 && remaining <= 10
       ? PlayerController.getNextIndex() : -1;
     const next = nextIndex === currentTrackIndex ? null : queue[nextIndex];
     const card = $('fullLyricsNextTrack');
