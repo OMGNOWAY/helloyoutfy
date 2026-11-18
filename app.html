@@ -924,17 +924,17 @@
   #fullLyricsPlayer #fullLyricsContent .lyrics-line[role="button"]:not(.active) { opacity: .64; }
   #fullLyricsPlayer #fullLyricsContent .lyrics-line:is(.active, :hover) { color: var(--full-lyrics-ink); opacity: 1; }
   /* Keep completed lines in the scroll geometry and let users revisit them. */
-  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed {
+  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.youtify-past-lyric {
     opacity: 0 !important;
     pointer-events: auto;
     transition: opacity .24s ease;
   }
   #fullLyricsPlayer #fullLyricsContent[data-lyric-pointer-seek] { --full-lyrics-past-hover-opacity: 0; }
-  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed:focus-visible {
+  #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.youtify-past-lyric:focus-visible {
     opacity: 1 !important;
   }
   @media (hover: hover) {
-    #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.passed:hover:not(:focus-visible) {
+    #fullLyricsPlayer[data-hide-past-lyrics] #fullLyricsContent .lyrics-line.youtify-past-lyric:hover:not(:focus-visible) {
       opacity: var(--full-lyrics-past-hover-opacity, 1) !important;
     }
   }
