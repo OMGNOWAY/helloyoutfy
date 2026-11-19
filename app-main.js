@@ -326,6 +326,7 @@ class Utils {
   }
 
   static createModal(title, wide = false, onClose) {
+    const settingsOpener = document.activeElement?.closest('#settingsModal.active button');
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-overlay active';
     backdrop.style.zIndex = '1000';
@@ -353,9 +354,25 @@ class Utils {
     const close = () => {
       backdrop.remove();
       onClose?.();
+      settingsOpener?.focus({ preventScroll: true });
     };
-    header.querySelector('.modal-close').addEventListener('click', close);
+    const closeButton = header.querySelector('.modal-close');
+    closeButton.addEventListener('click', close);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+
+    if (settingsOpener) {
+      modalEl.setAttribute('role', 'dialog');
+      modalEl.setAttribute('aria-modal', 'true');
+      modalEl.setAttribute('aria-label', title);
+      closeButton.setAttribute('aria-label', 'Close ' + title);
+      closeButton.focus({ preventScroll: true });
+      backdrop.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      });
+    }
 
     return { element: backdrop, body, close };
   }
@@ -2063,30 +2080,51 @@ class ThemeManager {
     } catch (e) {}
   }
 
+  static selectSwatch(theme) {
+    document.querySelectorAll('#themeGrid .color-swatch').forEach(swatch => {
+      const selected = swatch.dataset.theme === theme;
+      swatch.classList.toggle('active', selected);
+      swatch.setAttribute('aria-pressed', String(selected));
+    });
+  }
+
   static change(theme) {
     document.getElementById('ctb').innerText = "Create Theme";
     ThemeManager.clearAABInlineOverrides();
     ThemeManager.hideBlobs();
     document.documentElement.setAttribute('data-theme', theme === 'default' ? '' : theme);
-    document.querySelectorAll('.color-swatch').forEach(swatch => {
-      swatch.classList.toggle('active', swatch.dataset.theme === theme);
-    });
+    ThemeManager.selectSwatch(theme);
     localStorage.setItem('theme', theme);
     ThemeManager.applyAccentInk();
     toast(`Theme changed to ${theme}`);
   }
 
   static addToGrid(theme) {
-    const themeGrid = document.querySelector('.theme-grid');
+    const themeGrid = document.getElementById('themeGrid');
     if (!themeGrid) return;
-    let swatch = themeGrid.querySelector(`[data-theme="${theme.name}"]`);
+    let swatch = Array.from(themeGrid.children).find(button => button.dataset.theme === theme.name);
     if (!swatch) {
-      swatch = document.createElement('div');
+      swatch = document.createElement('button');
+      swatch.type = 'button';
       swatch.className = 'color-swatch';
       swatch.dataset.theme = theme.name;
+      const preview = document.createElement('span');
+      preview.className = 'settings-swatch-preview';
+      preview.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 'settings-swatch-label';
+      label.textContent = theme.name;
+      const check = document.createElement('span');
+      check.className = 'settings-swatch-check';
+      check.textContent = '✓';
+      check.setAttribute('aria-hidden', 'true');
+      swatch.append(preview, label, check);
+      swatch.setAttribute('aria-pressed', 'false');
       themeGrid.appendChild(swatch);
     }
-    swatch.style.background = theme.theme[6];
+    swatch.style.setProperty('--swatch-base', theme.theme[0]);
+    swatch.style.setProperty('--swatch-mid', theme.theme[1]);
+    swatch.style.setProperty('--swatch-accent', theme.theme[6]);
     swatch.title = theme.name;
     swatch.onclick = () => {
       document.getElementById('ctb').innerText = "Edit Theme";
@@ -2094,8 +2132,7 @@ class ThemeManager {
       ThemeManager.hideBlobs();
       document.documentElement.setAttribute('data-theme', theme.name);
       ThemeManager.applyAccentInk();
-      document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
-      swatch.classList.add('active');
+      ThemeManager.selectSwatch(theme.name);
       localStorage.setItem('theme', theme.name);
       toast(`Theme changed to ${theme.name}`);
     };
@@ -2113,7 +2150,7 @@ class ThemeManager {
       if (!Array.isArray(customThemes)) customThemes = [];
       customThemes.forEach(theme => { ThemeManager.applyCSS(theme); ThemeManager.addToGrid(theme); });
       const cur = localStorage.getItem('theme');
-      if (cur) document.querySelectorAll('.color-swatch').forEach(s => { if (s.dataset.theme === cur) s.classList.add('active'); });
+      if (cur) ThemeManager.selectSwatch(cur);
       if (customThemes.some(t => t.name === cur)) document.getElementById('ctb').textContent = 'Edit Theme';
       ThemeSync.init();
     } catch (e) { console.error('Error loading custom themes:', e); }
@@ -2450,9 +2487,7 @@ class ThemeManager {
       document.documentElement.setAttribute('data-theme', theme.name);
       localStorage.setItem('theme', theme.name);
       document.getElementById('ctb').textContent = 'Edit Theme';
-      document.querySelectorAll('.color-swatch').forEach(s =>
-        s.classList.toggle('active', s.dataset.theme === theme.name)
-      );
+      ThemeManager.selectSwatch(theme.name);
       toast(isEditMode ? `"${theme.name}" updated` : `Theme "${theme.name}" saved`);
       saved = true;
       modal.close();
@@ -2521,7 +2556,7 @@ class ThemeManager {
         localStorage.setItem('theme', theme.name);
         document.getElementById('ctb').textContent = 'Edit Theme';
         ThemeManager.applyAccentInk();
-        document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === theme.name));
+        ThemeManager.selectSwatch(theme.name);
         toast('Theme imported: ' + theme.name);
         imodal.close();
       } catch (e) { toast('Invalid theme JSON: ' + e.message); }
@@ -2726,7 +2761,7 @@ const ThemeSync = (() => {
       removed.forEach((n) => { if (!list().some((t) => t.name === n)) document.querySelector('.theme-grid')?.querySelector(`[data-theme="${n}"]`)?.remove(); });
       added.forEach((t) => { ThemeManager.applyCSS(t); ThemeManager.addToGrid(t); });
       const cur = localStorage.getItem('theme');
-      if (cur) document.querySelectorAll('.color-swatch').forEach((s) => { if (s.dataset.theme === cur) s.classList.add('active'); });
+      if (cur) ThemeManager.selectSwatch(cur);
       if (added.some(theme => theme.name === cur)) ThemeManager.applyAccentInk();
       if (newCount) toast(`${newCount} theme${newCount > 1 ? 's' : ''} restored from your account`);
     } catch (e) { console.warn('[theme-sync] UI refresh failed', e); }
@@ -4117,7 +4152,7 @@ window.YoutifyPlayer = {
     document.documentElement.setAttribute('data-theme', theme.name);
     ThemeManager.applyAccentInk();
     localStorage.setItem('theme', theme.name);
-    document.querySelectorAll('.color-swatch').forEach((s) => s.classList.toggle('active', s.dataset.theme === theme.name));
+    ThemeManager.selectSwatch(theme.name);
     toast('Theme added: ' + theme.name);
     return true;
   },
@@ -5631,8 +5666,12 @@ async function resetStats() {
 // ============================================================================
 
 class SettingsManager {
+  static opener = null;
+
   static open() {
-    document.getElementById('settingsModal').classList.add('active');
+    const modal = document.getElementById('settingsModal');
+    if (!modal.classList.contains('active')) SettingsManager.opener = document.activeElement;
+    modal.classList.add('active');
     window.ChristmasTheme?.ensureToggle();
     addLyricsSettings();
     [['apiKeyInput', apiKey], ['FileURLinput', svgfile], ['appTitleInput', document.title]].forEach(([id, value]) => {
@@ -5642,9 +5681,68 @@ class SettingsManager {
     const lyricsKeyInput = document.getElementById('lyricsApiKey');
     if (lyricsKeyInput && lyricsManager) lyricsKeyInput.value = lyricsManager.getApiKey();
     if (window.indexedDBManager?.refresh) setTimeout(() => window.indexedDBManager.refresh(), 100);
+    modal.querySelector('.settings-tab[aria-selected="true"]')?.focus({ preventScroll: true });
   }
 
-  static close() { document.getElementById('settingsModal').classList.remove('active'); }
+  static close() {
+    document.getElementById('settingsModal').classList.remove('active');
+    SettingsManager.opener?.focus({ preventScroll: true });
+    SettingsManager.opener = null;
+  }
+
+  static selectSection(tab, modal) {
+    if (tab.getAttribute('aria-selected') === 'true') return;
+    modal.querySelectorAll('.settings-tab').forEach(item => {
+      const selected = item === tab;
+      item.setAttribute('aria-selected', String(selected));
+      item.tabIndex = selected ? 0 : -1;
+      document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
+    });
+    modal.querySelector('.settings-content').scrollTop = 0;
+  }
+
+  static handleKeydown(event, modal) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      SettingsManager.close();
+      return;
+    }
+
+    const current = event.target.closest('.settings-tab');
+    if (current) {
+      const tabs = [...modal.querySelectorAll('.settings-tab')];
+      const index = tabs.indexOf(current);
+      let next;
+      switch (event.key) {
+        case 'ArrowRight':
+        case 'ArrowDown': next = (index + 1) % tabs.length; break;
+        case 'ArrowLeft':
+        case 'ArrowUp': next = (index + tabs.length - 1) % tabs.length; break;
+        case 'Home': next = 0; break;
+        case 'End': next = tabs.length - 1; break;
+        default: break;
+      }
+      if (next !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        SettingsManager.selectSection(tabs[next], modal);
+        tabs[next].focus();
+      }
+    }
+
+    if (event.key === 'Tab') {
+      const controls = [...modal.querySelectorAll('button, input, summary, a[href]')]
+        .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+      const first = controls[0];
+      const last = controls.at(-1);
+      const target = event.shiftKey && event.target === first ? last : !event.shiftKey && event.target === last ? first : null;
+      if (target) {
+        event.preventDefault();
+        target.focus();
+      }
+    }
+  }
 
   static saveApiKey() {
     apiKey = document.getElementById('apiKeyInput').value.trim();
@@ -9260,7 +9358,13 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-document.getElementById('settingsModal').addEventListener('click', (e) => { if (e.target.id === 'settingsModal') SettingsManager.close(); });
+const settingsOverlay = document.getElementById('settingsModal');
+settingsOverlay.addEventListener('click', event => {
+  if (event.target === settingsOverlay) SettingsManager.close();
+  const tab = event.target.closest('.settings-tab');
+  if (tab) SettingsManager.selectSection(tab, settingsOverlay);
+});
+settingsOverlay.addEventListener('keydown', event => SettingsManager.handleKeydown(event, settingsOverlay));
 
 document.getElementById('searchInput')?.addEventListener('input', (e) => {
   const q = e.target.value.toLowerCase().trim();
@@ -9280,6 +9384,7 @@ loadFavoriteTracks();
 
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme && savedTheme !== 'default') document.documentElement.setAttribute('data-theme', savedTheme);
+ThemeManager.selectSwatch(savedTheme || 'default');
 ThemeManager.loadCustom();
 if (ThemeManager.usesLayoutTheme()) ThemeManager.resetToDefault(false);
 ThemeManager.applyAccentInk();
@@ -9577,7 +9682,7 @@ function getAABTheme() {
     document.documentElement.style.removeProperty('--glass-tint');
     document.documentElement.setAttribute('data-theme', theme.name);
     ThemeManager.applyAccentInk();
-    document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === theme.name));
+    ThemeManager.selectSwatch(theme.name);
     toast('Theme imported: ' + theme.name);
 }
 
@@ -18254,12 +18359,12 @@ class WinterSnakeGame {
   document.body.append(decor);
   function ensureToggle(){
     if(document.getElementById('christmasBtn'))return;
-    const anchor=document.getElementById('performanceModeBtn')?.closest('.setting-toggle-row');
-    if(!anchor)return;
+    const group=document.getElementById('settingsAppearanceToggles');
+    if(!group)return;
     const row=document.createElement('div');row.className='setting-toggle-row';
     const label=document.createElement('span');label.className='setting-toggle-label';label.id='christmasToggleLabel';label.textContent='🎄 Christmas Theme';
     const button=document.createElement('button');button.id='christmasBtn';button.className='toggle-slider';button.type='button';button.setAttribute('role','switch');button.setAttribute('aria-labelledby',label.id);button.setAttribute('aria-checked',String(enabled));
-    const thumb=document.createElement('span');thumb.className='slider-thumb';button.append(thumb);button.addEventListener('click',()=>setEnabled(!enabled));row.append(label,button);anchor.after(row);
+    const thumb=document.createElement('span');thumb.className='slider-thumb';button.append(thumb);button.addEventListener('click',()=>setEnabled(!enabled));row.append(label,button);group.append(row);
   }
   function apply(){
     root.classList.toggle('christmas',enabled);

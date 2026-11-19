@@ -525,17 +525,277 @@ body.big-lyrics-layout.performance-mode :is(.modal, .lyrics-panel, .effects-pane
 body.big-lyrics-layout :is(.modal-overlay, #changelogModal) {
   background: var(--layout-scrim);
 }
-body.big-lyrics-layout #settingsModal .modal {
-  padding: clamp(16px, 3vw, 28px);
-  border-radius: 24px;
-}
 body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
   background: var(--layout-inset-surface) !important;
   border: 1px solid var(--layout-stroke) !important;
   border-radius: 15px;
   box-shadow: none !important;
 }
-body.big-lyrics-layout #settingsModal .settings-section-title { color: var(--layout-ink); }
+body.big-lyrics-layout #settingsModal {
+  padding: clamp(10px, 3vw, 36px);
+  background: color-mix(in srgb, var(--layout-scrim) 82%, transparent);
+  backdrop-filter: blur(9px) saturate(115%);
+}
+body.big-lyrics-layout #settingsModal .settings-dialog {
+  --settings-accent: var(--layout-focus, var(--accent));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 850px);
+  max-width: none;
+  height: min(610px, calc(100dvh - 2 * clamp(10px, 3vw, 36px)));
+  max-height: none;
+  padding: 0;
+  border-radius: 26px;
+  overflow: hidden;
+  background: var(--layout-chat-surface, var(--layout-surface)) !important;
+}
+body.big-lyrics-layout.performance-mode #settingsModal { backdrop-filter: none; }
+body.big-lyrics-layout.performance-mode #settingsModal .settings-dialog {
+  background: var(--layout-solid) !important;
+}
+#settingsModal .settings-dialog::before { content: none; }
+#settingsModal .settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--layout-stroke);
+}
+#settingsModal .settings-header h2 {
+  margin: 0;
+  color: var(--layout-ink);
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  font-weight: 400;
+  line-height: 1.1;
+}
+#settingsModal .modal-close {
+  flex: none;
+  border-radius: 50%;
+  border-color: var(--layout-edge);
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface);
+  transform: none;
+}
+#settingsModal .modal-close:hover { background: var(--layout-active); }
+#settingsModal .modal-close svg { width: 18px; height: 18px; }
+#settingsModal .settings-workspace {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  min-height: 0;
+}
+#settingsModal .settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  padding: 14px 10px;
+  border-inline-end: 1px solid var(--layout-stroke);
+  background: color-mix(in srgb, var(--layout-inset-surface) 60%, transparent);
+}
+#settingsModal .settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 43px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--layout-muted);
+  font: inherit;
+  font-size: .92rem;
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#settingsModal .settings-tab svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+#settingsModal .settings-tab:is(:hover, [aria-selected="true"]) {
+  background: var(--layout-hover);
+  color: var(--layout-ink);
+}
+#settingsModal .settings-tab[aria-selected="true"] {
+  background: var(--layout-active);
+  border-color: var(--layout-edge);
+}
+#settingsModal .settings-content {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px clamp(12px, 3vw, 26px) 22px;
+  scrollbar-width: thin;
+}
+#settingsModal .settings-page[hidden] { display: none; }
+#settingsModal .settings-page {
+  display: grid;
+  gap: 12px;
+}
+#settingsModal .settings-page > h3 {
+  margin: 0;
+  color: var(--layout-ink);
+  font-size: 1.35rem;
+  font-weight: 400;
+}
+body.big-lyrics-layout #settingsModal .settings-card {
+  margin: 0;
+  padding: 14px;
+}
+#settingsModal .settings-card h4 {
+  margin: 0 0 9px;
+  color: var(--layout-ink);
+  font-size: 1rem;
+  font-weight: 400;
+}
+#settingsModal .settings-card p {
+  margin: 0;
+  color: var(--layout-muted);
+  font-size: .88rem;
+  line-height: 1.45;
+}
+#settingsModal .settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+#settingsModal .settings-actions .btn { min-height: 37px; border-radius: 12px; }
+#settingsModal .settings-card .setting-toggle-row {
+  padding-block: 9px;
+  border-color: var(--layout-stroke);
+}
+#settingsModal .settings-card .setting-toggle-row:first-child { padding-top: 0; }
+#settingsModal .settings-card .setting-toggle-row:last-child { padding-bottom: 0; }
+#settingsModal .setting-toggle-label { color: var(--layout-ink); }
+#settingsModal .setting-toggle-label small {
+  display: block;
+  margin-top: 3px;
+  color: var(--layout-muted);
+  font-size: .79rem;
+}
+#settingsModal .toggle-slider {
+  border-color: var(--layout-edge);
+  background: var(--layout-hover);
+}
+#settingsModal .toggle-slider[aria-checked="true"] {
+  background: var(--layout-control);
+  border-color: var(--layout-control);
+}
+#settingsModal .toggle-slider[aria-checked="true"] .slider-thumb {
+  background: var(--layout-control-ink);
+}
+#settingsModal :is(button, input, summary, a):focus-visible {
+  outline: 2px solid var(--settings-accent);
+  outline-offset: 2px;
+}
+#settingsModal #themeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 106px), 1fr));
+  gap: 8px;
+  margin: 0;
+}
+#settingsModal .color-swatch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--layout-stroke);
+  border-radius: 12px;
+  box-shadow: none;
+  color: var(--layout-ink);
+  background: transparent;
+  font: inherit;
+  font-size: .79rem;
+  line-height: 1.2;
+  text-align: start;
+  transform: none;
+}
+#settingsModal .color-swatch:hover { background: var(--layout-hover); }
+#settingsModal .color-swatch.active {
+  border-color: var(--settings-accent);
+  background: var(--layout-active);
+}
+#settingsModal .color-swatch::after { content: none; }
+#settingsModal .settings-swatch-check { display: none; }
+#settingsModal .color-swatch.active .settings-swatch-check {
+  display: block;
+  padding-inline: 3px;
+  color: var(--settings-accent);
+}
+#settingsModal .settings-swatch-preview {
+  grid-column: 1 / -1;
+  height: 29px;
+  border-radius: 7px;
+  border: 1px solid var(--layout-stroke);
+  background: linear-gradient(120deg,
+    var(--swatch-base, var(--bg-primary)) 0% 44%,
+    var(--swatch-mid, var(--bg-secondary)) 45% 68%,
+    var(--swatch-accent, var(--accent)) 69%);
+}
+#settingsModal .settings-swatch-label {
+  overflow: hidden;
+  padding-inline-start: 3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#settingsModal .settings-key .form-label {
+  margin: 12px 0 6px;
+  color: var(--layout-ink);
+  text-transform: none;
+  letter-spacing: normal;
+}
+#settingsModal .settings-key .form-input {
+  width: 100%;
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface);
+  border: 1px solid var(--layout-edge);
+  box-shadow: none;
+}
+#settingsModal .settings-key .form-input::placeholder { color: var(--layout-muted); }
+#settingsModal .settings-api-help summary { color: var(--layout-ink); cursor: pointer; }
+#settingsModal .settings-api-help ul {
+  display: grid;
+  gap: 5px;
+  margin: 9px 0 0;
+  padding-inline-start: 18px;
+  font-size: .88rem;
+}
+#settingsModal .settings-api-help a { color: var(--settings-accent); }
+@media (max-width: 650px) {
+  #settingsModal .settings-header { padding: 12px 14px; }
+  #settingsModal .settings-workspace {
+    grid-template: auto minmax(0, 1fr) / minmax(0, 1fr);
+  }
+  #settingsModal .settings-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    padding: 6px;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--layout-stroke);
+  }
+  #settingsModal .settings-tab {
+    justify-content: center;
+    min-height: 38px;
+    padding: 4px;
+    font-size: .82rem;
+  }
+  #settingsModal .settings-tab svg { display: none; }
+  #settingsModal .settings-content { padding-top: 12px; }
+  #settingsModal .settings-card { min-width: 0; }
+  #settingsModal #themeGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #settingsModal, #settingsModal .settings-dialog { animation: none; }
+}
 body.big-lyrics-layout #app > .yc-workspace[hidden],
 body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #app > #mainContent { display: none !important; }
 body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #app { margin-right: 0; }
@@ -3500,88 +3760,133 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 
 <!-- Settings Modal -->
 <div class="modal-overlay" id="settingsModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2 class="modal-title">Settings</h2>
-      <button class="modal-close" onclick="closeSettings()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <line x1="18" y1="6" x2="6" y2="18"></line>
-  <line x1="6" y1="6" x2="18" y2="18"></line>
-</svg></button>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-section-title">Theme</div>
-      <div class="theme-grid" id="themeGrid">
-        <div class="color-swatch" data-theme="dark" style="background:#201f1f" onclick="changeTheme('dark')" title="Dark"></div>
-        <div class="color-swatch active" data-theme="default" style="background:#ff6b9d" onclick="changeTheme('default')" title="Default"></div>
-        <div class="color-swatch" data-theme="darkgreen" style="background:#4ade80" onclick="changeTheme('darkgreen')" title="Dark Green"></div>
-        <div class="color-swatch" data-theme="coffee" style="background:#d4a574" onclick="changeTheme('coffee')" title="Coffee"></div>
-        <div class="color-swatch" data-theme="og" style="background:#3b82f6" onclick="changeTheme('og')" title="OG Blue"></div>
-        <div class="color-swatch" data-theme="violet" style="background:#a78bfa" onclick="changeTheme('violet')" title="Violet"></div>
-        <div class="color-swatch" data-theme="red" style="background:#fa8b8b" onclick="changeTheme('red')" title="Red"></div>
-        <div class="color-swatch" data-theme="darkred" style="background:#f63b3b" onclick="changeTheme('darkred')" title="Dark Red"></div>
+  <div class="modal settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <header class="settings-header">
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="modal-close" type="button" onclick="closeSettings()" aria-label="Close settings" title="Close settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div class="settings-workspace">
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-tab" role="tab" id="settings-tab-appearance" aria-controls="settings-appearance" aria-selected="true" tabindex="0">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+          Appearance
+        </button>
+        <button type="button" class="settings-tab" role="tab" id="settings-tab-player" aria-controls="settings-player" aria-selected="false" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/><path d="M8 5v4m8 1v4m-5 1v4" stroke-width="2.6"/></svg>
+          Player
+        </button>
+        <button type="button" class="settings-tab" role="tab" id="settings-tab-chat" aria-controls="settings-chat" aria-selected="false" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a8 8 0 0 1-8 8 8.2 8.2 0 0 1-3.5-.8L4 20l1.3-4a8 8 0 1 1 14.7-4.5Z"/></svg>
+          Chat
+        </button>
+        <button type="button" class="settings-tab" role="tab" id="settings-tab-api" aria-controls="settings-api" aria-selected="false" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l-3.5 3.5H3V16l5.2-5.2a4.6 4.6 0 1 1 3 3.1L9 16.1"/><circle cx="14.5" cy="8.5" r=".7" fill="currentColor"/></svg>
+          API Keys
+        </button>
       </div>
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn secondary" onclick="openThemeMaker()" id="ctb">Create Theme</button>
-        <button class="btn secondary" onclick="importThemeUI()">Import Theme</button>
+      <div class="settings-content">
+        <section class="settings-page" id="settings-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance">
+          <h3>Appearance</h3>
+          <div class="settings-card settings-section">
+            <h4>Theme</h4>
+            <div class="theme-grid" id="themeGrid">
+              <button type="button" class="color-swatch active" data-theme="default" aria-pressed="true" style="--swatch-base:#10141d;--swatch-mid:#334358;--swatch-accent:#b9cce4" onclick="changeTheme('default')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Default</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="dark" aria-pressed="false" onclick="changeTheme('dark')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Dark</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="darkgreen" aria-pressed="false" onclick="changeTheme('darkgreen')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Dark Green</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="coffee" aria-pressed="false" onclick="changeTheme('coffee')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Coffee</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="og" aria-pressed="false" onclick="changeTheme('og')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">OG Blue</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="violet" aria-pressed="false" onclick="changeTheme('violet')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Violet</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="red" aria-pressed="false" onclick="changeTheme('red')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Red</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+              <button type="button" class="color-swatch" data-theme="darkred" aria-pressed="false" onclick="changeTheme('darkred')">
+                <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Dark Red</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
+              </button>
+            </div>
+            <div class="settings-actions">
+              <button class="btn secondary" type="button" onclick="openThemeMaker()" id="ctb">Create Theme</button>
+              <button class="btn secondary" type="button" onclick="importThemeUI()">Import Theme</button>
+            </div>
+          </div>
+          <div class="settings-card settings-section">
+            <h4>Display</h4>
+            <div id="settingsAppearanceToggles">
+            <div class="setting-toggle-row">
+              <span class="setting-toggle-label"><span id="aabLabel">Album Art Background</span></span>
+              <button class="toggle-slider" id="aab" type="button" role="switch" aria-labelledby="aabLabel" aria-checked="false" onclick="noAlbumArtBackground()">
+                <span class="slider-thumb"></span>
+              </button>
+            </div>
+            <div class="setting-toggle-row">
+              <span class="setting-toggle-label"><span id="sidebarPosBtnLabel">Sidebar at Bottom</span></span>
+              <button class="toggle-slider" id="sidebarPosBtn" type="button" role="switch" aria-labelledby="sidebarPosBtnLabel" aria-checked="false" onclick="toggleSidebarPosition()">
+                <span class="slider-thumb"></span>
+              </button>
+            </div>
+            </div>
+          </div>
+        </section>
+        <section class="settings-page" id="settings-player" role="tabpanel" aria-labelledby="settings-tab-player" hidden>
+          <h3>Player</h3>
+          <div class="settings-card settings-section">
+            <div class="setting-toggle-row">
+              <span class="setting-toggle-label"><span id="performanceModeBtnLabel">Performance Mode</span><small>Reduce visual effects to lighten GPU usage.</small></span>
+              <button class="toggle-slider" id="performanceModeBtn" type="button" role="switch" aria-labelledby="performanceModeBtnLabel" aria-checked="false" onclick="togglePerformanceMode()">
+                <span class="slider-thumb"></span>
+              </button>
+            </div>
+          </div>
+        </section>
+        <section class="settings-page" id="settings-chat" role="tabpanel" aria-labelledby="settings-tab-chat" hidden>
+          <h3>Chat</h3>
+          <div class="settings-card settings-section">
+            <div class="setting-toggle-row">
+              <span class="setting-toggle-label"><span id="classicChatLabel">Use Classic Chat</span><small>Open chat in the original sidebar.</small></span>
+              <button class="toggle-slider" id="classicChatToggle" type="button" role="switch" aria-labelledby="classicChatLabel" aria-checked="false">
+                <span class="slider-thumb"></span>
+              </button>
+            </div>
+          </div>
+        </section>
+        <section class="settings-page" id="settings-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden>
+          <h3>API Keys</h3>
+          <div class="settings-card settings-section settings-key">
+            <p>Youtify uses this key for YouTube search and additional lyrics providers.</p>
+            <label class="form-label" for="apiKeyInput">RapidAPI key</label>
+            <input type="text" class="form-input" id="apiKeyInput" placeholder="Enter your RapidAPI key" autocomplete="off" spellcheck="false">
+            <div class="settings-actions">
+              <button class="btn primary" type="button" onclick="saveApiKey()">Save Key</button>
+              <button class="btn secondary" type="button" onclick="resetApiKey()">Reset</button>
+            </div>
+          </div>
+          <details class="settings-card settings-section settings-api-help">
+            <summary>Required RapidAPI subscriptions</summary>
+            <ul>
+              <li><a href="https://rapidapi.com/DataFanatic/api/spotify-scraper" target="_blank" rel="noopener">Spotify Lyrics API</a></li>
+              <li><a href="https://rapidapi.com/nguyenmanhict-MuTUtGWD7K/api/spotify-web-api3/" target="_blank" rel="noopener">Musix Lyrics API</a></li>
+              <li><a href="https://rapidapi.com/Glavier/api/genius-song-lyrics1" target="_blank" rel="noopener">Genius Song Lyrics API</a></li>
+              <li><a href="https://rapidapi.com/omarmhaimdat/api/youtube-v2" target="_blank" rel="noopener">Youtube Search API</a></li>
+            </ul>
+          </details>
+        </section>
       </div>
     </div>
-
-    <div class="settings-section">
-      <div class="settings-section-title">Misc</div>
-      <div class="form-group" style="margin-top:12px;">
-        <div class="setting-toggle-row">
-          <span class="setting-toggle-label">Album Art Background</span>
-          <button class="toggle-slider" id="aab" type="button" role="switch" aria-checked="false" onclick="noAlbumArtBackground()">
-            <span class="slider-thumb"></span>
-          </button>
-        </div>
-        <div class="setting-toggle-row">
-          <span class="setting-toggle-label">Performance Mode</span>
-          <button class="toggle-slider" id="performanceModeBtn" type="button" role="switch" aria-checked="false" onclick="togglePerformanceMode()">
-            <span class="slider-thumb"></span>
-          </button>
-        </div>
-        <div class="setting-toggle-row">
-          <span class="setting-toggle-label" id="classicChatLabel">Use Classic Chat</span>
-          <button class="toggle-slider" id="classicChatToggle" type="button" role="switch" aria-labelledby="classicChatLabel" aria-checked="false">
-            <span class="slider-thumb"></span>
-          </button>
-        </div>
-        <div class="setting-toggle-row">
-          <span class="setting-toggle-label">Sidebar at Bottom</span>
-          <button class="toggle-slider" id="sidebarPosBtn" type="button" role="switch" aria-checked="false" onclick="toggleSidebarPosition()">
-            <span class="slider-thumb"></span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-section-title">YouTube API and Lyrics API Key</div>
-      <div class="form-group">
-        <input type="text" class="form-input" id="apiKeyInput" placeholder="Enter your RapidAPI key...">
-        <div style="margin-top:8px;display:flex;gap:8px">
-          <button class="btn secondary" onclick="saveApiKey()">Save Key</button>
-          <button class="btn secondary" onclick="resetApiKey()">Reset</button>
-        </div>
-      </div>
-    <div class="settings-section-title"></div>
-              <div style="margin-top:12px;font-size:12px;color:var(--text-muted);line-height:1.5;">
-      <strong>How to get an API key:</strong><br>
-      1. Go to <a href="https://rapidapi.com/" target="_blank" style="color:var(--accent)">rapidapi.com</a> and subscribe to:<br>
-       • <a href="https://rapidapi.com/DataFanatic/api/spotify-scraper" target="_blank" style="color:var(--accent)">Spotify Lyrics API</a><br>
-       • <a href="https://rapidapi.com/nguyenmanhict-MuTUtGWD7K/api/spotify-web-api3/" target="_blank" style="color:var(--accent)">Musix Lyrics API</a><br>
-       • <a href="https://rapidapi.com/Glavier/api/genius-song-lyrics1" target="_blank" style="color:var(--accent)">Genius Song Lyrics API</a><br>
-       • <a href="https://rapidapi.com/omarmhaimdat/api/youtube-v2" target="_blank" style="color:var(--accent)">Youtube Search API</a><br>
-    </div>
-    <div class="settings-section-title"></div>
-</div>
-
-
   </div>
 </div>
-
 
 
 <!-- Toast Notification -->

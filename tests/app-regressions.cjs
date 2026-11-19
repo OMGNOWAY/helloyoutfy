@@ -117,7 +117,7 @@ await check('settings open without mounting the removed lyrics section',()=>{
  const originalQuery=document.querySelector,container=new Element();let inserted;
  container.insertBefore=(node)=>{inserted=node};document.querySelector=selector=>selector==='#settingsModal .modal'?container:null;
  Element.prototype.querySelector=()=>null;
- const modal=new Element();modal.classList.add=()=>{};elements.set('settingsModal',modal);
+ const modal=new Element();modal.classList.add=()=>{};modal.classList.contains=()=>false;elements.set('settingsModal',modal);
  context.svgfile='';context.ensureHalloweenToggle=()=>{};context.lyricsManager=lyricManager();context.lyricsManager.apiKey='sensitive-key';
  vm.runInContext(section('function addLyricsSettings() {','function saveLyricsKey()'),context);
  vm.runInContext(section('class SettingsManager {','// Legacy wrappers')+'\nthis.SettingsManager=SettingsManager;',context);
