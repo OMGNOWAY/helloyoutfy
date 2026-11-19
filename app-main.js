@@ -10437,6 +10437,16 @@ const BigLyricsMorph = (() => {
       !stage.classList.contains('show-queue');
   }
 
+  function miniHasLyrics() {
+    const host = $('playerEmbedLyricsContent');
+    if (!host) return false;
+    const am = lyricsManager?.amEl;
+    const root = lyricsManager?.amActive && am?.parentElement === host ? am.shadowRoot : host;
+    // If the song is still loading or missing lyrics, use the native instant
+    // opening. Never animate a blank area into a fullscreen lyric viewport.
+    return !!root?.querySelector('.lyrics-line:not(.lyrics-footer)');
+  }
+
   function miniReady() {
     const mini = $('playerEmbed');
     if (!miniLyricsSelected() || !mini || getComputedStyle(mini).display === 'none') return false;
@@ -10861,7 +10871,8 @@ const BigLyricsMorph = (() => {
     clear();
     if (FullLyricsPlayer.isOpen()) return;
     lastMini = null;
-    if (!enabledForTransition() || !miniReady() || !supportsFullLayout() || !currentTrack()) {
+    if (!enabledForTransition() || !miniReady() || !miniHasLyrics() ||
+        !supportsFullLayout() || !currentTrack()) {
       FullLyricsPlayer.open();
       return;
     }
@@ -10904,7 +10915,15 @@ const BigLyricsMorph = (() => {
       lastMini = null;
       return;
     }
-    beginClosing(before, full);
+    try {
+      beginClosing(before, full);
+    } catch (error) {
+      console.warn('Big Lyrics exit animation failed safely:', error);
+      clear();
+      if (FullLyricsPlayer.isOpen()) FullLyricsPlayer.close();
+      if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
+      lastMini = null;
+    }
   }
 
   function setEnabled(value) {
