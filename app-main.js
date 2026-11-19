@@ -10536,16 +10536,13 @@ const FullLyricsPlayer = (() => {
   };
 })();
 
-// Experimental shared-element transition between the embedded mini lyrics
-// and the fullscreen lyrics viewport. We only animate a lightweight, inert
-// visual copy — the real am-lyrics element stays with LyricsManager.
+// Native shared-element transition between the Big Lyrics app layout's
+// mini player and fullscreen lyrics. Active automatically in that layout
+// when browser support and visibility conditions allow it.
 const BigLyricsMorph = (() => {
-  const STORAGE_KEY = 'youtify_mini_lyrics_expand';
   const ROOT_CLASS = 'youtify-big-lyrics-view-transition';
-  let enabled = false;
   let active = null;
   let revision = 0;
-  try { enabled = localStorage.getItem(STORAGE_KEY) === 'on'; } catch {}
 
   const $ = id => document.getElementById(id);
 
@@ -10563,8 +10560,7 @@ const BigLyricsMorph = (() => {
   ];
 
   function supported() {
-    return enabled &&
-      document.body.classList.contains('big-lyrics-layout') &&
+    return document.body.classList.contains('big-lyrics-layout') &&
       !document.body.classList.contains('performance-mode') &&
       window.innerWidth > 860 &&
       !window.matchMedia('(prefers-reduced-motion: reduce)').matches &&
@@ -10693,23 +10689,11 @@ const BigLyricsMorph = (() => {
   const open = () => navigate(true);
   const close = () => navigate(false);
 
-  function setEnabled(value) {
-    enabled = !!value;
-    try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch {}
-    if (!enabled) cancel();
-    $('miniLyricsExpandToggle')?.setAttribute('aria-checked', String(enabled));
-  }
-
   window.addEventListener('resize', cancel);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) cancel();
   });
   document.addEventListener('DOMContentLoaded', () => {
-    const button = $('miniLyricsExpandToggle');
-    if (button) {
-      button.setAttribute('aria-checked', String(enabled));
-      button.addEventListener('click', () => setEnabled(!enabled));
-    }
     for (const id of ['fullLyricsSwapSide', 'fullLyricsQueueButton', 'fullLyricsShowLyrics']) {
       $(id)?.addEventListener('click', cancel, true);
     }
@@ -10718,7 +10702,7 @@ const BigLyricsMorph = (() => {
     $('audioPlayer2')?.addEventListener('loadstart', cancel);
   });
 
-  return { open, close, setEnabled };
+  return { open, close };
 })();
 
 function openFullLyricsPlayer() {
