@@ -915,46 +915,66 @@ body.big-lyrics-layout #player .player-right .volume-slider {
 }
 
 
-/* Big Lyrics desktop: spacious player groups and a mini-lyrics panel whose
-   bottom edge meets the floating navigation dock's bottom edge. */
+/* Big Lyrics desktop: keep all player sections inside the available height.
+   Artwork scales with viewport height instead of making the full player scroll. */
 @media (min-width: 861px) {
   body.big-lyrics-layout #app #player {
-    /* The dock and the mini lyrics still share the same bottom edge. */
+    /* Keep the mini lyrics bottom aligned with the floating dock. */
     height: calc(100% + 102px - clamp(12px, 2.5vh, 28px)) !important;
-    /* Make cover art a little bigger but leave height for real lyrics. */
-    --layout-cover: min(100%, 440px, max(210px, calc(100dvh - 500px)));
+    --layout-cover: min(100%, 440px, max(128px, calc(100dvh - 635px)));
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
     min-height: 0;
-    gap: clamp(13px, 1.7vh, 20px);
+    gap: clamp(9px, 1.2vh, 15px);
   }
   body.big-lyrics-layout #player .player-track {
-    gap: clamp(16px, 2.2vh, 26px);
+    flex: 0 0 auto !important;
+    min-height: 0;
+    gap: clamp(8px, 1.2vh, 15px);
   }
   body.big-lyrics-layout #player #playerTitle {
-    margin-bottom: 7px;
+    font-size: clamp(1.1rem, min(2.3vw, 3vh), 2.3rem) !important;
+    line-height: 1.12;
+    margin-bottom: clamp(3px, .7vh, 7px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  body.big-lyrics-layout #player #playerArtist {
+    font-size: clamp(.8rem, min(1.35vw, 1.9vh), 1.1rem) !important;
   }
   body.big-lyrics-layout #player .player-controls-section {
-    gap: 15px;
+    flex: 0 0 auto !important;
+    gap: clamp(7px, 1.1vh, 13px);
   }
   body.big-lyrics-layout #player .player-right {
-    gap: clamp(12px, 1.25vw, 18px) !important;
+    flex: 0 0 auto !important;
+    gap: clamp(9px, 1.15vw, 16px) !important;
   }
-  /* The old 360px maximum and 160px flex basis compressed the lyrics.
-     Reserve a readable panel first, then let it use any remaining space. */
   body.big-lyrics-layout #player #playerEmbed {
-    flex: 1 1 240px !important;
-    min-height: clamp(195px, 23dvh, 270px) !important;
+    order: 4;
+    flex: 1 1 0px !important;
+    min-height: clamp(130px, 18dvh, 220px) !important;
     max-height: none !important;
+    margin-top: 0 !important;
+    overflow: hidden;
   }
   body.big-lyrics-layout #player #playerEmbedStage {
+    min-height: 0;
     height: 100%;
   }
 }
-@media (min-width: 861px) and (max-height: 740px) {
+@media (min-width: 861px) and (max-height: 760px) {
   body.big-lyrics-layout #app #player {
-    --layout-cover: min(100%, max(180px, calc(100dvh - 510px)));
+    --layout-cover: min(100%, 320px, max(105px, calc(100dvh - 585px)));
+    gap: 7px;
   }
+  body.big-lyrics-layout #player .player-track { gap: 6px; }
+  body.big-lyrics-layout #player .player-controls-section { gap: 5px; }
+  body.big-lyrics-layout #player .player-right { gap: 6px !important; }
   body.big-lyrics-layout #player #playerEmbed {
-    min-height: 180px !important;
+    min-height: 110px !important;
   }
 }
 
