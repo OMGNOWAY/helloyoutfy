@@ -78,7 +78,7 @@ function setup(options = {}) {
   };
   const documentElement = put('html');
   const body = put('body');
-  if (!options.classic) body.classList.add('big-lyrics-layout');
+  if (!options.layoutMissing) body.classList.add('big-lyrics-layout');
   if (options.performance) body.classList.add('performance-mode');
   const overlay = put('fullLyricsPlayer');
   overlay.dataset = { layout: options.minimal ? 'minimal' : 'classic' };
@@ -197,7 +197,7 @@ async function check(name, run) {
     assert(t.movedBack > 0);
   });
   for (const [name, options] of Object.entries({
-    classic: { classic:true }, unsupported: { unsupported:true },
+    layoutMissing: { layoutMissing:true }, unsupported: { unsupported:true },
     minimal: { minimal:true }, mobile: { mobile:true },
     reducedMotion: { reduceMotion:true }, performance: { performance:true },
     eqSelected: { eqSelected:true }, noLyrics: { noLyrics:true },
@@ -227,18 +227,6 @@ async function check(name, run) {
     t.controller.open();assert.equal(t.calls,1);t.flush();
     await Promise.resolve();await Promise.resolve();
     assert(t.open);assert(t.clean());
-  });
-  await check('changing to Classic mid-animation cancels transition', async () => {
-    const t=setup();
-    t.controller.open();
-    t.doc.body.classList.remove('big-lyrics-layout');
-    t.doc.dispatch('youtify:app-layout-change');
-    t.flush();
-    await Promise.resolve();await Promise.resolve();
-    assert(!t.open);assert(t.clean());assert(t.skipped>=1);
-    t.controller.open();t.flush();
-    await Promise.resolve();
-    assert(t.open);assert.equal(t.calls,1);
   });
   await check('album side change cancels active transition', async () => {
     const t=setup();t.controller.open();t.elements.get('fullLyricsSwapSide').dispatch('click');t.flush();

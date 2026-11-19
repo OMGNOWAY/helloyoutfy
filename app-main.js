@@ -6,7 +6,6 @@ const CHANGELOG_DATA = {
     `The app should be less laggy now..! (<(you can always turn on performance mode if its laggy)>)`,
     `Added settings page to the big lyrics`,
     `Fixed the volume and song progress sliders (<(so they actually slide now)>)`,
-    `Thats it! (<(keep in mind that this new ui is still in beta, so if you want to go back to the old one you can.)>)`
   ],
   "Release 1.5": [
     `Redesigned the big lyrics view with an updated layout and visuals`
@@ -9270,6 +9269,7 @@ document.getElementById('searchInput')?.addEventListener('input', (e) => {
 // INITIALIZATION
 // ============================================================================
 
+document.body.classList.add('big-lyrics-layout');
 PlayerController.updateVolumeUI();
 audio.volume = audio2.volume = currentVolume;
 
@@ -9279,6 +9279,7 @@ loadFavoriteTracks();
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme && savedTheme !== 'default') document.documentElement.setAttribute('data-theme', savedTheme);
 ThemeManager.loadCustom();
+if (ThemeManager.usesLayoutTheme()) ThemeManager.resetToDefault(false);
 ThemeManager.applyAccentInk();
 
 const savedTitle = localStorage.getItem('youtifiy_title');
@@ -10791,7 +10792,6 @@ const BigLyricsMorph = (() => {
   const close = () => navigate(false);
 
   window.addEventListener('resize', cancel);
-  document.addEventListener('youtify:app-layout-change', cancel);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) cancel();
   });
@@ -11099,14 +11099,13 @@ function handleEffectsButtonClick() {
 
 
 document.addEventListener('DOMContentLoaded', () => {
-  const select = document.getElementById('appLayoutSelect');
   const cover = document.getElementById('playerImg');
   const artwork = document.getElementById('bigLyricsLayoutArtwork');
   const canvas = document.getElementById('bigLyricsLayoutCanvas');
-  if (!select || !cover || !artwork || !canvas) return;
+  if (!cover || !artwork || !canvas) return;
 
   let background;
-  const isVisible = () => document.body.classList.contains('big-lyrics-layout') && !FullLyricsPlayer.isOpen();
+  const isVisible = () => !FullLyricsPlayer.isOpen();
   const syncBackground = () => {
     if (!isVisible()) {
       background?.sync();
@@ -11123,33 +11122,13 @@ document.addEventListener('DOMContentLoaded', () => {
     background.setArtwork(url);
   };
 
-  function applyLayout() {
-    const hadLayoutTheme = ThemeManager.usesLayoutTheme();
-    document.body.classList.toggle('big-lyrics-layout', select.value === 'big-lyrics');
-    const hasLayoutTheme = ThemeManager.usesLayoutTheme();
-    if (hasLayoutTheme && !hadLayoutTheme) ThemeManager.resetToDefault(false);
-    if (hadLayoutTheme && !hasLayoutTheme && albumArtBackground && queue[currentTrackIndex]) {
-      ThemeManager.applyAlbumColors(queue[currentTrackIndex]);
-    }
-    ThemeManager.applyAccentInk();
-    document.dispatchEvent(new Event('youtify:app-layout-change'));
-    syncBackground();
-  }
-
-  try {
-    if (localStorage.getItem('youtify_app_layout') === 'big-lyrics') select.value = 'big-lyrics';
-  } catch {}
-  select.addEventListener('change', () => {
-    try { localStorage.setItem('youtify_app_layout', select.value); } catch {}
-    applyLayout();
-  });
   artwork.addEventListener('load', () => { artwork.hidden = false; });
   new MutationObserver(syncBackground).observe(cover, { attributes: true, attributeFilter: ['src'] });
   new MutationObserver(syncBackground).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   for (const player of [audio, audio2]) {
     for (const event of ['play', 'pause', 'ended']) player.addEventListener(event, syncBackground);
   }
-  applyLayout();
+  syncBackground();
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -18066,7 +18045,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const slot = document.getElementById('sbSearchSlot');
   const main = document.getElementById('mainContent');
   if (!slot || !main) return;
-  const mq = window.matchMedia('(min-width: 861px)');
   const originalGetById = document.getElementById.bind(document);
   let searchBox = slot.querySelector('.search-container');
 
@@ -18100,28 +18078,14 @@ document.addEventListener("DOMContentLoaded", () => {
       header.style.removeProperty('display');
     }
 
-    if (mq.matches && !document.body.classList.contains('big-lyrics-layout')) {
-      if (searchBox && searchBox.parentElement !== slot) {
-        slot.replaceChildren(searchBox);
-      }
-      // Only hide on explicit non-library views, not because a song loaded.
-      slot.style.visibility = view === 'home' ? '' : 'hidden';
-    } else {
-      if (header && searchBox && searchBox.parentElement !== header) {
-        const redundant = header.querySelector('.search-container');
-        if (redundant && redundant !== searchBox) redundant.remove();
-        header.insertBefore(searchBox, header.firstChild);
-      }
-      slot.style.visibility = '';
+    if (header && searchBox && searchBox.parentElement !== header) {
+      header.insertBefore(searchBox, header.firstChild);
     }
   }
 
   new MutationObserver(sync).observe(main, {
     childList: true, subtree: true, attributes: true, attributeFilter: ['style']
   });
-  document.addEventListener('youtify:app-layout-change', sync);
-  if (mq.addEventListener) mq.addEventListener('change', sync);
-  else mq.addListener(sync);
   sync();
   setInterval(sync, 800);
 })();
