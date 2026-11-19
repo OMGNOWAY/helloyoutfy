@@ -10122,7 +10122,8 @@ const FullLyricsPlayer = (() => {
 
   function recenter() {
     const pane = $('fullLyricsContent');
-    if (!opened || !pane?.clientHeight) return;
+    if (!opened || !pane?.clientHeight ||
+        $('fullLyricsPlayer')?.classList.contains('big-lyrics-morph-lyrics-running')) return;
     pane.style.setProperty('--full-lyrics-edge-space', pane.clientHeight / 2 + 'px');
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
@@ -10418,6 +10419,8 @@ const BigLyricsMorph = (() => {
     rect.right > 0 && rect.bottom > 0 &&
     rect.left < window.innerWidth && rect.top < window.innerHeight;
   const layoutOn = () => document.body.classList.contains('big-lyrics-layout');
+  const currentTrack = () => queue?.[currentTrackIndex] || null;
+  const supportsFullLayout = () => $('fullLyricsPlayer')?.dataset.layout !== 'minimal';
 
   function enabledForTransition() {
     return enabled && layoutOn() &&
@@ -10434,11 +10437,27 @@ const BigLyricsMorph = (() => {
       !stage.classList.contains('show-queue');
   }
 
+  function miniHasLyrics() {
+    const host = $('playerEmbedLyricsContent');
+    if (!host) return false;
+    const am = lyricsManager?.amEl;
+    const root = lyricsManager?.amActive && am?.parentElement === host ? am.shadowRoot : host;
+    // If the song is still loading or missing lyrics, use the native instant
+    // opening. Never animate a blank area into a fullscreen lyric viewport.
+    return !!root?.querySelector('.lyrics-line:not(.lyrics-footer)');
+  }
+
   function miniReady() {
     const mini = $('playerEmbed');
-    return miniLyricsSelected() && !!mini &&
-      getComputedStyle(mini).display !== 'none' &&
-      withinViewport(mini.getBoundingClientRect());
+    if (!miniLyricsSelected() || !mini || getComputedStyle(mini).display === 'none') return false;
+    const r = mini.getBoundingClientRect();
+    if (!withinViewport(r)) return false;
+    // The mini panel needs to be substantially visible: off-screen or
+    // partially clipped elements produce ugly jumps when opening fullscreen.
+    const visibleWidth = Math.min(r.right, window.innerWidth) - Math.max(0, r.left);
+    const visibleHeight = Math.min(r.bottom, window.innerHeight) - Math.max(0, r.top);
+    return visibleWidth >= Math.min(120, r.width * .5) &&
+      visibleHeight >= Math.min(72, r.height * .6);
   }
 
   // Each pair follows actual DOM geometry, so swapping the album to the
@@ -10541,7 +10560,8 @@ const BigLyricsMorph = (() => {
     return {
       rect: { left: view.left, top: view.top, width: view.width, height: view.height },
       focusY: inside ? (lineRect.top + lineRect.bottom) / 2 : view.top + view.height / 2,
-      fontSize: Number.isFinite(fontSize) && fontSize > 0 ? fontSize : (fullscreen ? 40 : 17)
+      fontSize: Number.isFinite(fontSize) && fontSize > 0 ? fontSize : (fullscreen ? 40 : 17),
+      hasLyrics: lines.length > 0
     };
   }
 
@@ -10652,15 +10672,26 @@ const BigLyricsMorph = (() => {
     const state = active;
     if (!state) return;
     active = null;
+    const finishingClose = state.direction === 'close' && FullLyricsPlayer.isOpen();
+    // Finish the close in one paint: cancelling the fullscreen background
+    // animation otherwise restores the opaque background for a frame.
+    if (finishingClose) state.overlay?.classList.add('big-lyrics-morph-finalizing');
     if (state.raf) cancelAnimationFrame(state.raf);
-    for (const animation of state.animations) animation.cancel();
+    for (const animation of state.animations) {
+      try { animation.cancel(); } catch (error) { console.warn('Big Lyrics transition cleanup:', error); }
+    }
     for (const item of state.pieces) item.node.remove();
     state.overlay?.classList.remove('big-lyrics-morph-entering', 'big-lyrics-morph-lyrics-running', 'big-lyrics-morph-controls-running', 'big-lyrics-morph-exiting');
     document.body.classList.remove('big-lyrics-morph-closing');
-    // A close interrupted by Escape, toggling, resize, etc. must finish.
-    if (state.direction === 'close' && FullLyricsPlayer.isOpen()) {
+    if (finishingClose) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
+      lastMini = null;
+      // The closed overlay remains invisible under its normal CSS after
+      // the temporary no-transition guard is removed.
+      requestAnimationFrame(() => {
+        state.overlay?.classList.remove('big-lyrics-morph-finalizing');
+      });
     }
   }
 
@@ -10741,8 +10772,8 @@ const BigLyricsMorph = (() => {
     if (active !== state) return;
     const closing = state.direction === 'close';
     clear();
-    if (!closing) FullLyricsPlayer.recenter();
-    else lastMini = null;
+    if (!closing && FullLyricsPlayer.isOpen()) FullLyricsPlayer.recenter();
+    else if (closing) lastMini = null;
   }
 
   function beginOpening(before, mini) {
@@ -10760,8 +10791,16 @@ const BigLyricsMorph = (() => {
       if (active !== state) return;
       state.raf = requestAnimationFrame(() => {
         if (active !== state) return;
+        try {
         const full = lyricGeometry(true);
         const fullControls = controlsGeometry(true);
+        // The fullscreen minimal layout uses display:contents for its control
+        // group, so there's no rectangle to animate. Keep that view native.
+        if (!full?.hasLyrics || !fullControls || !supportsFullLayout() ||
+            currentTrack() !== lastMini?.track) {
+          finish(state);
+          return;
+        }
         const after = capture(true);
         const targets = new Map(after.map(item => [item.key, item]));
         const pending = [];
@@ -10772,7 +10811,11 @@ const BigLyricsMorph = (() => {
         }
         pending.push(moveLiveLyrics(state, mini, full, true));
         pending.push(moveLiveControls(state, lastMini?.controlsRect, fullControls, true));
-        Promise.all(pending).then(() => finish(state));
+        Promise.all(pending).then(() => finish(state), () => finish(state));
+        } catch (error) {
+          console.warn('Big Lyrics entrance animation failed safely:', error);
+          finish(state);
+        }
       });
     });
   }
@@ -10834,38 +10877,62 @@ const BigLyricsMorph = (() => {
 
   function open() {
     clear();
+    $('fullLyricsPlayer')?.classList.remove('big-lyrics-morph-finalizing');
     if (FullLyricsPlayer.isOpen()) return;
-    if (!enabledForTransition() || !miniReady()) {
+    lastMini = null;
+    if (!enabledForTransition() || !miniReady() || !miniHasLyrics() ||
+        !supportsFullLayout() || !currentTrack()) {
       FullLyricsPlayer.open();
       return;
     }
-    const before = capture(false);
-    const mini = lyricGeometry(false);
-    if (!before.length || !mini) { FullLyricsPlayer.open(); return; }
-    const controlsRect = controlsGeometry(false);
-    if (!controlsRect) { FullLyricsPlayer.open(); return; }
-    lastMini = { controls: before, controlsRect, lyrics: mini };
+    let before, mini, controlsRect;
+    try {
+      before = capture(false);
+      mini = lyricGeometry(false);
+      controlsRect = controlsGeometry(false);
+    } catch (error) {
+      console.warn('Big Lyrics mini layout not ready:', error);
+      FullLyricsPlayer.open();
+      return;
+    }
+    if (!before.length || !mini || !controlsRect) { FullLyricsPlayer.open(); return; }
+    lastMini = { controls: before, controlsRect, lyrics: mini, track: currentTrack() };
     beginOpening(before, mini);
   }
 
   function close() {
     clear();
     if (!FullLyricsPlayer.isOpen()) return;
-    if (!enabledForTransition() || !miniLyricsSelected() || !lastMini?.lyrics || !lastMini?.controlsRect) {
+    if (!enabledForTransition() || !miniLyricsSelected() || !supportsFullLayout() ||
+        !lastMini?.lyrics || !lastMini?.controlsRect || currentTrack() !== lastMini.track) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
       lastMini = null;
       return;
     }
-    const before = capture(true);
-    const full = lyricGeometry(true);
-    if (!before.length || !full) {
+    let before, full, controlsRect;
+    try {
+      before = capture(true);
+      full = lyricGeometry(true);
+      controlsRect = controlsGeometry(true);
+    } catch (error) {
+      console.warn('Big Lyrics fullscreen layout not ready:', error);
+    }
+    if (!before?.length || !full?.hasLyrics || !controlsRect) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive) lyricsManager.placeAm();
       lastMini = null;
       return;
     }
-    beginClosing(before, full);
+    try {
+      beginClosing(before, full);
+    } catch (error) {
+      console.warn('Big Lyrics exit animation failed safely:', error);
+      clear();
+      if (FullLyricsPlayer.isOpen()) FullLyricsPlayer.close();
+      if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
+      lastMini = null;
+    }
   }
 
   function setEnabled(value) {
@@ -10876,10 +10943,27 @@ const BigLyricsMorph = (() => {
   }
 
   // A suspended tab or mid-animation resize must never leave either view hidden.
-  document.addEventListener('visibilitychange', () => { if (document.hidden) clear(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clear(); lastMini = null; }
+  });
   window.addEventListener('resize', () => { if (active) clear(); lastMini = null; });
 
+  // Layout, queue and track changes can invalidate measured coordinates.
+  // Complete the current view instantly instead of animating stale boxes.
   document.addEventListener('DOMContentLoaded', () => {
+    $('fullLyricsSwapSide')?.addEventListener('click', () => { if (active) clear(); }, true);
+    $('fullLyricsSettingsOptions')?.addEventListener('change', event => {
+      if (active && event.target?.name === 'layout') clear();
+    }, true);
+    for (const id of ['fullLyricsQueueButton', 'fullLyricsShowLyrics']) {
+      $(id)?.addEventListener('click', () => { if (active) clear(); }, true);
+    }
+    for (const id of ['audioPlayer', 'audioPlayer2']) {
+      $(id)?.addEventListener('loadstart', () => {
+        if (active) clear();
+        lastMini = null;
+      });
+    }
     const button = $('miniLyricsExpandToggle');
     if (!button) return;
     button.setAttribute('aria-checked', String(enabled));

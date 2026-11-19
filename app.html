@@ -953,6 +953,13 @@ body.big-lyrics-layout #player .player-right .volume-slider {
 ) {
   visibility: hidden !important;
 }
+/* Avoid one-frame opaque flashes when a reverse animation completes
+   or gets interrupted. The normal closed state resumes on the next frame. */
+#fullLyricsPlayer.big-lyrics-morph-finalizing {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transition: none !important;
+}
 /* Before measurement, the native fullscreen controls stay hidden.
    Once their FLIP starts, they remain visible and functional as one group. */
 #fullLyricsPlayer.big-lyrics-morph-entering:not(.big-lyrics-morph-controls-running) .full-lyrics-controls {
