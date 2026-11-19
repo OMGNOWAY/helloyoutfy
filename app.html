@@ -19,14 +19,17 @@
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background: var(--layout-backdrop, radial-gradient(ellipse at 24% 72%, #253543, #10161f 72%));
+  background: radial-gradient(ellipse at 24% 72%, #253543, #10161f 72%);
 }
 body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
 #bigLyricsLayoutBackdrop::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--layout-backdrop-overlay, linear-gradient(105deg, #10101526, #0b111864 55%, #09121e88));
+  /* A separate tint preserves the artwork's color, contrast, and motion. */
+  background:
+    linear-gradient(var(--layout-backdrop-tint, transparent), var(--layout-backdrop-tint, transparent)),
+    linear-gradient(105deg, #10101526, #0b111864 55%, #09121e88);
 }
 #bigLyricsLayoutBackdrop img {
   position: absolute;
@@ -34,8 +37,7 @@ body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
   width: 124%;
   height: 124%;
   object-fit: cover;
-  filter: blur(56px) var(--layout-image-filter, saturate(1.3) brightness(.66));
-  opacity: var(--layout-art-opacity, 1);
+  filter: blur(56px) saturate(1.3) brightness(.66);
   transition: opacity .4s ease;
 }
 #bigLyricsLayoutBackdrop canvas {
@@ -43,14 +45,14 @@ body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
   inset: 0;
   width: 100%;
   height: 100%;
-  filter: var(--layout-canvas-filter, saturate(2.5) brightness(.65));
+  filter: saturate(2.5) brightness(.65);
   opacity: 0;
   transition: opacity .4s ease;
 }
-#bigLyricsLayoutBackdrop canvas[data-ready] { opacity: var(--layout-art-opacity, 1); }
+#bigLyricsLayoutBackdrop canvas[data-ready] { opacity: 1; }
 #bigLyricsLayoutBackdrop:has(canvas[data-ready]) img { opacity: 0; }
-body.performance-mode #bigLyricsLayoutBackdrop canvas { filter: var(--layout-canvas-filter, saturate(2.5) brightness(.65)) !important; }
-body.performance-mode #bigLyricsLayoutBackdrop img { filter: blur(32px) var(--layout-image-filter, brightness(.55)) !important; }
+body.performance-mode #bigLyricsLayoutBackdrop canvas { filter: saturate(2.5) brightness(.65) !important; }
+body.performance-mode #bigLyricsLayoutBackdrop img { filter: blur(32px) brightness(.55) !important; }
 body.big-lyrics-layout #app > .main,
 body.big-lyrics-layout #app .queue-container {
   background: transparent !important;
@@ -70,16 +72,16 @@ body.big-lyrics-layout #app .queue-item {
   border-color: transparent !important;
 }
 body.big-lyrics-layout #app .queue-item:is(:hover, .playing) {
-  background: var(--layout-hover) !important;
+  background: var(--layout-open-hover, var(--layout-hover)) !important;
   border-color: var(--layout-stroke) !important;
   box-shadow: none !important;
 }
-body.big-lyrics-layout #app .queue-item.playing .queue-number { color: var(--layout-fill); }
-body.big-lyrics-layout #app :is(.queue-action-btn, .queue-utility-btn, .player-embed-header .btn) {
+body.big-lyrics-layout #app .queue-item.playing .queue-number { color: var(--layout-open-fill, var(--layout-fill)); }
+body.big-lyrics-layout #app .player-embed-header .btn {
   border-color: var(--layout-edge) !important;
   background: var(--layout-inset-surface) !important;
 }
-body.big-lyrics-layout #app :is(.queue-action-btn, .queue-utility-btn, .player-embed-header .btn):hover {
+body.big-lyrics-layout #app .player-embed-header .btn:hover {
   background: var(--layout-active) !important;
 }
 body.big-lyrics-layout #app :is(.player-btn, .lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn) {
@@ -98,7 +100,7 @@ body.big-lyrics-layout #app #playPauseBtn:hover {
 }
 body.big-lyrics-layout #app :is(#progressFill, #volumeFill) { background: var(--layout-fill) !important; }
 body.big-lyrics-layout #app .queue-title {
-  color: var(--layout-ink);
+  color: var(--layout-open-ink, var(--layout-ink));
   font-size: clamp(1.5rem, 3.5vw, 3rem);
   line-height: 1.12;
 }
@@ -291,6 +293,7 @@ body.big-lyrics-layout {
   --layout-active: #ffffff24;
   --layout-focus: #d6e7ff;
   --layout-fill: #fff;
+  --layout-open-fill: #fff;
   --layout-track: #ffffff35;
   --layout-scrim: #080c166e;
   --glass-border-color: var(--layout-edge);
@@ -338,37 +341,53 @@ html:where([data-theme]:not([data-theme=""], [data-theme="default"]), .christmas
   --layout-control-ink: var(--accent-ink, #0a0a0f);
   --layout-focus: var(--accent-on-bg, var(--accent));
   --layout-fill: var(--accent-on-bg, var(--accent));
+  --layout-open-fill: var(--layout-fill);
   --layout-track: color-mix(in srgb, var(--text-secondary) 34%, transparent);
   --layout-scrim: color-mix(in srgb, var(--bg-primary) 56%, #0004);
-  --layout-backdrop: radial-gradient(ellipse at 24% 72%,
-    color-mix(in srgb, var(--bg-secondary) 87%, var(--accent)), var(--bg-primary) 76%);
-  --layout-backdrop-overlay: linear-gradient(105deg,
-    color-mix(in srgb, var(--bg-primary) 14%, transparent),
-    color-mix(in srgb, var(--bg-primary) 32%, transparent));
-  --layout-art-opacity: .76;
-  --layout-art-boosted-opacity: .9;
-  --layout-canvas-filter: saturate(1.9) brightness(.78);
-  --layout-image-filter: saturate(1.35) brightness(.73);
+  --layout-backdrop-tint: color-mix(in srgb, var(--accent) 5%, transparent);
+  --layout-chat-detail: color-mix(in srgb, var(--bg-hover) 28%, var(--bg-secondary));
+  --layout-chat-surface: color-mix(in srgb, var(--layout-solid) 84%, transparent);
   --text-muted: color-mix(in srgb, var(--text-secondary) 85%, var(--text-primary));
   --bg-card: var(--card-bg, var(--bg-tertiary));
   --glass-tint: var(--accent);
   --border-hover: color-mix(in srgb, var(--border), var(--accent));
 }
-/* Lift the shadows in the artwork so a light theme keeps readable dark text. */
+/* Light palettes keep dark text on glass and light text on exposed artwork. */
 html[data-theme-tone="light"]:where([data-theme]:not([data-theme=""], [data-theme="default"]), :has(#_te_wrap))
   body.big-lyrics-layout {
   color-scheme: light;
-  --layout-surface: color-mix(in srgb, var(--layout-solid) 79%, transparent);
-  --layout-canvas-filter: saturate(1.4) contrast(.48) brightness(1.24);
-  --layout-image-filter: saturate(1.25) contrast(.48) brightness(1.24);
-  --layout-backdrop-overlay: linear-gradient(105deg,
-    color-mix(in srgb, var(--bg-primary) 31%, transparent),
-    color-mix(in srgb, var(--bg-primary) 43%, transparent));
-  --layout-art-opacity: .69;
-  --layout-art-boosted-opacity: .83;
+  --layout-surface: color-mix(in srgb, var(--layout-solid) 91%, transparent);
+  --layout-inset-surface: color-mix(in srgb, var(--card-bg, var(--bg-tertiary)) 82%, transparent);
+  --layout-player-surface: color-mix(in srgb, var(--player-bg, var(--bg-secondary)) 86%, transparent);
+  --layout-open-ink: #faf9fe;
+  --layout-open-muted: #c5c8d3;
+  --layout-open-track: #ffffff35;
+  --layout-open-fill: color-mix(in srgb, var(--accent-on-bg, var(--accent)) 61%, #fff);
+  --layout-open-hover: color-mix(in srgb, var(--accent) 20%, #ffffff16);
+  --layout-open-active: color-mix(in srgb, var(--accent) 40%, #ffffff22);
+  --layout-chat-surface: var(--layout-surface);
 }
-body.big-lyrics-layout:has(#aab[aria-checked="true"]) #bigLyricsLayoutBackdrop {
-  --layout-art-opacity: var(--layout-art-boosted-opacity, 1);
+body.big-lyrics-layout #app .queue-container {
+  --text-primary: var(--layout-open-ink, var(--layout-ink));
+  --text-secondary: var(--layout-open-muted, var(--layout-muted));
+  --text-muted: var(--text-secondary);
+  color: var(--text-primary);
+}
+body.big-lyrics-layout #app :is(.queue-action-btn, .queue-utility-btn) {
+  color: var(--text-primary) !important;
+  border-color: var(--layout-edge) !important;
+  background: var(--layout-open-hover, var(--layout-inset-surface)) !important;
+}
+body.big-lyrics-layout #app :is(.queue-action-btn, .queue-utility-btn):hover {
+  background: var(--layout-open-active, var(--layout-active)) !important;
+}
+body.big-lyrics-layout #app .queue-overflow-menu {
+  --text-primary: var(--layout-ink);
+  --text-secondary: var(--layout-muted);
+}
+@media (min-width: 861px) {
+  body.big-lyrics-layout #player #playerTitle { color: var(--layout-open-ink, var(--layout-ink)); }
+  body.big-lyrics-layout #player #playerArtist { color: var(--layout-open-muted, var(--layout-muted)); }
 }
 
 body.big-lyrics-layout :is(#app, #ycPanel) .btn.primary {
@@ -406,7 +425,7 @@ body.big-lyrics-layout #app .sidebar .nav-item::before { display: none; }
 body.big-lyrics-layout #app .sidebar .nav-item-click[title="Settings"] { margin-inline-start: auto !important; }
 
 body.big-lyrics-layout #mainContent :is(.queue-title, h2.section-title, .search-panel > h2, .album-hero h1, .layout-playlist-hero h1) {
-  color: var(--layout-ink) !important;
+  color: var(--layout-open-ink, var(--layout-ink)) !important;
   font-size: clamp(1.7rem, 3.2vw, 2.85rem) !important;
   line-height: 1.12;
   letter-spacing: -.015em;
@@ -461,11 +480,11 @@ body.big-lyrics-layout #mainContent .album-card {
   border-radius: 14px;
 }
 body.big-lyrics-layout #mainContent .album-card:hover {
-  background: var(--layout-hover) !important;
+  background: var(--layout-open-hover, var(--layout-hover)) !important;
   border-color: var(--layout-stroke) !important;
 }
-body.big-lyrics-layout #mainContent .album-card h4 { margin: 0 2px 3px; color: var(--layout-ink); }
-body.big-lyrics-layout #mainContent .album-card p { margin: 0 2px; color: var(--layout-muted); }
+body.big-lyrics-layout #mainContent .album-card h4 { margin: 0 2px 3px; color: var(--layout-open-ink, var(--layout-ink)); }
+body.big-lyrics-layout #mainContent .album-card p { margin: 0 2px; color: var(--layout-open-muted, var(--layout-muted)); }
 body.big-lyrics-layout #mainContent :is(.album-hero, .layout-playlist-hero) {
   align-items: end;
   gap: clamp(12px, 2.2vw, 28px) !important;
@@ -524,9 +543,21 @@ body.big-lyrics-layout #appLayoutSelect {
   border-color: var(--layout-edge);
   min-height: 36px;
 }
-body.big-lyrics-layout #ycPanel :is(.yc-head, .yc-compose, .yc-body) { border-color: var(--layout-edge); }
+body.big-lyrics-layout:not(.performance-mode) #ycPanel {
+  background: var(--layout-chat-surface, var(--layout-surface)) !important;
+}
+body.big-lyrics-layout #ycPanel :is(.yc-head, .yc-composer, .yc-body, .yc-tabs, .yc-composer-inner) {
+  border-color: var(--layout-edge);
+}
+body.big-lyrics-layout #ycPanel :is(.yc-tabs, .yc-composer-inner) {
+  background: var(--layout-chat-detail, #ffffff0d);
+}
+body.big-lyrics-layout #ycPanel .yc-composer-inner:focus-within { border-color: var(--accent); }
 body.big-lyrics-layout #ycPanel .yc-tab.active { color: var(--layout-ink); background: var(--layout-hover); }
 body.big-lyrics-layout #ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
+body.big-lyrics-layout #ycPanel .yc-msg:not(.mine, .system, .pinged) .yc-msg-bubble:not(.jumbo, .img, .embed-only) {
+  background: var(--layout-chat-detail, #ffffff0e);
+}
 body.big-lyrics-layout #player .player-embed-header { gap: 8px; flex-wrap: wrap; }
 body.big-lyrics-layout #player .player-embed-label { color: var(--layout-ink); }
 body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line {
@@ -870,7 +901,7 @@ body.big-lyrics-layout #player .progress-bar {
   height: 5px;
   border: 0 !important;
   border-radius: 999px;
-  background: var(--layout-track);
+  background: var(--layout-transport-track, var(--layout-track));
   box-shadow: none !important;
 }
 body.big-lyrics-layout #player .progress-fill,
@@ -882,7 +913,7 @@ body.big-lyrics-layout #player #volumeFill {
 body.big-lyrics-layout #player .time {
   font-size: 11px;
   font-weight: 600;
-  color: var(--layout-muted);
+  color: var(--layout-transport-muted, var(--layout-muted));
   min-width: 32px;
 }
 body.big-lyrics-layout #player .player-controls {
@@ -897,7 +928,7 @@ body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-to
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  color: var(--layout-ink) !important;
+  color: var(--layout-transport-ink, var(--layout-ink)) !important;
   border-radius: 50% !important;
   transform: none !important;
   transition: background .18s ease, opacity .18s ease;
@@ -937,10 +968,16 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   height: 5px;
   border: 0 !important;
   border-radius: 999px;
-  background: var(--layout-track);
+  background: var(--layout-transport-track, var(--layout-track));
   box-shadow: none !important;
 }
 @media (min-width: 861px) {
+  body.big-lyrics-layout #player :is(.player-controls-section, .player-right) {
+    --layout-transport-ink: color-mix(in srgb, var(--layout-open-ink, var(--layout-ink)) 82%, var(--layout-fill));
+    --layout-transport-muted: var(--layout-open-muted, var(--layout-muted));
+    --layout-transport-track: var(--layout-open-track, var(--layout-track));
+    --layout-fill: var(--layout-open-fill, var(--layout-focus));
+  }
   body.big-lyrics-layout #player .player-controls-section,
   body.big-lyrics-layout #player .player-right {
     width: min(100%, 420px);
