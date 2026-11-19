@@ -108,8 +108,26 @@ function createEnvironment(options = {}) {
   let frameId = 0, opened = false, closeCount = 0;
   const requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId; };
   const cancelAnimationFrame = id => frames.delete(id);
+  let placements = 0;
+  const am = options.synced ? {
+    parentElement: miniLyrics,
+    shadowRoot: {
+      querySelector: () => miniLyrics.lines[0] || null,
+      querySelectorAll: () => miniLyrics.lines
+    }
+  } : null;
+  const lyricsManager = options.synced ? {
+    amActive: true, amEl: am, getAmCurrentLine: () => am.shadowRoot.querySelector('.lyrics-line'),
+    placeAm() {
+      placements++;
+      am.parentElement = opened ? fullLyrics : miniLyrics;
+      const lines = opened ? fullLyrics.lines : miniLyrics.lines;
+      am.shadowRoot.querySelector = () => lines[0] || null;
+      am.shadowRoot.querySelectorAll = () => lines;
+    }
+  } : null;
   const FullLyricsPlayer = {
-    isOpen: () => opened, open() { opened = true; }, close() {
+    isOpen: () => opened, open() { opened = true; lyricsManager?.placeAm(); }, close() {
       opened = false;
       closeCount++;
       overlay.classList.remove('open');
@@ -135,7 +153,7 @@ function createEnvironment(options = {}) {
     letterSpacing: '0px', lineHeight: '1.2', backgroundColor: 'transparent',
     borderRadius: '8px'
   }), requestAnimationFrame, cancelAnimationFrame, FullLyricsPlayer,
-  null, { currentTime: 40 }, { warn() {} }, queue, 0);
+  lyricsManager, { currentTime: 40 }, { warn() {} }, queue, 0);
   for (const callback of documentListeners.DOMContentLoaded || []) callback();
 
   const tick = () => {
@@ -153,8 +171,10 @@ function createEnvironment(options = {}) {
     !overlay.classList.contains('big-lyrics-morph-exiting') &&
     !overlay.classList.contains('big-lyrics-morph-finalizing');
   return {
-    controller, queue, win, elements, overlay, ghosts, animations, finish, tick, settle, isClean,
-    get opened() { return opened; }, get closeCount() { return closeCount; }
+    controller, queue, win, document, elements, overlay, ghosts, animations,
+    lyricsManager, miniLyrics, fullLyrics, finish, tick, settle, isClean,
+    get opened() { return opened; }, get closeCount() { return closeCount; },
+    get placements() { return placements; }
   };
 }
 
@@ -246,6 +266,63 @@ async function test(name, run) {
     env.controller.open();
     await env.finish();
     assert(env.opened);
+    assert(env.isClean());
+  });
+
+  await test('synced renderer moves back to the mini lyrics host', async () => {
+    const env = createEnvironment({ synced: true });
+    env.controller.open();
+    await env.finish();
+    assert(env.opened);
+    assert.equal(env.lyricsManager.amEl.parentElement, env.fullLyrics);
+    env.controller.close();
+    await env.finish();
+    assert(!env.opened);
+    assert.equal(env.lyricsManager.amEl.parentElement, env.miniLyrics);
+    assert(env.placements >= 2);
+    assert(env.isClean());
+  });
+
+  await test('an audio source change cancels stale animation safely', async () => {
+    const env = createEnvironment();
+    env.controller.open();
+    env.tick();
+    env.tick();
+    env.elements.get('audioPlayer').dispatch('loadstart');
+    await env.finish();
+    assert(env.opened);
+    assert(env.isClean());
+    env.controller.close();
+    await env.finish();
+    assert(!env.opened);
+  });
+
+  await test('switching the album side during animation leaves fullscreen usable', async () => {
+    const env = createEnvironment();
+    env.controller.open();
+    env.tick();
+    env.tick();
+    env.elements.get('fullLyricsSwapSide').dispatch('click');
+    await env.finish();
+    assert(env.opened);
+    assert(env.isClean());
+    env.controller.close();
+    await env.finish();
+    assert(!env.opened);
+  });
+
+  await test('turning off animation mid-open leaves no overlay artifacts', async () => {
+    const env = createEnvironment();
+    env.controller.open();
+    env.tick();
+    env.tick();
+    env.controller.setEnabled(false);
+    await env.finish();
+    assert(env.opened);
+    assert(env.isClean());
+    env.controller.close();
+    await env.finish();
+    assert(!env.opened);
     assert(env.isClean());
   });
 
