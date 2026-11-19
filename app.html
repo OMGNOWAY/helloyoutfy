@@ -948,13 +948,19 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   border-radius: inherit;
   background: #fff;
 }
-#fullLyricsPlayer.big-lyrics-morph-entering :is(
-  .full-lyrics-cover, .full-lyrics-track-info, .full-lyrics-controls
-),
-#fullLyricsPlayer.big-lyrics-morph-exiting :is(
-  .full-lyrics-cover, .full-lyrics-track-info, .full-lyrics-controls
+#fullLyricsPlayer:is(.big-lyrics-morph-entering, .big-lyrics-morph-exiting) :is(
+  .full-lyrics-cover, .full-lyrics-track-info
 ) {
   visibility: hidden !important;
+}
+/* Before measurement, the native fullscreen controls stay hidden.
+   Once their FLIP starts, they remain visible and functional as one group. */
+#fullLyricsPlayer.big-lyrics-morph-entering:not(.big-lyrics-morph-controls-running) .full-lyrics-controls {
+  visibility: hidden !important;
+}
+#fullLyricsPlayer.big-lyrics-morph-controls-running .full-lyrics-controls {
+  transform-origin: top left !important;
+  will-change: transform, opacity;
 }
 /* Keep the real lyrics hidden only until its FLIP starts. Then the single
    live lyrics viewport handles all lines together, without duplicate glyphs. */
