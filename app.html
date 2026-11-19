@@ -914,51 +914,52 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   }
 }
 
-/* Optional shared-element animation from the Big Lyrics embedded mini panel.
-   Only toggled by JS, and never affects the Classic layout. */
-.big-lyrics-morph-ghost {
-  position: fixed;
-  z-index: 1600;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 10px;
-  overflow: hidden;
+/* Shared-element Big Lyrics transition: independent pieces, not a growing box.
+   The existing fullscreen and mini players remain the real controls. */
+.big-lyrics-morph-piece {
+  position: fixed !important;
+  display: block;
   box-sizing: border-box;
-  padding: 18px 22px;
-  pointer-events: none;
-  color: #fff;
-  border: 1px solid #ffffff26;
-  border-radius: 18px;
-  background: #121822db;
-  box-shadow: 0 16px 44px #0005;
-  font-size: clamp(14px, 1.55vw, 23px);
-  font-weight: 700;
-  line-height: 1.3;
-  text-align: left;
-  contain: layout paint;
-  will-change: left, top, width, height, opacity;
-}
-.big-lyrics-morph-ghost .big-lyrics-morph-line {
-  white-space: normal;
+  z-index: 1650 !important;
+  pointer-events: none !important;
+  user-select: none !important;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-height: 2.6em;
-  opacity: .5;
+  margin: 0 !important;
+  transform-origin: top left;
+  will-change: left, top, width, height, font-size, opacity;
 }
-.big-lyrics-morph-ghost .big-lyrics-morph-line.is-current {
-  opacity: 1;
+.big-lyrics-morph-piece.big-lyrics-morph-button {
+  display: flex !important;
+  justify-content: center;
+  align-items: center;
 }
-#fullLyricsPlayer.big-lyrics-morph-entering #fullLyricsContent {
-  opacity: 0 !important;
-  transition: none !important;
+.big-lyrics-morph-piece.big-lyrics-morph-button svg {
+  display: block;
+  flex-shrink: 0;
 }
-#fullLyricsPlayer #fullLyricsContent {
-  transition: opacity .2s ease;
+.big-lyrics-morph-piece.big-lyrics-morph-bar {
+  overflow: hidden;
+  border-radius: 100px;
+  background: #ffffff3b;
+}
+.big-lyrics-morph-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+}
+#fullLyricsPlayer.big-lyrics-morph-entering :is(
+  .full-lyrics-cover, .full-lyrics-track-info, .full-lyrics-controls, .full-lyrics-lyrics-side
+) {
+  visibility: hidden !important;
+}
+body.big-lyrics-morph-closing #player :is(
+  .player-track, .player-controls-section, .player-right, #playerEmbed
+) {
+  visibility: hidden !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .big-lyrics-morph-ghost { display: none !important; }
-  #fullLyricsPlayer #fullLyricsContent { transition: none !important; }
+  .big-lyrics-morph-piece { display: none !important; }
 }
 </style>
 <div class="app" id="app">
@@ -2831,7 +2832,7 @@ body.big-lyrics-layout #player .player-right .volume-slider {
           <span class="slider-thumb"></span>
         </button>
       </div>
-      <p id="miniLyricsExpandHint" style="margin-top:7px;font-size:12px;color:var(--text-muted);line-height:1.5;">When Big Lyrics layout is active, the mini lyrics expand into fullscreen and shrink back when closed. Off by default.</p>
+      <p id="miniLyricsExpandHint" style="margin-top:7px;font-size:12px;color:var(--text-muted);line-height:1.5;">When Big Lyrics layout is active, the lyrics, cover art and player controls move into their fullscreen positions and back. Off by default.</p>
     </div>
 
     <div class="settings-section">
