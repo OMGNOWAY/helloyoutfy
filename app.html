@@ -198,12 +198,21 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
     object-fit: cover;
     box-shadow: 0 16px 44px #0006 !important;
     border: 1px solid #ffffff24 !important;
-    /* The normal 105% hover zoom gets cropped by the fitted player column.
-       Keep album art steady; clicking still opens Big Lyrics. */
+    /* Hover feedback without zooming or clipping the artwork. */
     transform: none !important;
+    cursor: pointer;
+    transition: filter .18s ease, border-color .18s ease, box-shadow .18s ease !important;
   }
-  body.big-lyrics-layout #player .player-img:hover {
+  body.big-lyrics-layout #player .player-img:is(:hover, :focus-visible) {
     transform: none !important;
+    filter: brightness(1.12) saturate(1.08);
+    border-color: #ffffffb8 !important;
+    box-shadow: 0 0 0 3px #ffffff32, 0 14px 38px #0009 !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.big-lyrics-layout #player .player-img {
+      transition: none !important;
+    }
   }
   body.big-lyrics-layout #player .player-info,
   body.big-lyrics-layout #player .player-controls-section {
