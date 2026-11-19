@@ -788,6 +788,131 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
   body.big-lyrics-layout #app #player { bottom: calc(83px + env(safe-area-inset-bottom)); }
   body.big-lyrics-layout #app { padding-bottom: calc(245px + env(safe-area-inset-bottom)) !important; }
 }
+
+/* Big Lyrics: seamless controls over the album backdrop (no boxed strips).
+   Scoped to the optional layout; Classic retains its existing styling. */
+body.big-lyrics-layout #player .player-controls-section,
+body.big-lyrics-layout #player .player-right {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 0 !important;
+}
+body.big-lyrics-layout #player .player-controls-section {
+  gap: 9px;
+}
+body.big-lyrics-layout #player .progress-section {
+  order: -1;
+  gap: 9px;
+}
+body.big-lyrics-layout #player .progress-bar {
+  height: 5px;
+  border: 0 !important;
+  border-radius: 999px;
+  background: #ffffff35;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #player .progress-fill,
+body.big-lyrics-layout #player #volumeFill {
+  background: #fff !important;
+  border-radius: 999px;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #player .time {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffffbc;
+  min-width: 32px;
+}
+body.big-lyrics-layout #player .player-controls {
+  width: 100%;
+  justify-content: space-around;
+  gap: clamp(5px, 1vw, 14px);
+}
+body.big-lyrics-layout #player .player-controls .player-btn:not(.play-pause),
+body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: #fff !important;
+  border-radius: 50% !important;
+  transform: none !important;
+  transition: background .18s ease, opacity .18s ease;
+}
+body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn) {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  flex: 0 0 38px !important;
+}
+body.big-lyrics-layout #player .player-controls .player-btn:not(.play-pause):hover,
+body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn):hover {
+  background: #ffffff16 !important;
+}
+body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn).active,
+body.big-lyrics-layout #player .player-controls .player-btn:not(.play-pause).active {
+  background: #ffffff24 !important;
+}
+body.big-lyrics-layout #player .player-controls #playPauseBtn {
+  width: 46px;
+  height: 46px;
+  background: #fff !important;
+  color: #171820 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout #player .player-controls #playPauseBtn:hover {
+  background: #f1f1f5 !important;
+  transform: none !important;
+}
+body.big-lyrics-layout #player .player-right {
+  gap: 8px !important;
+  justify-content: center !important;
+}
+body.big-lyrics-layout #player .player-right .volume-slider {
+  height: 5px;
+  border: 0 !important;
+  border-radius: 999px;
+  background: #ffffff35;
+  box-shadow: none !important;
+}
+@media (min-width: 861px) {
+  body.big-lyrics-layout #player .player-controls-section,
+  body.big-lyrics-layout #player .player-right {
+    width: min(100%, 420px);
+    align-self: center;
+    margin: 0 !important;
+  }
+  body.big-lyrics-layout #player .player-right {
+    flex-wrap: nowrap;
+  }
+  body.big-lyrics-layout #player .player-right .volume-slider {
+    flex: 1 1 64px;
+    max-width: 104px;
+    min-width: 36px;
+  }
+}
+@media (min-width: 861px) and (max-width: 1060px) {
+  body.big-lyrics-layout #player .player-right {
+    flex-wrap: wrap;
+  }
+  body.big-lyrics-layout #player .player-right .volume-slider {
+    flex: 0 0 100%;
+    max-width: 180px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.big-lyrics-layout #player .player-controls .player-btn,
+  body.big-lyrics-layout #player .player-right button {
+    transition: none !important;
+  }
+}
 </style>
 <div class="app" id="app">
   <aside class="sidebar" id="sidebar">
