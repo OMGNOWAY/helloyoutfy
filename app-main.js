@@ -10122,8 +10122,7 @@ const FullLyricsPlayer = (() => {
 
   function recenter() {
     const pane = $('fullLyricsContent');
-    if (!opened || !pane?.clientHeight ||
-        $('fullLyricsPlayer')?.classList.contains('big-lyrics-morph-lyrics-running')) return;
+    if (!opened || !pane?.clientHeight) return;
     pane.style.setProperty('--full-lyrics-edge-space', pane.clientHeight / 2 + 'px');
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
