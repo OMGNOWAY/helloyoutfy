@@ -34,7 +34,7 @@ body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
   width: 124%;
   height: 124%;
   object-fit: cover;
-  filter: blur(56px) saturate(1.3) brightness(.66);
+  filter: blur(56px) var(--layout-image-filter, saturate(1.3) brightness(.66));
   opacity: var(--layout-art-opacity, 1);
   transition: opacity .4s ease;
 }
@@ -43,14 +43,14 @@ body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
   inset: 0;
   width: 100%;
   height: 100%;
-  filter: saturate(2.5) brightness(.65);
+  filter: var(--layout-canvas-filter, saturate(2.5) brightness(.65));
   opacity: 0;
   transition: opacity .4s ease;
 }
 #bigLyricsLayoutBackdrop canvas[data-ready] { opacity: var(--layout-art-opacity, 1); }
 #bigLyricsLayoutBackdrop:has(canvas[data-ready]) img { opacity: 0; }
-body.performance-mode #bigLyricsLayoutBackdrop canvas { filter: saturate(2.5) brightness(.65) !important; }
-body.performance-mode #bigLyricsLayoutBackdrop img { filter: blur(32px) brightness(.55) !important; }
+body.performance-mode #bigLyricsLayoutBackdrop canvas { filter: var(--layout-canvas-filter, saturate(2.5) brightness(.65)) !important; }
+body.performance-mode #bigLyricsLayoutBackdrop img { filter: blur(32px) var(--layout-image-filter, brightness(.55)) !important; }
 body.big-lyrics-layout #app > .main,
 body.big-lyrics-layout #app .queue-container {
   background: transparent !important;
@@ -238,7 +238,7 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
   body.big-lyrics-layout #app .queue-header { gap: 8px; }
   body.big-lyrics-layout #app .queue-title { font-size: clamp(1.45rem, 6vw, 2.3rem); }
   body.big-lyrics-layout #app .sidebar { background: var(--layout-nav-surface, #111823e6) !important; }
-  body.big-lyrics-layout #app .player { background: var(--layout-player-surface, #111823e6) !important; }
+  body.big-lyrics-layout #app .player { background: var(--layout-mobile-player-surface, #111823e6) !important; }
   body.big-lyrics-layout #app #player {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -320,18 +320,19 @@ html:not(:where([data-theme]:not([data-theme=""], [data-theme="default"]), .chri
 
 /* Named themes and the live Theme Builder feed the same layout surfaces. */
 html:where([data-theme]:not([data-theme=""], [data-theme="default"]), .christmas, :has(#_te_wrap)) body.big-lyrics-layout {
-  color-scheme: var(--layout-color-scheme, dark);
+  color-scheme: dark;
   --layout-ink: var(--text-primary);
   --layout-muted: var(--text-secondary);
   --layout-edge: var(--border);
   --layout-stroke: color-mix(in srgb, var(--border) 65%, transparent);
   --layout-solid: color-mix(in srgb, var(--bg-secondary) 44%, var(--bg-primary));
-  --layout-surface: color-mix(in srgb, var(--layout-solid) 93%, transparent);
-  --layout-inset-surface: color-mix(in srgb, var(--card-bg, var(--bg-tertiary)) 71%, transparent);
-  --layout-nav-surface: color-mix(in srgb, var(--bg-secondary) 91%, transparent);
-  --layout-player-surface: color-mix(in srgb, var(--player-bg, var(--bg-secondary)) 95%, transparent);
-  --layout-hover: color-mix(in srgb, var(--bg-hover) 78%, transparent);
-  --layout-active: color-mix(in srgb, var(--accent) 18%, var(--bg-hover));
+  --layout-surface: color-mix(in srgb, var(--layout-solid) 71%, transparent);
+  --layout-inset-surface: color-mix(in srgb, var(--card-bg, var(--bg-tertiary)) 47%, transparent);
+  --layout-nav-surface: color-mix(in srgb, var(--bg-secondary) 79%, transparent);
+  --layout-player-surface: color-mix(in srgb, var(--player-bg, var(--bg-secondary)) 56%, transparent);
+  --layout-mobile-player-surface: color-mix(in srgb, var(--player-bg, var(--bg-secondary)) 92%, transparent);
+  --layout-hover: color-mix(in srgb, var(--bg-hover) 60%, transparent);
+  --layout-active: color-mix(in srgb, var(--accent) 13%, var(--layout-hover));
   --layout-control: var(--accent);
   --layout-control-hover: var(--accent-hover);
   --layout-control-ink: var(--accent-ink, #0a0a0f);
@@ -341,16 +342,33 @@ html:where([data-theme]:not([data-theme=""], [data-theme="default"]), .christmas
   --layout-scrim: color-mix(in srgb, var(--bg-primary) 56%, #0004);
   --layout-backdrop: radial-gradient(ellipse at 24% 72%,
     color-mix(in srgb, var(--bg-secondary) 87%, var(--accent)), var(--bg-primary) 76%);
-  --layout-backdrop-overlay: linear-gradient(105deg, transparent, color-mix(in srgb, var(--bg-primary) 32%, transparent));
-  --layout-art-opacity: .17;
+  --layout-backdrop-overlay: linear-gradient(105deg,
+    color-mix(in srgb, var(--bg-primary) 14%, transparent),
+    color-mix(in srgb, var(--bg-primary) 32%, transparent));
+  --layout-art-opacity: .76;
+  --layout-art-boosted-opacity: .9;
+  --layout-canvas-filter: saturate(1.9) brightness(.78);
+  --layout-image-filter: saturate(1.35) brightness(.73);
   --text-muted: color-mix(in srgb, var(--text-secondary) 85%, var(--text-primary));
   --bg-card: var(--card-bg, var(--bg-tertiary));
   --glass-tint: var(--accent);
   --border-hover: color-mix(in srgb, var(--border), var(--accent));
 }
-html:where([data-theme]:not([data-theme=""], [data-theme="default"]), .christmas, :has(#_te_wrap))
-  body.big-lyrics-layout:has(#aab[aria-checked="true"]) {
-  --layout-art-opacity: .36;
+/* Lift the shadows in the artwork so a light theme keeps readable dark text. */
+html[data-theme-tone="light"]:where([data-theme]:not([data-theme=""], [data-theme="default"]), :has(#_te_wrap))
+  body.big-lyrics-layout {
+  color-scheme: light;
+  --layout-surface: color-mix(in srgb, var(--layout-solid) 79%, transparent);
+  --layout-canvas-filter: saturate(1.4) contrast(.48) brightness(1.24);
+  --layout-image-filter: saturate(1.25) contrast(.48) brightness(1.24);
+  --layout-backdrop-overlay: linear-gradient(105deg,
+    color-mix(in srgb, var(--bg-primary) 31%, transparent),
+    color-mix(in srgb, var(--bg-primary) 43%, transparent));
+  --layout-art-opacity: .69;
+  --layout-art-boosted-opacity: .83;
+}
+body.big-lyrics-layout:has(#aab[aria-checked="true"]) #bigLyricsLayoutBackdrop {
+  --layout-art-opacity: var(--layout-art-boosted-opacity, 1);
 }
 
 body.big-lyrics-layout :is(#app, #ycPanel) .btn.primary {

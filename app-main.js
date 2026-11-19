@@ -2060,7 +2060,7 @@ class ThemeManager {
       const background = lum(bgCol);
       const usable = contrast(L1, background) >= 2.2;
       root.style.setProperty('--accent-on-bg', usable ? 'var(--accent)' : 'var(--text-primary)');
-      root.style.setProperty('--layout-color-scheme', background > .34 ? 'light' : 'dark');
+      root.dataset.themeTone = background > .34 ? 'light' : 'dark';
     } catch (e) {}
   }
 
