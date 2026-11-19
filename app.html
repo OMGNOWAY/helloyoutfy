@@ -271,14 +271,6 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
   body.big-lyrics-layout #app .queue-item :is(.queue-number, .queue-actions, .queue-duration) { display: none; }
   body.big-lyrics-layout #app .queue-img { width: 42px; height: 42px; }
 }
-#appLayoutSelect {
-  max-width: 54%;
-  padding: .45em .65em;
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
 #layoutMobileToolsToggle, #layoutMobileTools:popover-open { display: none; }
 
 /* Keep the layout's neutral palette when Default is selected. */
@@ -537,12 +529,6 @@ body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
   box-shadow: none !important;
 }
 body.big-lyrics-layout #settingsModal .settings-section-title { color: var(--layout-ink); }
-body.big-lyrics-layout #appLayoutSelect {
-  color: var(--layout-ink);
-  background: var(--layout-solid, #202939);
-  border-color: var(--layout-edge);
-  min-height: 36px;
-}
 body.big-lyrics-layout:not(.performance-mode) #ycPanel {
   background: var(--layout-chat-surface, var(--layout-surface)) !important;
 }
@@ -3036,17 +3022,6 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
   <line x1="18" y1="6" x2="6" y2="18"></line>
   <line x1="6" y1="6" x2="18" y2="18"></line>
 </svg></button>
-    </div>
-
-    <div class="settings-section">
-      <div class="settings-section-title">Layout</div>
-      <div class="setting-toggle-row">
-        <label class="setting-toggle-label" for="appLayoutSelect">App layout</label>
-        <select id="appLayoutSelect">
-          <option value="big-lyrics">Big Lyrics</option>
-          <option value="classic">Classic</option>
-        </select>
-      </div>
     </div>
 
     <div class="settings-section">
