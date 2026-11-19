@@ -348,7 +348,7 @@ class Utils {
     header.firstElementChild.textContent = title;
 
     const body = document.createElement('div');
-    body.className = 'app-dialog-body';
+    body.className = 'app-dialog-body dialog-stack';
 
     modalEl.append(header, body);
     backdrop.appendChild(modalEl);
@@ -2176,21 +2176,8 @@ class ThemeManager {
       const s = document.createElement('style');
       s.id = '_te_styles';
       s.textContent = `
-        #_te_wrap { display:flex; flex-direction:column; }
-
-        #_te_banner {
-          display:flex; align-items:center; gap:10px;
-          padding:10px 16px;
-          font-size:11.5px; font-weight:600; letter-spacing:.06em;
-          text-transform:uppercase; border-bottom:1px solid rgba(255,255,255,.06);
-        }
-        #_te_banner .te-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-
-        #_te_palette {
-          display:flex; gap:6px; flex-wrap:wrap;
-          padding:12px 16px; background:rgba(0,0,0,.22);
-          border-bottom:1px solid rgba(255,255,255,.05);
-        }
+        body .app-dialog #_te_wrap { background: transparent !important; }
+        .theme-editor-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
         .te-swatch-mini {
           width:26px; height:26px; border-radius:6px;
           border:2px solid rgba(255,255,255,.1);
@@ -2199,19 +2186,21 @@ class ThemeManager {
         }
         .te-swatch-mini:hover { transform:scale(1.25); border-color:rgba(255,255,255,.35); }
 
-        #_te_grid {
-          display:grid; grid-template-columns:1fr 1fr;
-          overflow-y:auto; max-height:400px;
+        .theme-editor-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          column-gap: 14px;
         }
-        @media(max-width:560px) { #_te_grid { grid-template-columns:1fr; } }
+        @media (max-width: 620px) { .theme-editor-grid { grid-template-columns: minmax(0, 1fr); } }
 
-        .te-row {
-          display:flex; align-items:center; gap:10px;
-          padding:9px 16px; border-bottom:1px solid rgba(255,255,255,.04);
-          transition:background .12s;
+        .theme-editor-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          padding-block: 7px;
+          border-bottom: 1px solid var(--layout-stroke);
         }
-        .te-row:nth-child(odd) { background:rgba(255,255,255,.013); }
-        .te-row:hover          { background:rgba(255,255,255,.04); }
 
         .te-color-btn {
           width:30px; height:30px; border-radius:7px; flex-shrink:0;
@@ -2220,6 +2209,7 @@ class ThemeManager {
           transition:border-color .15s, transform .15s;
         }
         .te-color-btn:hover { border-color:rgba(255,255,255,.4); transform:scale(1.1); }
+        .te-color-btn:focus-within { outline: 2px solid var(--layout-focus); outline-offset: 2px; }
         .te-color-btn input[type=color] {
           position:absolute; inset:0; opacity:0; cursor:pointer;
           width:100%; height:100%; border:none; padding:0;
@@ -2232,44 +2222,17 @@ class ThemeManager {
         }
 
         .te-hex {
-          width:88px; font-size:11.5px; font-family:"Margarine", system-ui;
-          padding:5px 8px; border-radius:6px;
-          border:1px solid rgba(255,255,255,.09);
-          background:rgba(0,0,0,.3); color:var(--text-primary,#fff);
-          transition:border-color .15s;
+          width: 76px;
+          min-height: 34px;
+          padding: 5px 8px;
+          font: .77rem ui-monospace, monospace;
         }
-        .te-hex:focus { outline:none; border-color:var(--accent,#00ffa1); }
-
-        #_te_footer {
-          padding:12px 16px; display:flex; gap:9px; flex-wrap:wrap;
-          align-items:center; border-top:1px solid rgba(255,255,255,.06);
-          background:rgba(0,0,0,.18);
-        }
-        #_te_name {
-          flex:1; min-width:110px; font-size:13px; padding:7px 11px;
-          border-radius:7px; border:1px solid rgba(255,255,255,.11);
-          background:rgba(0,0,0,.35); color:var(--text-primary,#fff);
-          transition:border-color .15s;
-        }
-        #_te_name:focus    { outline:none; border-color:var(--accent,#00ffa1); }
-        #_te_name:disabled { opacity:.5; cursor:not-allowed; border-color:rgba(255,255,255,.06); }
-
-        ._te_btn {
-          padding:7px 15px; border-radius:7px; font-size:13px; font-weight:600;
-          cursor:pointer; border:none; white-space:nowrap;
-          transition:opacity .15s, transform .1s;
-        }
-        ._te_btn:hover  { opacity:.82; }
-        ._te_btn:active { transform:scale(.96); }
-        ._te_btn.pri    { background:var(--accent,#00ffa1); color:#000; }
-        ._te_btn.sec    { background:rgba(255,255,255,.1); color:var(--text-primary,#fff); }
-        ._te_btn.ghost  { background:transparent; color:var(--text-secondary,#aaa); border:1px solid rgba(255,255,255,.1); }
 
         #_te_json_out {
-          display:none; margin:10px 16px 0; width:calc(100% - 32px); box-sizing:border-box;
-          font-size:11px; font-family:"Margarine", system-ui; resize:vertical; min-height:64px;
-          padding:9px 12px; border-radius:7px; border:1px solid rgba(255,255,255,.09);
-          background:rgba(0,0,0,.4); color:#7ec8a0;
+          display: none;
+          margin-top: 12px;
+          font: .8rem ui-monospace, monospace;
+          min-height: 64px;
         }
       `;
       document.head.appendChild(s);
@@ -2342,26 +2305,19 @@ class ThemeManager {
         ThemeManager.applyAccentInk();
       }
     );
-    modal.body.style.padding = '0';
-
     const wrap = document.createElement('div');
     wrap.id = '_te_wrap';
+    wrap.className = 'dialog-stack';
 
-    const banner = document.createElement('div');
-    banner.id = '_te_banner';
-    const dot = document.createElement('div');
-    dot.className = 'te-dot';
-    dot.style.background = isEditMode ? '#f0883e' : '#3fb950';
-    const bannerText = document.createElement('span');
-    bannerText.style.color = isEditMode ? '#f0883e' : '#3fb950';
+    const preview = document.createElement('div');
+    preview.className = 'dialog-card';
+    const bannerText = document.createElement('p');
+    bannerText.className = 'dialog-card-description';
     bannerText.textContent = isEditMode
       ? `Editing "${activeName}" — Save Changes will overwrite it`
       : 'No custom theme active — enter a name below to create one';
-    banner.append(dot, bannerText);
-    wrap.appendChild(banner);
-
     const palette = document.createElement('div');
-    palette.id = '_te_palette';
+    palette.className = 'theme-editor-palette';
     VARS.forEach(v => {
       const sw = document.createElement('div');
       sw.className = 'te-swatch-mini';
@@ -2373,17 +2329,20 @@ class ThemeManager {
       palette.appendChild(sw);
       v._swatch = sw;
     });
-    wrap.appendChild(palette);
+    preview.append(bannerText, palette);
+    wrap.appendChild(preview);
 
+    const colors = document.createElement('div');
+    colors.className = 'dialog-card';
     const grid = document.createElement('div');
-    grid.id = '_te_grid';
+    grid.className = 'theme-editor-grid';
 
     VARS.forEach(v => {
       const raw = getVar(v.css);
       const hex = toHex(raw);
 
       const row      = document.createElement('div');
-      row.className  = 'te-row';
+      row.className  = 'theme-editor-row';
 
       const colorBtn = document.createElement('div');
       colorBtn.className    = 'te-color-btn';
@@ -2426,40 +2385,49 @@ class ThemeManager {
       grid.appendChild(row);
     });
 
-    wrap.appendChild(grid);
+    colors.appendChild(grid);
+    wrap.appendChild(colors);
 
     const jsonOut     = document.createElement('textarea');
     jsonOut.id        = '_te_json_out';
+    jsonOut.className = 'form-input';
     jsonOut.readOnly  = true;
-    wrap.appendChild(jsonOut);
+    jsonOut.setAttribute('aria-label', 'Theme JSON');
 
     const footer = document.createElement('div');
-    footer.id = '_te_footer';
+    footer.className = 'dialog-card';
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'form-label';
+    nameLabel.htmlFor = '_te_name';
+    nameLabel.textContent = 'Theme name';
 
     const nameInp       = document.createElement('input');
     nameInp.id          = '_te_name';
-    nameInp.placeholder = 'Theme name…';
+    nameInp.className   = 'form-input';
     if (isEditMode) {
       nameInp.value    = activeName;
     }
 
     const saveBtn       = document.createElement('button');
-    saveBtn.className   = '_te_btn pri';
+    saveBtn.className   = 'btn primary';
     saveBtn.textContent = isEditMode ? 'Save Changes' : 'Save Theme';
 
     const copyBtn       = document.createElement('button');
-    copyBtn.className   = '_te_btn sec';
+    copyBtn.className   = 'btn secondary';
     copyBtn.textContent = 'Copy JSON';
 
     const resetBtn      = document.createElement('button');
-    resetBtn.className  = '_te_btn ghost';
+    resetBtn.className  = 'btn secondary';
     resetBtn.textContent = 'Reset';
 
     const deleteBtn      = document.createElement('button');
-    deleteBtn.className  = '_te_btn ghost';
+    deleteBtn.className  = 'btn dialog-danger';
     deleteBtn.textContent = 'Delete';
 
-    isEditMode ? footer.append(nameInp, saveBtn, copyBtn, deleteBtn) : footer.append(nameInp, saveBtn, copyBtn, resetBtn);
+    const actions = document.createElement('div');
+    actions.className = 'dialog-actions';
+    actions.append(saveBtn, copyBtn, isEditMode ? deleteBtn : resetBtn);
+    footer.append(nameLabel, nameInp, actions, jsonOut);
     wrap.appendChild(footer);
     modal.body.appendChild(wrap);
     ThemeManager.applyAccentInk();
@@ -2546,9 +2514,11 @@ class ThemeManager {
   static openImporter() {
     const imodal = Utils.createModal('Import Theme');
     imodal.body.innerHTML = `
-      <label class="form-label" for="themejson">Paste theme JSON code</label>
-      <textarea id="themejson" class="form-input" style="min-height:100px" placeholder='{"name":"mytheme","theme":["#14141a","#121316","#22222a","#30303a","#ffffff","#909090","#00ffa1","#00cc81","#34363d","#202330","#22222a"]}'></textarea>
-      <div class="dialog-actions"><button id="applytheme" class="btn primary">Import Theme</button></div>`;
+      <div class="dialog-card">
+        <label class="form-label" for="themejson">Paste theme JSON code</label>
+        <textarea id="themejson" class="form-input" rows="5" spellcheck="false"></textarea>
+        <div class="dialog-actions"><button id="applytheme" class="btn primary">Import Theme</button></div>
+      </div>`;
 
     document.getElementById('applytheme').addEventListener('click', () => {
       try {
@@ -4288,8 +4258,8 @@ class TrackManager {
     const modal = Utils.createModal('Track Info', true);
 
     modal.body.innerHTML = `
-      <div class="track-info-modal">
-        <div class="track-info-header">
+      <div class="track-info-modal dialog-stack">
+        <div class="track-info-header dialog-card">
           <img src="${track.albumArt || ''}" class="track-info-cover" id="trackInfoCover" style="cursor:pointer;" title="Click to change cover">
           <div class="track-info-details">
             <h3>${Utils.escapeHtml(track.title || 'Unknown')}</h3>
@@ -4299,21 +4269,21 @@ class TrackManager {
             <p>Type: ${track.type || 'local'}</p>
           </div>
         </div>
-        <div class="track-info-stats">
+        <div class="track-info-stats dialog-card">
           <div class="stat-item"><div class="stat-value">${trackStats.plays}</div><div class="stat-label">Plays</div></div>
           <div class="stat-item"><div class="stat-value">${Utils.formatTime(trackStats.totalTime)}</div><div class="stat-label">Listen Time</div></div>
           <div class="stat-item"><div class="stat-value">${track.fileSize ? Utils.formatFileSize(track.fileSize) : 'N/A'}</div><div class="stat-label">Size</div></div>
         </div>
-        <div class="settings-section" style="margin-top:24px;">
-          <div class="settings-section-title">Edit Metadata</div>
-          <div class="form-group"><label class="form-label">Title</label><input type="text" class="form-input" id="editTitle" value="${Utils.escapeHtml(track.title || '')}"></div>
-          <div class="form-group"><label class="form-label">Artist</label><input type="text" class="form-input" id="editArtist" value="${Utils.escapeHtml(track.artist || '')}"></div>
-          <div class="form-group"><label class="form-label">Album</label><input type="text" class="form-input" id="editAlbum" value="${Utils.escapeHtml(track.album || '')}"></div>
+        <section class="dialog-card">
+          <h3 class="dialog-card-title">Edit Metadata</h3>
+          <div class="form-group"><label class="form-label" for="editTitle">Title</label><input type="text" class="form-input" id="editTitle" value="${Utils.escapeHtml(track.title || '')}"></div>
+          <div class="form-group"><label class="form-label" for="editArtist">Artist</label><input type="text" class="form-input" id="editArtist" value="${Utils.escapeHtml(track.artist || '')}"></div>
+          <div class="form-group"><label class="form-label" for="editAlbum">Album</label><input type="text" class="form-input" id="editAlbum" value="${Utils.escapeHtml(track.album || '')}"></div>
           <div class="dialog-actions">
             <button class="btn primary" onclick="saveTrackInfo('${track.uid}')">Save Changes</button>
             <button class="btn secondary" onclick="findDuplicates('${track.uid}')">Find Duplicates</button>
           </div>
-        </div>
+        </section>
       </div>`;
 
     document.getElementById('trackInfoCover').onclick = () => {
@@ -4358,14 +4328,18 @@ class TrackManager {
     ));
     if (duplicates.length === 0) { toast('No duplicates found'); return; }
 
-    const modal = Utils.createModal(`Found ${duplicates.length} Duplicates`, true);
-    modal.body.innerHTML = `<p style="margin-bottom:16px;color:var(--text-muted);">Similar tracks found:</p><div class="queue-list">${duplicates.map(d => `
-      <div class="duplicate-track">
-        <img src="${d.albumArt || ''}" class="queue-img">
-        <div class="queue-info"><div class="queue-track-title">${Utils.escapeHtml(d.title)}</div><div class="queue-track-artist">${Utils.escapeHtml(d.artist)}</div></div>
-        <button class="btn secondary" onclick="mergeTracks('${trackUid}','${d.uid}')">Merge</button>
-        <button class="btn dialog-danger" onclick="deleteTrack('${d.uid}')">Delete</button>
-      </div>`).join('')}</div>`;
+    const modal = Utils.createModal(duplicates.length === 1 ? 'Found 1 Duplicate' : `Found ${duplicates.length} Duplicates`, true);
+    modal.body.innerHTML = `
+      <section class="dialog-card">
+        <h3 class="dialog-card-title">Similar tracks</h3>
+        ${duplicates.map(d => `
+          <div class="duplicate-track">
+            <img src="${d.albumArt || ''}" class="queue-img" alt="">
+            <div class="queue-info"><div class="queue-track-title">${Utils.escapeHtml(d.title)}</div><div class="queue-track-artist">${Utils.escapeHtml(d.artist)}</div></div>
+            <button class="btn secondary" onclick="mergeTracks('${trackUid}','${d.uid}')">Merge</button>
+            <button class="btn dialog-danger" onclick="deleteTrack('${d.uid}')">Delete</button>
+          </div>`).join('')}
+      </section>`;
   }
 
   static merge(keepUid, mergeUid) {
@@ -4804,8 +4778,9 @@ class PlaylistManager {
   static promptName({ title, initial = '', confirmText = 'OK' }, onDone) {
     const modal = Utils.createModal(title);
     modal.body.innerHTML = `
-      <div class="form-group">
-        <input type="text" class="form-input" maxlength="60" placeholder="Playlist name..." value="${PlaylistManager.esc(initial)}">
+      <div class="dialog-card">
+        <label class="form-label" for="playlist-dialog-name">Playlist name</label>
+        <input id="playlist-dialog-name" type="text" class="form-input" maxlength="60" value="${PlaylistManager.esc(initial)}">
         <div class="dialog-actions">
           <button class="btn secondary pl-cancel">Cancel</button>
           <button class="btn primary pl-ok">${PlaylistManager.esc(confirmText)}</button>
@@ -4834,11 +4809,17 @@ class PlaylistManager {
     const keys = list.map(t => PlaylistManager.keyFor(t));
 
     modal.body.innerHTML = `
-      <div class="form-group dialog-fields">
-        <input type="text" class="form-input" maxlength="60" placeholder="New playlist name...">
-        <button class="btn primary pl-create">Create</button>
-      </div>
-      <div class="pl-pick-list"></div>`;
+      <section class="dialog-card">
+        <label class="form-label" for="playlist-picker-name">New playlist name</label>
+        <div class="dialog-fields">
+          <input id="playlist-picker-name" type="text" class="form-input" maxlength="60">
+          <button class="btn primary pl-create">Create</button>
+        </div>
+      </section>
+      <section class="dialog-card">
+        <h3 class="dialog-card-title">Your playlists</h3>
+        <div class="pl-pick-list"></div>
+      </section>`;
 
     const input = modal.body.querySelector('input');
     const listEl = modal.body.querySelector('.pl-pick-list');
@@ -4891,15 +4872,18 @@ class PlaylistManager {
     let shown = [];
 
     modal.body.innerHTML = `
-      <div class="form-group dialog-fields">
-        <input type="text" class="form-input pl-lib-search" placeholder="Search your songs...">
-        <button class="btn secondary pl-lib-all">Select shown</button>
-      </div>
-      <div class="pl-lib-list"></div>
-      <div class="dialog-actions">
-        <button class="btn secondary pl-lib-cancel">Cancel</button>
-        <button class="btn primary pl-lib-add" disabled>Add</button>
-      </div>`;
+      <section class="dialog-card">
+        <label class="form-label" for="playlist-library-search">Search your songs</label>
+        <div class="form-group dialog-fields">
+          <input id="playlist-library-search" type="text" class="form-input pl-lib-search">
+          <button class="btn secondary pl-lib-all">Select shown</button>
+        </div>
+        <div class="pl-lib-list"></div>
+        <div class="dialog-actions">
+          <button class="btn secondary pl-lib-cancel">Cancel</button>
+          <button class="btn primary pl-lib-add" disabled>Add</button>
+        </div>
+      </section>`;
     const search = modal.body.querySelector('.pl-lib-search');
     const listEl = modal.body.querySelector('.pl-lib-list');
     const addBtn = modal.body.querySelector('.pl-lib-add');
@@ -6185,13 +6169,13 @@ const shortcuts = {
 };
 
 function openShortcutsModal() {
-  const modal = Utils.createModal('Keyboard Shortcuts', true);
+  const modal = Utils.createModal('Keyboard Shortcuts');
   modal.body.innerHTML = `
-    <div class="shortcuts-list">
+    <div class="dialog-card">
+      <p class="dialog-card-description">Use these keys whenever you’re outside a text field.</p>
       ${Object.entries(shortcuts).map(([key, action]) => `
-        <div class="shortcut-item"><span>${action}</span><span class="shortcut-key">${key.replace('Key','').replace('Arrow','')}</span></div>`).join('')}
-    </div>
-    <p style="margin-top:16px;color:var(--text-muted);font-size:12px;">Press any key while not in an input field to use shortcuts.</p>`;
+        <div class="shortcut-item"><span>${action}</span><kbd class="shortcut-key">${key.replace('Key','').replace('Arrow','')}</kbd></div>`).join('')}
+    </div>`;
 }
 
 // ============================================================================
@@ -6359,8 +6343,8 @@ class ChangelogManager {
     ChangelogManager.opener = document.activeElement;
     const versions = Object.keys(CHANGELOG_DATA).sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
     list.innerHTML = versions.map(ver => `
-      <section class="changelog-release">
-        <h3 class="changelog-version">${ver}${ver === version || ver === 'Release ' + version
+      <section class="dialog-card changelog-release">
+        <h3 class="dialog-card-title changelog-version">${ver}${ver === version || ver === 'Release ' + version
           ? ' <span class="changelog-current">Current</span>' : ''}</h3>
         <ul>${CHANGELOG_DATA[ver].map(item => `<li>${ChangelogManager.formatText(item)}</li>`).join('')}</ul>
       </section>`).join('');
@@ -16861,9 +16845,8 @@ function initAdmin() {
 #ycAdm.app-dialog{--dialog-width:760px;font:14px system-ui,sans-serif}
 #ycAdm *{box-sizing:border-box}
 #ycAdm .top .sp{flex:1}
-#ycAdm .app-dialog-body{padding-top:0}
-#ycAdm h3{margin:20px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;display:flex;align-items:center;gap:8px}
-#ycAdm h3 .sp{flex:1}
+#ycAdm .admin-card-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:9px}
+#ycAdm .admin-card-header .dialog-card-title{margin:0}
 #ycAdm button:not(.app-dialog-close){font:600 12.5px system-ui,sans-serif;padding:7px 11px;border-radius:12px;border:1px solid var(--layout-edge);background:var(--layout-inset-surface);color:var(--layout-ink);cursor:pointer}
 #ycAdm .app-dialog-close{font-size:20px}
 #ycAdm button:hover{background:var(--layout-active)}
@@ -16954,17 +16937,21 @@ function initAdmin() {
     panel.append(
       h("header", { class: "top app-dialog-header" }, h("h2", { id: "ycAdmTitle", class: "app-dialog-title", text: "Youtify Control" }), h("span", { id: "ycAdmPulse", style: "opacity:.6;font-size:12px" }), h("span", { class: "sp" }),
         h("button", { class: "app-dialog-close", type: "button", "aria-label": "Close admin panel", onclick: () => toggle(false) }, "×")),
-      h("div", { class: "app-dialog-body" },
-        h("h3", null, "Who's connected"),
-        h("div", { class: "ver" }, h("span", { text: "Latest version" }), ver, h("label", null, auto, "Auto-notify people on old versions")),
-        h("div", { id: "ycAdmUpd" }),
-        h("div", { id: "ycAdmRoster" }),
+      h("div", { class: "app-dialog-body dialog-stack" },
+        h("section", { class: "dialog-card" },
+          h("h3", { class: "dialog-card-title" }, "Who's connected"),
+          h("div", { class: "ver" }, h("span", { text: "Latest version" }), ver, h("label", null, auto, "Auto-notify people on old versions")),
+          h("div", { id: "ycAdmUpd" }),
+          h("div", { id: "ycAdmRoster" })),
 
-        h("h3", null, "Restrictions", h("span", { class: "sp" }), h("span", { style: "text-transform:none;letter-spacing:0", text: "persists across refreshes" })),
-        h("div", { id: "ycAdmMods" }),
+        h("section", { class: "dialog-card" },
+          h("div", { class: "admin-card-header" },
+            h("h3", { class: "dialog-card-title" }, "Restrictions"),
+            h("p", { class: "dialog-card-description" }, "Persists across refreshes")),
+          h("div", { id: "ycAdmMods" })),
 
-        h("h3", null, "Broadcast"),
-        h("div", { class: "dng" },
+        h("section", { class: "dialog-card" },
+          h("h3", { class: "dialog-card-title" }, "Broadcast"),
           h("label", { for: "ycAdmTarget", text: "Send to" }), sel,
           h("div", { id: "ycAdmBanner" }),
           h("label", { for: "ycAdmText", text: "Announcement" }),
@@ -16974,8 +16961,10 @@ function initAdmin() {
             h("button", { type: "button", onclick: sendToast }, "Send as toast"),
             h("button", { type: "button", id: "ycAdmMain", onclick: mainSend }, "Post to announcements"))),
 
-        h("h3", null, "Remote control", h("span", { class: "sp" }), h("span", { style: "text-transform:none;letter-spacing:0", text: "applies to the person selected above" })),
-        h("div", { class: "dng" },
+        h("section", { class: "dialog-card" },
+          h("div", { class: "admin-card-header" },
+            h("h3", { class: "dialog-card-title" }, "Remote control"),
+            h("p", { class: "dialog-card-description" }, "Applies to the person selected above")),
           h("div", { class: "row", style: "margin-top:0" },
             h("button", { type: "button", onclick: () => remote("play") }, "▶ Play"),
             h("button", { type: "button", onclick: () => remote("pause") }, "⏸ Pause"),
@@ -16991,14 +16980,21 @@ function initAdmin() {
             remote("rename", v);
           } }, "Rename"))),
 
-        h("h3", null, "Announcements", h("span", { class: "sp" }), h("button", { class: "dng", type: "button", onclick: clearNews }, "Clear all")),
-        h("div", { class: "dng" }, h("div", { class: "feed", id: "ycAdmNews" })),
+        h("section", { class: "dialog-card" },
+          h("div", { class: "admin-card-header" },
+            h("h3", { class: "dialog-card-title" }, "Announcements"),
+            h("button", { class: "dng", type: "button", onclick: clearNews }, "Clear all")),
+          h("div", { class: "feed", id: "ycAdmNews" })),
 
-        h("h3", null, "Room chat", h("span", { class: "sp" }), h("button", { class: "dng", type: "button", onclick: clearRoom }, "Clear all messages")),
-        h("div", { class: "dng" }, h("div", { class: "feed", id: "ycAdmRoom" })),
+        h("section", { class: "dialog-card" },
+          h("div", { class: "admin-card-header" },
+            h("h3", { class: "dialog-card-title" }, "Room chat"),
+            h("button", { class: "dng", type: "button", onclick: clearRoom }, "Clear all messages")),
+          h("div", { class: "feed", id: "ycAdmRoom" })),
 
-        h("h3", null, "Log"),
-        h("div", { class: "dng" }, h("div", { class: "feed", id: "ycAdmLog", style: "max-height:180px" }, h("div", { class: "empty", text: "Nothing sent yet." })))
+        h("section", { class: "dialog-card" },
+          h("h3", { class: "dialog-card-title" }, "Log"),
+          h("div", { class: "feed", id: "ycAdmLog", style: "max-height:180px" }, h("div", { class: "empty", text: "Nothing sent yet." })))
       )
     );
     renderAll();
