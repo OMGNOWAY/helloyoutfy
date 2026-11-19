@@ -919,7 +919,10 @@ body.big-lyrics-layout #player .player-right .volume-slider {
    bottom edge meets the floating navigation dock's bottom edge. */
 @media (min-width: 861px) {
   body.big-lyrics-layout #app #player {
+    /* The dock and the mini lyrics still share the same bottom edge. */
     height: calc(100% + 102px - clamp(12px, 2.5vh, 28px)) !important;
+    /* Make cover art a little bigger but leave height for real lyrics. */
+    --layout-cover: min(100%, 440px, max(210px, calc(100dvh - 500px)));
     min-height: 0;
     gap: clamp(13px, 1.7vh, 20px);
   }
@@ -934,6 +937,24 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   }
   body.big-lyrics-layout #player .player-right {
     gap: clamp(12px, 1.25vw, 18px) !important;
+  }
+  /* The old 360px maximum and 160px flex basis compressed the lyrics.
+     Reserve a readable panel first, then let it use any remaining space. */
+  body.big-lyrics-layout #player #playerEmbed {
+    flex: 1 1 240px !important;
+    min-height: clamp(195px, 23dvh, 270px) !important;
+    max-height: none !important;
+  }
+  body.big-lyrics-layout #player #playerEmbedStage {
+    height: 100%;
+  }
+}
+@media (min-width: 861px) and (max-height: 740px) {
+  body.big-lyrics-layout #app #player {
+    --layout-cover: min(100%, max(180px, calc(100dvh - 510px)));
+  }
+  body.big-lyrics-layout #player #playerEmbed {
+    min-height: 180px !important;
   }
 }
 
