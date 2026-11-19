@@ -17960,45 +17960,70 @@ document.addEventListener("DOMContentLoaded", () => {
 })();
 
 /* ===================== topbar.js ===================== */
-/* top bar: show the song search box in the middle of the bar (desktop) */
+/* Keep the same search UI on reload, even when songs, queues or views
+   rebuild #mainContent. The bottom taskbar layout keeps search in main. */
 (function () {
-  var slot = document.getElementById('sbSearchSlot');
-  var main = document.getElementById('mainContent');
+  const slot = document.getElementById('sbSearchSlot');
+  const main = document.getElementById('mainContent');
   if (!slot || !main) return;
-  var mq = window.matchMedia('(min-width: 861px)');
+  const mq = window.matchMedia('(min-width: 861px)');
+  const originalGetById = document.getElementById.bind(document);
+  let searchBox = slot.querySelector('.search-container');
 
-  // code elsewhere looks the box up by id; always hand back the freshest one
-  var _gid = document.getElementById.bind(document);
+  // Other app code looks up searchInput by ID; follow the live search box.
   document.getElementById = function (id) {
     if (id === 'searchInput') {
-      return main.querySelector('#searchInput') || slot.querySelector('#searchInput') || _gid(id);
+      return main.querySelector('#searchContainer #searchInput') ||
+        slot.querySelector('#searchInput') || originalGetById(id);
     }
-    return _gid(id);
+    return originalGetById(id);
   };
 
   function sync() {
-    var hdr = main.querySelector('#searchContainer');
-    var inMain = main.querySelector('#searchInput');
+    const header = main.querySelector('#searchContainer');
+    const inMain = header?.querySelector('.search-container');
+    const inSlot = slot.querySelector('.search-container');
+    const view = typeof currentView !== 'undefined' ? currentView : 'home';
+
+    // Return-to-home rebuilds the entire header. Preserve the typed query
+    // while adopting its fresh search box, with the new input listener intact.
+    if (inMain && inMain !== searchBox) {
+      const oldText = searchBox?.querySelector('#searchInput')?.value;
+      const newInput = inMain.querySelector('#searchInput');
+      if (oldText && newInput && !newInput.value) newInput.value = oldText;
+      searchBox = inMain;
+    } else if (!searchBox) {
+      searchBox = inSlot || inMain;
+    }
+
+    if (view === 'home' && header?.style.display === 'none') {
+      header.style.removeProperty('display');
+    }
+
     if (mq.matches && !document.body.classList.contains('big-lyrics-layout')) {
-      if (inMain) {
-        var box = inMain.closest('.search-container');
-        if (box) { slot.textContent = ''; slot.appendChild(box); }
+      if (searchBox && searchBox.parentElement !== slot) {
+        slot.replaceChildren(searchBox);
       }
-      // only the Home view had the song search; the other views hide it
-      var view = (typeof currentView !== 'undefined') ? currentView : 'home';
-      slot.style.visibility = (view === 'home') ? '' : 'hidden';
+      // Only hide on explicit non-library views, not because a song loaded.
+      slot.style.visibility = view === 'home' ? '' : 'hidden';
     } else {
-      var inSlot = slot.querySelector('.search-container');
-      if (inSlot && hdr) hdr.insertBefore(inSlot, hdr.firstChild);
+      if (header && searchBox && searchBox.parentElement !== header) {
+        const redundant = header.querySelector('.search-container');
+        if (redundant && redundant !== searchBox) redundant.remove();
+        header.insertBefore(searchBox, header.firstChild);
+      }
       slot.style.visibility = '';
     }
   }
 
-  new MutationObserver(sync).observe(main, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(sync).observe(main, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ['style']
+  });
   document.addEventListener('youtify:app-layout-change', sync);
-  if (mq.addEventListener) mq.addEventListener('change', sync); else mq.addListener(sync);
+  if (mq.addEventListener) mq.addEventListener('change', sync);
+  else mq.addListener(sync);
   sync();
-  setInterval(sync, 800); // safety net: re-check now and then
+  setInterval(sync, 800);
 })();
 
 // ===================== Christmas theme + Snake easter egg =====================
