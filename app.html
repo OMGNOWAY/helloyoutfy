@@ -914,77 +914,68 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   }
 }
 
-/* Shared-element Big Lyrics transition: independent pieces, not a growing box.
-   The existing fullscreen and mini players remain the real controls. */
-.big-lyrics-morph-piece {
-  position: fixed !important;
-  display: block;
-  box-sizing: border-box;
-  z-index: 1650 !important;
-  pointer-events: none !important;
-  user-select: none !important;
-  overflow: hidden;
-  margin: 0 !important;
-  transform-origin: top left;
-  will-change: left, top, width, height, font-size, opacity;
+/* Browser-rendered mini -> Big Lyrics shared element transitions.
+   No fake copies of controls, and no stretched text layer. */
+@keyframes youtify-vt-old-root { to { opacity: 0; } }
+@keyframes youtify-vt-new-root { from { opacity: 0; } }
+@keyframes youtify-vt-old-lyrics {
+  0% { opacity: 1; }
+  22%, 100% { opacity: 0; }
 }
-.big-lyrics-morph-piece.big-lyrics-morph-button {
-  display: flex !important;
-  justify-content: center;
-  align-items: center;
+@keyframes youtify-vt-new-lyrics {
+  0%, 25% { opacity: 0; }
+  70%, 100% { opacity: 1; }
 }
-.big-lyrics-morph-piece.big-lyrics-morph-button svg {
-  display: block;
-  flex-shrink: 0;
+@keyframes youtify-vt-old-controls {
+  0% { opacity: 1; }
+  32%, 100% { opacity: 0; }
 }
-.big-lyrics-morph-piece.big-lyrics-morph-bar {
-  overflow: hidden;
-  border-radius: 100px;
-  background: #ffffff3b;
+@keyframes youtify-vt-new-controls {
+  0%, 30% { opacity: 0; }
+  68%, 100% { opacity: 1; }
 }
-.big-lyrics-morph-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #fff;
+html.youtify-big-lyrics-view-transition::view-transition-group(*) {
+  animation-duration: 600ms;
+  animation-timing-function: cubic-bezier(.22, 1, .36, 1);
 }
-#fullLyricsPlayer:is(.big-lyrics-morph-entering, .big-lyrics-morph-exiting) :is(
-  .full-lyrics-cover, .full-lyrics-track-info
-) {
-  visibility: hidden !important;
+html.youtify-big-lyrics-view-transition::view-transition-old(root) {
+  animation: 290ms ease-out both youtify-vt-old-root;
 }
-/* Avoid one-frame opaque flashes when a reverse animation completes
-   or gets interrupted. The normal closed state resumes on the next frame. */
-#fullLyricsPlayer.big-lyrics-morph-finalizing {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  transition: none !important;
+html.youtify-big-lyrics-view-transition::view-transition-new(root) {
+  animation: 390ms ease-out both youtify-vt-new-root;
 }
-/* Before measurement, the native fullscreen controls stay hidden.
-   Once their FLIP starts, they remain visible and functional as one group. */
-#fullLyricsPlayer.big-lyrics-morph-entering:not(.big-lyrics-morph-controls-running) .full-lyrics-controls {
-  visibility: hidden !important;
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-lyrics) {
+  animation: 600ms ease-in-out both youtify-vt-old-lyrics;
 }
-#fullLyricsPlayer.big-lyrics-morph-controls-running .full-lyrics-controls {
-  transform-origin: top left !important;
-  will-change: transform, opacity;
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-lyrics) {
+  animation: 600ms ease-in-out both youtify-vt-new-lyrics;
 }
-/* Keep the real lyrics hidden only until its FLIP starts. Then the single
-   live lyrics viewport handles all lines together, without duplicate glyphs. */
-#fullLyricsPlayer.big-lyrics-morph-entering:not(.big-lyrics-morph-lyrics-running) .full-lyrics-lyrics-side {
-  visibility: hidden !important;
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-progress),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-transport),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-mute),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-volume),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-title),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-artist) {
+  animation: 600ms ease-in-out both youtify-vt-old-controls;
 }
-#fullLyricsPlayer.big-lyrics-morph-lyrics-running #fullLyricsContent {
-  transform-origin: top left;
-  will-change: transform, clip-path;
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-progress),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-transport),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-mute),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-volume),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-title),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-artist) {
+  animation: 600ms ease-in-out both youtify-vt-new-controls;
 }
-body.big-lyrics-morph-closing #player :is(
-  .player-track, .player-controls-section, .player-right, #playerEmbed
-) {
-  visibility: hidden !important;
+html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-lyrics),
+html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-transport) {
+  isolation: isolate;
 }
 @media (prefers-reduced-motion: reduce) {
-  .big-lyrics-morph-piece { display: none !important; }
+  html.youtify-big-lyrics-view-transition::view-transition-group(*),
+  html.youtify-big-lyrics-view-transition::view-transition-old(*),
+  html.youtify-big-lyrics-view-transition::view-transition-new(*) {
+    animation-duration: .01ms !important;
+  }
 }
 </style>
 <div class="app" id="app">

@@ -10122,8 +10122,7 @@ const FullLyricsPlayer = (() => {
 
   function recenter() {
     const pane = $('fullLyricsContent');
-    if (!opened || !pane?.clientHeight ||
-        $('fullLyricsPlayer')?.classList.contains('big-lyrics-morph-lyrics-running')) return;
+    if (!opened || !pane?.clientHeight) return;
     pane.style.setProperty('--full-lyrics-edge-space', pane.clientHeight / 2 + 'px');
     if (lyricsManager?.amActive) {
       lyricsManager.placeAm();
@@ -10406,569 +10405,183 @@ const FullLyricsPlayer = (() => {
 // visual copy — the real am-lyrics element stays with LyricsManager.
 const BigLyricsMorph = (() => {
   const STORAGE_KEY = 'youtify_mini_lyrics_expand';
-  const DURATION = 640;
-  const EASING = 'cubic-bezier(.22, 1, .36, 1)';
+  const ROOT_CLASS = 'youtify-big-lyrics-view-transition';
   let enabled = false;
   let active = null;
-  let lastMini = null;
+  let revision = 0;
   try { enabled = localStorage.getItem(STORAGE_KEY) === 'on'; } catch {}
 
   const $ = id => document.getElementById(id);
-  const withinViewport = rect => !!rect && Number.isFinite(rect.left) &&
-    rect.width > 3 && rect.height > 3 &&
-    rect.right > 0 && rect.bottom > 0 &&
-    rect.left < window.innerWidth && rect.top < window.innerHeight;
-  const layoutOn = () => document.body.classList.contains('big-lyrics-layout');
-  const currentTrack = () => queue?.[currentTrackIndex] || null;
-  const supportsFullLayout = () => $('fullLyricsPlayer')?.dataset.layout !== 'minimal';
 
-  function enabledForTransition() {
-    return enabled && layoutOn() &&
-      window.innerWidth > 860 &&
-      !document.body.classList.contains('performance-mode') &&
-      !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches &&
-      typeof Element !== 'undefined' &&
-      typeof Element.prototype.animate === 'function';
-  }
-
-  function miniLyricsSelected() {
-    const stage = $('playerEmbedStage');
-    return !!stage && !stage.classList.contains('flipped') &&
-      !stage.classList.contains('show-queue');
-  }
-
-  function miniHasLyrics() {
-    const host = $('playerEmbedLyricsContent');
-    if (!host) return false;
-    const am = lyricsManager?.amEl;
-    const root = lyricsManager?.amActive && am?.parentElement === host ? am.shadowRoot : host;
-    // If the song is still loading or missing lyrics, use the native instant
-    // opening. Never animate a blank area into a fullscreen lyric viewport.
-    return !!root?.querySelector('.lyrics-line:not(.lyrics-footer)');
-  }
-
-  function miniReady() {
-    const mini = $('playerEmbed');
-    if (!miniLyricsSelected() || !mini || getComputedStyle(mini).display === 'none') return false;
-    const r = mini.getBoundingClientRect();
-    if (!withinViewport(r)) return false;
-    // The mini panel needs to be substantially visible: off-screen or
-    // partially clipped elements produce ugly jumps when opening fullscreen.
-    const visibleWidth = Math.min(r.right, window.innerWidth) - Math.max(0, r.left);
-    const visibleHeight = Math.min(r.bottom, window.innerHeight) - Math.max(0, r.top);
-    return visibleWidth >= Math.min(120, r.width * .5) &&
-      visibleHeight >= Math.min(72, r.height * .6);
-  }
-
-  // Each pair follows actual DOM geometry, so swapping the album to the
-  // right automatically reverses the direction of the movement.
-  // Album and track labels can safely fly as lightweight snapshots.
-  // Native fullscreen controls are animated as ONE live group below,
-  // never as disconnected fake bars, buttons or input sliders.
+  // Each browser snapshot uses the ACTUAL miniature / fullscreen element.
+  // No copied sliders, text nodes, or hand-authored geometry animations.
   const pairs = [
-    ['art', '#playerImg', '#fullLyricsArt', 'art'],
-    ['title', '#playerTitle', '#fullLyricsTitle', 'text'],
-    ['artist', '#playerArtist', '#fullLyricsArtist', 'text']
+    ['youtify-vt-art', '#player #playerImg', '#fullLyricsPlayer #fullLyricsArt'],
+    ['youtify-vt-title', '#player #playerTitle', '#fullLyricsPlayer #fullLyricsTitle'],
+    ['youtify-vt-artist', '#player #playerArtist', '#fullLyricsPlayer #fullLyricsArtist'],
+    ['youtify-vt-progress', '#player .progress-section', '#fullLyricsPlayer .full-lyrics-progress-row'],
+    ['youtify-vt-transport', '#player .player-controls', '#fullLyricsPlayer .full-lyrics-buttons'],
+    ['youtify-vt-mute', '#player #volumebutton', '#fullLyricsPlayer #fullLyricsMute'],
+    ['youtify-vt-volume', '#player .player-right .volume-slider', '#fullLyricsPlayer #fullLyricsVolume'],
+    ['youtify-vt-lyrics', '#player #playerEmbedLyricsContent', '#fullLyricsPlayer #fullLyricsContent']
   ];
 
-  function targetFor(pair, fullscreen) {
-    const root = fullscreen ? $('fullLyricsPlayer') : $('player');
-    return root?.querySelector(fullscreen ? pair[2] : pair[1]) || null;
+  function supported() {
+    return enabled &&
+      document.body.classList.contains('big-lyrics-layout') &&
+      !document.body.classList.contains('performance-mode') &&
+      window.innerWidth > 860 &&
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches &&
+      typeof document.startViewTransition === 'function' &&
+      $('fullLyricsPlayer')?.dataset.layout !== 'minimal';
   }
 
-  function ratio(el, key) {
-    if (key === 'progress') {
-      if (el.id === 'fullLyricsProgress') {
-        const fill = $('fullLyricsProgressFill');
-        const track = el.querySelector('.full-lyrics-progress-track') || el;
-        const width = track.getBoundingClientRect().width;
-        return width && fill
-          ? Math.max(0, Math.min(1, fill.getBoundingClientRect().width / width)) : 0;
-      }
-      const bar = $('progressBar');
-      const fill = $('progressFill');
-      return bar && fill && bar.clientWidth
-        ? Math.max(0, Math.min(1, fill.getBoundingClientRect().width / bar.getBoundingClientRect().width)) : 0;
-    }
-    if (key === 'volume') {
-      if (el.tagName === 'INPUT') return Math.max(0, Math.min(1, Number(el.value) / (Number(el.max) || 100)));
-      const fill = $('volumeFill');
-      return el.clientWidth && fill
-        ? Math.max(0, Math.min(1, fill.getBoundingClientRect().width / el.getBoundingClientRect().width)) : 0;
-    }
-    return 0;
-  }
-
-  function visualSnapshot(el, kind, key) {
-    const rect = el.getBoundingClientRect();
-    if (!withinViewport(rect)) return null;
-    if (getComputedStyle(el).display === 'none') return null;
-    const style = getComputedStyle(el);
-    const snapshot = {
-      key, kind,
-      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      fontSize: style.fontSize,
-      fontWeight: style.fontWeight,
-      fontFamily: style.fontFamily,
-      lineHeight: style.lineHeight,
-      letterSpacing: style.letterSpacing,
-      color: style.color,
-      background: style.backgroundColor,
-      borderRadius: style.borderRadius,
-      text: (el.textContent || '').trim(),
-      fill: kind === 'bar' ? ratio(el, key) : 0,
-      art: kind === 'art' ? (el.currentSrc || el.getAttribute('src') || '') : ''
-    };
-    if (kind === 'button') {
-      const svg = el.querySelector('svg');
-      if (svg) {
-        snapshot.icon = svg.cloneNode(true);
-        snapshot.icon.removeAttribute('id');
-        snapshot.icon.querySelectorAll('[id]').forEach(item => item.removeAttribute('id'));
-        const iconStyle = getComputedStyle(svg);
-        snapshot.icon.style.width = iconStyle.width;
-        snapshot.icon.style.height = iconStyle.height;
-      }
-    }
-    return snapshot;
-  }
-
-  // Capture the focused line as a *coordinate only*. The live fullscreen
-  // lyrics are animated as one layer instead of creating duplicate text nodes.
-  function lyricGeometry(fullscreen) {
-    const host = $(fullscreen ? 'fullLyricsContent' : 'playerEmbedLyricsContent');
-    if (!host) return null;
-    const view = host.getBoundingClientRect();
-    if (!withinViewport(view)) return null;
+  function miniLyricsVisible() {
+    const embed = $('playerEmbed');
+    const stage = $('playerEmbedStage');
+    const lyrics = $('playerEmbedLyricsContent');
+    if (!embed || !lyrics || stage?.classList.contains('flipped') ||
+        stage?.classList.contains('show-queue')) return false;
+    const rect = embed.getBoundingClientRect();
+    const style = getComputedStyle(embed);
+    if (style.display === 'none' || style.visibility === 'hidden' ||
+        rect.width < 100 || rect.height < 70 ||
+        rect.bottom < 70 || rect.top > window.innerHeight - 70 ||
+        rect.left > window.innerWidth - 50 || rect.right < 50) return false;
     const am = lyricsManager?.amEl;
-    const root = lyricsManager?.amActive && am?.parentElement === host ? am.shadowRoot : host;
-    const lines = root ? Array.from(root.querySelectorAll('.lyrics-line:not(.lyrics-footer)')) : [];
-    let focus = root && lyricsManager?.amActive && am?.parentElement === host
-      ? lyricsManager.getAmCurrentLine?.() : null;
-    if (!focus || !lines.includes(focus)) focus = lines.find(line => line.classList.contains('active'));
-    if (!focus && lines.length) {
-      const middle = (view.top + view.bottom) / 2;
-      focus = lines.reduce((best, line) => {
-        const rect = line.getBoundingClientRect();
-        const dist = Math.abs((rect.top + rect.bottom) / 2 - middle);
-        return dist < best.distance ? { line, distance: dist } : best;
-      }, { line: null, distance: Infinity }).line;
+    const rendered = lyricsManager?.amActive && am?.parentElement === lyrics
+      ? am.shadowRoot : lyrics;
+    return !!rendered?.querySelector('.lyrics-line:not(.lyrics-footer)');
+  }
+
+  function visible(node) {
+    if (!node) return false;
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return style.display !== 'none' && style.visibility !== 'hidden' &&
+      rect.width > 2 && rect.height > 2 &&
+      rect.right > 0 && rect.bottom > 0 &&
+      rect.left < window.innerWidth && rect.top < window.innerHeight;
+  }
+
+  function selectPairs(opening) {
+    return pairs.map(([name, miniSelector, fullSelector]) => {
+      const mini = document.querySelector(miniSelector);
+      const full = document.querySelector(fullSelector);
+      return { name, oldNode: opening ? mini : full, newNode: opening ? full : mini };
+    }).filter(pair => visible(pair.oldNode));
+  }
+
+  function cleanup(state) {
+    if (!state || state.cleaned) return;
+    state.cleaned = true;
+    for (const [node, priorName] of state.priorStyles) {
+      node.style.viewTransitionName = priorName;
     }
-    const lineRect = focus?.getBoundingClientRect();
-    const inside = lineRect && lineRect.bottom >= view.top && lineRect.top <= view.bottom;
-    const fontSize = focus ? parseFloat(getComputedStyle(focus).fontSize) : NaN;
-    return {
-      rect: { left: view.left, top: view.top, width: view.width, height: view.height },
-      focusY: inside ? (lineRect.top + lineRect.bottom) / 2 : view.top + view.height / 2,
-      fontSize: Number.isFinite(fontSize) && fontSize > 0 ? fontSize : (fullscreen ? 40 : 17),
-      hasLyrics: lines.length > 0
-    };
-  }
-
-  // The embedded player has two control rows, while fullscreen uses one
-  // continuous control group. Measure their actual rectangles so both
-  // player-side options are handled without guessing target coordinates.
-  function controlsGeometry(fullscreen) {
-    const root = $(fullscreen ? 'fullLyricsPlayer' : 'player');
-    if (!root) return null;
-    const nodes = fullscreen
-      ? [root.querySelector('.full-lyrics-controls')]
-      : [root.querySelector('.player-controls-section'), root.querySelector('.player-right')];
-    const rects = nodes.filter(Boolean).map(node => node.getBoundingClientRect())
-      .filter(withinViewport);
-    if (!rects.length || (fullscreen ? rects.length !== 1 : rects.length !== 2)) return null;
-    const left = Math.min(...rects.map(r => r.left));
-    const top = Math.min(...rects.map(r => r.top));
-    const right = Math.max(...rects.map(r => r.right));
-    const bottom = Math.max(...rects.map(r => r.bottom));
-    const width = right - left, height = bottom - top;
-    return width > 20 && height > 20 ? { left, top, width, height } : null;
-  }
-
-  // Move only the actual controls. This retains the native progress/volume
-  // tracks and play/pause circle at every animation frame.
-  function moveLiveControls(state, mini, full, opening) {
-    const node = $('fullLyricsPlayer')?.querySelector('.full-lyrics-controls');
-    state.overlay?.classList.add('big-lyrics-morph-controls-running');
-    if (!node || !mini || !full) return Promise.resolve();
-
-    // Uniform scaling keeps buttons circular and progress tracks intact.
-    const scale = Math.max(.6, Math.min(1, mini.width / full.width, mini.height / full.height));
-    const offsetX = mini.left + (mini.width - full.width * scale) / 2 - full.left;
-    const offsetY = mini.top + (mini.height - full.height * scale) / 2 - full.top;
-    const compact = {
-      transform: 'translate(' + offsetX + 'px, ' + offsetY + 'px) scale(' + scale + ')',
-      opacity: .94
-    };
-    const native = { transform: 'translate(0px, 0px) scale(1)', opacity: 1 };
-    try {
-      const animation = node.animate(opening ? [compact, native] : [native, compact], {
-        duration: DURATION, easing: EASING, fill: 'forwards'
-      });
-      state.animations.push(animation);
-      return animation.finished.catch(() => {});
-    } catch {
-      return Promise.resolve();
+    if (active === state) {
+      active = null;
+      document.documentElement.classList.remove(ROOT_CLASS);
     }
   }
 
-  function capture(fullscreen) {
-    const items = [];
-    for (const pair of pairs) {
-      const el = targetFor(pair, fullscreen);
-      if (!el) continue;
-      // An unavailable album cover has no element to move.
-      if (pair[3] === 'art' && !el.getAttribute('src')) continue;
-      const snapshot = visualSnapshot(el, pair[3], pair[0]);
-      if (snapshot) items.push(snapshot);
-    }
-    return items;
-  }
-
-  function createPiece(snapshot) {
-    const node = snapshot.kind === 'art' ? document.createElement('img') : document.createElement('div');
-    node.className = 'big-lyrics-morph-piece' +
-      (snapshot.kind === 'button' ? ' big-lyrics-morph-button' : '') +
-      (snapshot.kind === 'bar' ? ' big-lyrics-morph-bar' : '');
-    node.setAttribute('aria-hidden', 'true');
-    node.inert = true;
-    node.style.left = snapshot.rect.left + 'px';
-    node.style.top = snapshot.rect.top + 'px';
-    node.style.width = snapshot.rect.width + 'px';
-    node.style.height = snapshot.rect.height + 'px';
-    node.style.color = snapshot.color;
-    node.style.borderRadius = snapshot.borderRadius;
-    node.style.fontFamily = snapshot.fontFamily;
-    node.style.fontWeight = snapshot.fontWeight;
-    node.style.fontSize = snapshot.fontSize;
-    node.style.lineHeight = snapshot.lineHeight;
-    node.style.letterSpacing = snapshot.letterSpacing;
-
-    if (snapshot.kind === 'art') {
-      node.src = snapshot.art;
-      node.alt = '';
-      node.style.objectFit = 'cover';
-      node.style.borderRadius = snapshot.borderRadius;
-    } else if (snapshot.kind === 'bar') {
-      const fill = document.createElement('span');
-      fill.style.width = (snapshot.fill * 100) + '%';
-      node.appendChild(fill);
-    } else if (snapshot.kind === 'button') {
-      node.style.backgroundColor = snapshot.background;
-      if (snapshot.icon) node.appendChild(snapshot.icon);
-    } else {
-      node.textContent = snapshot.text;
-      node.style.whiteSpace = snapshot.kind === 'lyric' ? 'normal' : 'nowrap';
-      node.style.overflow = 'hidden';
-      node.style.textOverflow = 'ellipsis';
-      node.style.backgroundColor = 'transparent';
-      if (snapshot.kind === 'lyric') node.style.fontWeight = '740';
-    }
-    document.body.appendChild(node);
-    return node;
-  }
-
-  function clear() {
+  function cancel() {
+    if (!active) return;
     const state = active;
-    if (!state) return;
+    ++revision;
     active = null;
-    const finishingClose = state.direction === 'close' && FullLyricsPlayer.isOpen();
-    // Finish the close in one paint: cancelling the fullscreen background
-    // animation otherwise restores the opaque background for a frame.
-    if (finishingClose) state.overlay?.classList.add('big-lyrics-morph-finalizing');
-    if (state.raf) cancelAnimationFrame(state.raf);
-    for (const animation of state.animations) {
-      try { animation.cancel(); } catch (error) { console.warn('Big Lyrics transition cleanup:', error); }
-    }
-    for (const item of state.pieces) item.node.remove();
-    state.overlay?.classList.remove('big-lyrics-morph-entering', 'big-lyrics-morph-lyrics-running', 'big-lyrics-morph-controls-running', 'big-lyrics-morph-exiting');
-    document.body.classList.remove('big-lyrics-morph-closing');
-    if (finishingClose) {
-      FullLyricsPlayer.close();
-      if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
-      lastMini = null;
-      // The closed overlay remains invisible under its normal CSS after
-      // the temporary no-transition guard is removed.
-      requestAnimationFrame(() => {
-        state.overlay?.classList.remove('big-lyrics-morph-finalizing');
-      });
-    }
+    // The update callback checks revision before changing the page.
+    try { state.transition?.skipTransition(); } catch {}
+    cleanup(state);
+    document.documentElement.classList.remove(ROOT_CLASS);
   }
 
-  function updatePieceVisual(piece, visual) {
-    if (!visual) return;
-    const node = piece.node;
-    node.style.color = visual.color;
-    node.style.fontFamily = visual.fontFamily;
-    node.style.fontWeight = visual.fontWeight;
-    if (piece.snapshot.kind === 'button') {
-      node.style.backgroundColor = visual.background;
-      node.replaceChildren();
-      if (visual.icon) node.appendChild(visual.icon.cloneNode(true));
-    }
-  }
-
-  function tween(state, from, to, item) {
-    const node = item.node;
-    const frame = snap => ({
-      left: snap.rect.left + 'px',
-      top: snap.rect.top + 'px',
-      width: snap.rect.width + 'px',
-      height: snap.rect.height + 'px',
-      fontSize: snap.fontSize,
-      borderRadius: snap.borderRadius,
-      backgroundColor: snap.kind === 'button' ? snap.background : 'transparent',
-      opacity: 1
-    });
-    try {
-      const animation = node.animate([frame(from), frame(to)], {
-        duration: DURATION, easing: EASING, fill: 'forwards'
-      });
-      state.animations.push(animation);
-      return animation.finished.catch(() => {});
-    } catch {
-      node.remove();
-      return Promise.resolve();
-    }
-  }
-
-  // Move the ACTUAL fullscreen lyric viewport as a single, uniformly scaled
-  // layer. Every line keeps its original line-height / scroll geometry, so
-  // individual lines cannot collide or duplicate while the view expands.
-  function moveLiveLyrics(state, mini, full, opening) {
-    const host = $('fullLyricsContent');
-    if (!host || !mini || !full || !withinViewport(host.getBoundingClientRect())) return Promise.resolve();
-    const target = full.rect;
-    const source = mini.rect;
-    const fontRatio = mini.fontSize / Math.max(1, full.fontSize);
-    const widthRatio = source.width / Math.max(1, target.width);
-    const scale = Math.max(.26, Math.min(.94, fontRatio, widthRatio));
-    const tx = source.left - target.left;
-    const ty = mini.focusY - target.top - (full.focusY - target.top) * scale;
-    const visibleHeight = Math.min(target.height, Math.max(1, source.height / scale));
-    const localFocus = full.focusY - target.top;
-    const sourceFocusOffset = (mini.focusY - source.top) / scale;
-    const clipTop = Math.max(0, Math.min(target.height - visibleHeight, localFocus - sourceFocusOffset));
-    const clipBottom = Math.max(0, target.height - visibleHeight - clipTop);
-    const miniFrame = {
-      transform: 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')',
-      clipPath: 'inset(' + clipTop + 'px 0px ' + clipBottom + 'px 0px round 14px)',
-      opacity: .96
-    };
-    const fullFrame = { transform: 'translate(0px, 0px) scale(1)', clipPath: 'inset(0px 0px 0px 0px)', opacity: 1 };
-    state.overlay?.classList.add('big-lyrics-morph-lyrics-running');
-    try {
-      const animation = host.animate(opening ? [miniFrame, fullFrame] : [fullFrame, miniFrame], {
-        duration: DURATION, easing: EASING, fill: 'forwards'
-      });
-      state.animations.push(animation);
-      return animation.finished.catch(() => {});
-    } catch {
-      return Promise.resolve();
-    }
-  }
-
-  function finish(state) {
-    if (active !== state) return;
-    const closing = state.direction === 'close';
-    clear();
-    if (!closing && FullLyricsPlayer.isOpen()) FullLyricsPlayer.recenter();
-    else if (closing) lastMini = null;
-  }
-
-  function beginOpening(before, mini) {
-    const overlay = $('fullLyricsPlayer');
-    const state = {
-      direction: 'open', overlay, animations: [], pieces: before.map(snapshot => ({
-        key: snapshot.key, snapshot, node: createPiece(snapshot)
-      })), raf: 0
-    };
-    active = state;
-    overlay?.classList.add('big-lyrics-morph-entering');
-    FullLyricsPlayer.open();
-
-    state.raf = requestAnimationFrame(() => {
-      if (active !== state) return;
-      state.raf = requestAnimationFrame(() => {
-        if (active !== state) return;
-        try {
-        const full = lyricGeometry(true);
-        const fullControls = controlsGeometry(true);
-        // The fullscreen minimal layout uses display:contents for its control
-        // group, so there's no rectangle to animate. Keep that view native.
-        if (!full?.hasLyrics || !fullControls || !supportsFullLayout() ||
-            currentTrack() !== lastMini?.track) {
-          finish(state);
-          return;
-        }
-        const after = capture(true);
-        const targets = new Map(after.map(item => [item.key, item]));
-        const pending = [];
-        for (const item of state.pieces) {
-          const dest = targets.get(item.key);
-          if (!dest) { item.node.remove(); continue; }
-          pending.push(tween(state, item.snapshot, dest, item));
-        }
-        pending.push(moveLiveLyrics(state, mini, full, true));
-        pending.push(moveLiveControls(state, lastMini?.controlsRect, fullControls, true));
-        Promise.all(pending).then(() => finish(state), () => finish(state));
-        } catch (error) {
-          console.warn('Big Lyrics entrance animation failed safely:', error);
-          finish(state);
-        }
-      });
-    });
-  }
-
-  function beginClosing(before, full) {
-    const overlay = $('fullLyricsPlayer');
-    const mini = lastMini?.lyrics;
-    const targets = new Map((lastMini?.controls || []).map(item => [item.key, item]));
-    const fullControls = controlsGeometry(true);
-    const state = {
-      direction: 'close', overlay, animations: [], pieces: before.map(snapshot => ({
-        key: snapshot.key, snapshot, node: createPiece(snapshot)
-      })), raf: 0
-    };
-    active = state;
-    overlay?.classList.add('big-lyrics-morph-exiting');
-    document.body.classList.add('big-lyrics-morph-closing');
-    const pending = [];
-    for (const item of state.pieces) {
-      const dest = targets.get(item.key);
-      if (!dest) { item.node.remove(); continue; }
-      pending.push(tween(state, item.snapshot, dest, item));
-    }
-    pending.push(moveLiveLyrics(state, mini, full, false));
-    pending.push(moveLiveControls(state, lastMini?.controlsRect, fullControls, false));
-    // Let the underlying app reappear behind the transitioning fullscreen
-    // backdrop without moving the real synced lyric component prematurely.
-    for (const id of ['mainContent', 'sidebar', 'player']) {
-      const node = $(id);
-      if (node) node.style.display = '';
-    }
-    // Fade just the fullscreen *background*, never the actual lyrics or
-    // transport buttons. Fading the entire overlay caused the exit glitch.
-    if (overlay?.animate) {
-      try {
-        const background = overlay.animate([
-          { backgroundColor: 'rgb(17,24,32)', offset: 0 },
-          { backgroundColor: 'rgb(17,24,32)', offset: .28 },
-          { backgroundColor: 'rgba(17,24,32,0)', offset: 1 }
-        ], { duration: DURATION, easing: EASING, fill: 'forwards' });
-        state.animations.push(background);
-        pending.push(background.finished.catch(() => {}));
-        const backdropNode = overlay.querySelector('.full-lyrics-backdrop');
-        if (backdropNode?.animate) {
-          const backdropFade = backdropNode.animate([
-            { opacity: 1, offset: 0 },
-            { opacity: 1, offset: .25 },
-            { opacity: 0, offset: 1 }
-          ], { duration: DURATION, easing: EASING, fill: 'forwards' });
-          state.animations.push(backdropFade);
-          pending.push(backdropFade.finished.catch(() => {}));
-        }
-      } catch (error) {
-        console.warn('Big Lyrics background fade unavailable', error);
+  function changeNormally(opening) {
+    if (opening) {
+      if (!FullLyricsPlayer.isOpen()) FullLyricsPlayer.open();
+    } else {
+      if (FullLyricsPlayer.isOpen()) FullLyricsPlayer.close();
+      if (lyricsManager?.amActive &&
+          document.body.classList.contains('big-lyrics-layout')) {
+        lyricsManager.placeAm();
       }
     }
-    Promise.all(pending).then(() => finish(state));
   }
 
-  function open() {
-    clear();
-    $('fullLyricsPlayer')?.classList.remove('big-lyrics-morph-finalizing');
-    if (FullLyricsPlayer.isOpen()) return;
-    lastMini = null;
-    if (!enabledForTransition() || !miniReady() || !miniHasLyrics() ||
-        !supportsFullLayout() || !currentTrack()) {
-      FullLyricsPlayer.open();
+  function navigate(opening) {
+    cancel();
+    if (opening === FullLyricsPlayer.isOpen()) return;
+
+    if (!supported() || (opening && !miniLyricsVisible())) {
+      changeNormally(opening);
       return;
     }
-    let before, mini, controlsRect;
+    // On exit, the original mini panel will reappear after closing; there
+    // are no cached destinations that can become stale during playback.
+    const selected = selectPairs(opening);
+    if (!selected.some(pair => pair.name === 'youtify-vt-art') ||
+        !selected.some(pair => pair.name === 'youtify-vt-transport') ||
+        !selected.some(pair => pair.name === 'youtify-vt-lyrics')) {
+      changeNormally(opening);
+      return;
+    }
+
+    const state = { revision: ++revision, cleaned: false, priorStyles: new Map(), transition: null };
+    const name = (node, value) => {
+      if (!node) return;
+      if (!state.priorStyles.has(node)) state.priorStyles.set(node, node.style.viewTransitionName);
+      node.style.viewTransitionName = value;
+    };
+
     try {
-      before = capture(false);
-      mini = lyricGeometry(false);
-      controlsRect = controlsGeometry(false);
+      for (const pair of selected) name(pair.oldNode, pair.name);
+      document.documentElement.classList.add(ROOT_CLASS);
+      active = state;
+      state.transition = document.startViewTransition(() => {
+        if (state.revision !== revision) return;
+        for (const pair of selected) name(pair.oldNode, 'none');
+        // View Transition callbacks run while rendering is suspended:
+        // never await requestAnimationFrame here (it cannot run yet).
+        changeNormally(opening);
+        for (const pair of selected) {
+          if (visible(pair.newNode)) name(pair.newNode, pair.name);
+        }
+      });
+      state.transition.finished.then(() => cleanup(state), () => cleanup(state));
     } catch (error) {
-      console.warn('Big Lyrics mini layout not ready:', error);
-      FullLyricsPlayer.open();
-      return;
+      console.warn('Big Lyrics browser transition unavailable:', error);
+      cleanup(state);
+      changeNormally(opening);
     }
-    if (!before.length || !mini || !controlsRect) { FullLyricsPlayer.open(); return; }
-    lastMini = { controls: before, controlsRect, lyrics: mini, track: currentTrack() };
-    beginOpening(before, mini);
   }
 
-  function close() {
-    clear();
-    if (!FullLyricsPlayer.isOpen()) return;
-    if (!enabledForTransition() || !miniLyricsSelected() || !supportsFullLayout() ||
-        !lastMini?.lyrics || !lastMini?.controlsRect || currentTrack() !== lastMini.track) {
-      FullLyricsPlayer.close();
-      if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
-      lastMini = null;
-      return;
-    }
-    let before, full, controlsRect;
-    try {
-      before = capture(true);
-      full = lyricGeometry(true);
-      controlsRect = controlsGeometry(true);
-    } catch (error) {
-      console.warn('Big Lyrics fullscreen layout not ready:', error);
-    }
-    if (!before?.length || !full?.hasLyrics || !controlsRect) {
-      FullLyricsPlayer.close();
-      if (lyricsManager?.amActive) lyricsManager.placeAm();
-      lastMini = null;
-      return;
-    }
-    try {
-      beginClosing(before, full);
-    } catch (error) {
-      console.warn('Big Lyrics exit animation failed safely:', error);
-      clear();
-      if (FullLyricsPlayer.isOpen()) FullLyricsPlayer.close();
-      if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
-      lastMini = null;
-    }
-  }
+  const open = () => navigate(true);
+  const close = () => navigate(false);
 
   function setEnabled(value) {
     enabled = !!value;
     try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch {}
-    if (!enabled) { clear(); lastMini = null; }
+    if (!enabled) cancel();
     $('miniLyricsExpandToggle')?.setAttribute('aria-checked', String(enabled));
   }
 
-  // A suspended tab or mid-animation resize must never leave either view hidden.
+  window.addEventListener('resize', cancel);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { clear(); lastMini = null; }
+    if (document.hidden) cancel();
   });
-  window.addEventListener('resize', () => { if (active) clear(); lastMini = null; });
-
-  // Layout, queue and track changes can invalidate measured coordinates.
-  // Complete the current view instantly instead of animating stale boxes.
   document.addEventListener('DOMContentLoaded', () => {
-    $('fullLyricsSwapSide')?.addEventListener('click', () => { if (active) clear(); }, true);
-    $('fullLyricsSettingsOptions')?.addEventListener('change', event => {
-      if (active && event.target?.name === 'layout') clear();
-    }, true);
-    for (const id of ['fullLyricsQueueButton', 'fullLyricsShowLyrics']) {
-      $(id)?.addEventListener('click', () => { if (active) clear(); }, true);
-    }
-    for (const id of ['audioPlayer', 'audioPlayer2']) {
-      $(id)?.addEventListener('loadstart', () => {
-        if (active) clear();
-        lastMini = null;
-      });
-    }
     const button = $('miniLyricsExpandToggle');
-    if (!button) return;
-    button.setAttribute('aria-checked', String(enabled));
-    button.addEventListener('click', () => setEnabled(!enabled));
+    if (button) {
+      button.setAttribute('aria-checked', String(enabled));
+      button.addEventListener('click', () => setEnabled(!enabled));
+    }
+    for (const id of ['fullLyricsSwapSide', 'fullLyricsQueueButton', 'fullLyricsShowLyrics']) {
+      $(id)?.addEventListener('click', cancel, true);
+    }
+    $('fullLyricsSettingsOptions')?.addEventListener('change', cancel, true);
+    $('audioPlayer')?.addEventListener('loadstart', cancel);
+    $('audioPlayer2')?.addEventListener('loadstart', cancel);
   });
+
   return { open, close, setEnabled };
 })();
 
