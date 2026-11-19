@@ -326,7 +326,7 @@ class Utils {
     Utils._toastVisTimer  = setTimeout(() => { toastEl.style.visibility = "hidden"; }, duration + 400);
   }
 
-  static createModal(title, wide = false) {
+  static createModal(title, wide = false, onClose) {
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-overlay active';
     backdrop.style.zIndex = '1000';
@@ -351,7 +351,10 @@ class Utils {
     backdrop.appendChild(modalEl);
     document.body.appendChild(backdrop);
 
-    const close = () => backdrop.remove();
+    const close = () => {
+      backdrop.remove();
+      onClose?.();
+    };
     header.querySelector('.modal-close').addEventListener('click', close);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
 
@@ -1797,6 +1800,13 @@ class ThemeManager {
     ThemeManager.AAB_INLINE_PROPS.forEach(p => document.documentElement.style.removeProperty(p));
   }
 
+  static usesLayoutTheme() {
+    const root = document.documentElement;
+    const theme = root.dataset.theme;
+    return document.body.classList.contains('big-lyrics-layout') &&
+      ((theme && theme !== 'default') || root.classList.contains('christmas') || !!document.getElementById('_te_wrap'));
+  }
+
   static resetToDefault(showBlobs = true) {
     ThemeManager.clearAABInlineOverrides();
     const playerImg = document.getElementById('playerImg');
@@ -1818,12 +1828,14 @@ class ThemeManager {
   }
 
   static applyAlbumColors(track) {
-  if (!albumArtBackground || !track.albumArt) {
-    ThemeManager.resetToDefault(albumArtBackground);
-    return;
-  }
+    if (ThemeManager.usesLayoutTheme()) return;
+    if (!albumArtBackground || !track.albumArt) {
+      ThemeManager.resetToDefault(albumArtBackground);
+      return;
+    }
     const tempImg = new Image();
     tempImg.onload = function () {
+      if (!albumArtBackground || ThemeManager.usesLayoutTheme()) return;
       const SIZE = 80; // upsized from the old 50px sample so quantization has more data to work with
       const canvas = document.createElement('canvas');
       canvas.width = SIZE; canvas.height = SIZE;
@@ -2045,8 +2057,10 @@ class ThemeManager {
       /* Accent drawn ON the page background rather than behind text. The dark
          theme's accent is rgb(17,17,17), which is invisible on a near-black
          panel — fall back to the normal text colour when it can't be seen. */
-      const usable = contrast(L1, lum(bgCol)) >= 2.2;
+      const background = lum(bgCol);
+      const usable = contrast(L1, background) >= 2.2;
       root.style.setProperty('--accent-on-bg', usable ? 'var(--accent)' : 'var(--text-primary)');
+      root.dataset.themeTone = background > .34 ? 'light' : 'dark';
     } catch (e) {}
   }
 
@@ -2101,6 +2115,7 @@ class ThemeManager {
       customThemes.forEach(theme => { ThemeManager.applyCSS(theme); ThemeManager.addToGrid(theme); });
       const cur = localStorage.getItem('theme');
       if (cur) document.querySelectorAll('.color-swatch').forEach(s => { if (s.dataset.theme === cur) s.classList.add('active'); });
+      if (customThemes.some(t => t.name === cur)) document.getElementById('ctb').textContent = 'Edit Theme';
       ThemeSync.init();
     } catch (e) { console.error('Error loading custom themes:', e); }
   }
@@ -2269,9 +2284,17 @@ class ThemeManager {
     }
 
     
+    const originalColors = VARS.map(({ css }) => [css, root.style.getPropertyValue(css), root.style.getPropertyPriority(css)]);
+    let saved = false;
     const modal = Utils.createModal(
       isEditMode ? `Edit Theme — ${activeName}` : 'Theme Builder',
-      true
+      true,
+      () => {
+        if (!saved) {
+          for (const [css, value, priority] of originalColors) root.style.setProperty(css, value, priority);
+        }
+        ThemeManager.applyAccentInk();
+      }
     );
     modal.body.style.padding = '0';
 
@@ -2346,6 +2369,7 @@ class ThemeManager {
         }
         root.style.setProperty(v.css, newVal);
         v._current = newVal;
+        if (['--accent', '--accent-secondary', '--bg-primary'].includes(v.css)) ThemeManager.applyAccentInk();
       }
 
       picker.addEventListener('input', () => sync(picker.value));
@@ -2392,6 +2416,7 @@ class ThemeManager {
     isEditMode ? footer.append(nameInp, saveBtn, copyBtn, deleteBtn) : footer.append(nameInp, saveBtn, copyBtn, resetBtn);
     wrap.appendChild(footer);
     modal.body.appendChild(wrap);
+    ThemeManager.applyAccentInk();
     function buildThemeObj() {
       const name = isEditMode ? (nameInp.value != activeName ? (nameInp.value.length == 0 ? activeName : (nameInp.value.trim() != "") ? nameInp.value : activeName) : activeName) : (nameInp.value.trim() || ('custom_' + Date.now()));
       return { name, theme: VARS.map(v => v._current) };
@@ -2417,19 +2442,20 @@ class ThemeManager {
         } else {
           customThemes.push(theme);
         }
-        ThemeManager.addToGrid(theme);
       }
 
       localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes)); ThemeSync.changed();
       ThemeManager.applyCSS(theme);
-      document.documentElement.style.removeProperty('--glass-tint');
+      ThemeManager.addToGrid(theme);
+      ThemeManager.clearAABInlineOverrides();
       document.documentElement.setAttribute('data-theme', theme.name);
-      ThemeManager.applyAccentInk();
       localStorage.setItem('theme', theme.name);
+      document.getElementById('ctb').textContent = 'Edit Theme';
       document.querySelectorAll('.color-swatch').forEach(s =>
         s.classList.toggle('active', s.dataset.theme === theme.name)
       );
       toast(isEditMode ? `"${theme.name}" updated` : `Theme "${theme.name}" saved`);
+      saved = true;
       modal.close();
     });
 
@@ -2444,7 +2470,6 @@ class ThemeManager {
 
     resetBtn.addEventListener('click', () => {
       if (!confirm('Discard unsaved changes and revert to the current saved values?')) return;
-      VARS.forEach(v => root.style.removeProperty(v.css));
       modal.close();
       ThemeManager.openEditor();
     });
@@ -2491,9 +2516,12 @@ class ThemeManager {
         localStorage.setItem('youtifiy_custom_themes', JSON.stringify(customThemes)); ThemeSync.changed();
         ThemeManager.applyCSS(theme);
         ThemeManager.addToGrid(theme);
-        document.documentElement.style.removeProperty('--glass-tint');
+        ThemeManager.clearAABInlineOverrides();
+        ThemeManager.hideBlobs();
         document.documentElement.setAttribute('data-theme', theme.name);
-      ThemeManager.applyAccentInk();
+        localStorage.setItem('theme', theme.name);
+        document.getElementById('ctb').textContent = 'Edit Theme';
+        ThemeManager.applyAccentInk();
         document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s.dataset.theme === theme.name));
         toast('Theme imported: ' + theme.name);
         imodal.close();
@@ -2700,6 +2728,7 @@ const ThemeSync = (() => {
       added.forEach((t) => { ThemeManager.applyCSS(t); ThemeManager.addToGrid(t); });
       const cur = localStorage.getItem('theme');
       if (cur) document.querySelectorAll('.color-swatch').forEach((s) => { if (s.dataset.theme === cur) s.classList.add('active'); });
+      if (added.some(theme => theme.name === cur)) ThemeManager.applyAccentInk();
       if (newCount) toast(`${newCount} theme${newCount > 1 ? 's' : ''} restored from your account`);
     } catch (e) { console.warn('[theme-sync] UI refresh failed', e); }
     if (hasPending()) schedulePush();
@@ -11095,7 +11124,14 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function applyLayout() {
+    const hadLayoutTheme = ThemeManager.usesLayoutTheme();
     document.body.classList.toggle('big-lyrics-layout', select.value === 'big-lyrics');
+    const hasLayoutTheme = ThemeManager.usesLayoutTheme();
+    if (hasLayoutTheme && !hadLayoutTheme) ThemeManager.resetToDefault(false);
+    if (hadLayoutTheme && !hasLayoutTheme && albumArtBackground && queue[currentTrackIndex]) {
+      ThemeManager.applyAlbumColors(queue[currentTrackIndex]);
+    }
+    ThemeManager.applyAccentInk();
     document.dispatchEvent(new Event('youtify:app-layout-change'));
     syncBackground();
   }
