@@ -914,26 +914,24 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   }
 }
 
-/* Browser-rendered mini -> Big Lyrics shared element transitions.
-   No fake copies of controls, and no stretched text layer. */
+/* Keep Big Lyrics' own entrance/exit transition from fading the
+   snapshots while the browser handles the shared-element movement. */
+html.youtify-big-lyrics-view-transition #fullLyricsPlayer,
+html.youtify-big-lyrics-view-transition #fullLyricsPlayer * {
+  transition: none !important;
+}
+html.youtify-big-lyrics-view-transition #fullLyricsPlayer :is(
+  #fullLyricsArt, #fullLyricsTitle, #fullLyricsArtist
+) {
+  animation: none !important;
+  opacity: 1 !important;
+}
+
+/* Only animate the actual positions and sizes of the shared elements.
+   The destination snapshot is visible for the entire move, so neither
+   side can fade out, blink, or double up halfway through. */
 @keyframes youtify-vt-old-root { to { opacity: 0; } }
 @keyframes youtify-vt-new-root { from { opacity: 0; } }
-@keyframes youtify-vt-old-lyrics {
-  0% { opacity: 1; }
-  22%, 100% { opacity: 0; }
-}
-@keyframes youtify-vt-new-lyrics {
-  0%, 25% { opacity: 0; }
-  70%, 100% { opacity: 1; }
-}
-@keyframes youtify-vt-old-controls {
-  0% { opacity: 1; }
-  32%, 100% { opacity: 0; }
-}
-@keyframes youtify-vt-new-controls {
-  0%, 30% { opacity: 0; }
-  68%, 100% { opacity: 1; }
-}
 html.youtify-big-lyrics-view-transition::view-transition-group(*) {
   animation-duration: 600ms;
   animation-timing-function: cubic-bezier(.22, 1, .36, 1);
@@ -944,27 +942,27 @@ html.youtify-big-lyrics-view-transition::view-transition-old(root) {
 html.youtify-big-lyrics-view-transition::view-transition-new(root) {
   animation: 390ms ease-out both youtify-vt-new-root;
 }
-html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-lyrics) {
-  animation: 600ms ease-in-out both youtify-vt-old-lyrics;
-}
-html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-lyrics) {
-  animation: 600ms ease-in-out both youtify-vt-new-lyrics;
-}
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-art),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-title),
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-artist),
 html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-progress),
 html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-transport),
 html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-mute),
 html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-volume),
-html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-title),
-html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-artist) {
-  animation: 600ms ease-in-out both youtify-vt-old-controls;
+html.youtify-big-lyrics-view-transition::view-transition-old(youtify-vt-lyrics) {
+  animation: none !important;
+  opacity: 0;
 }
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-art),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-title),
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-artist),
 html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-progress),
 html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-transport),
 html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-mute),
 html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-volume),
-html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-title),
-html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-artist) {
-  animation: 600ms ease-in-out both youtify-vt-new-controls;
+html.youtify-big-lyrics-view-transition::view-transition-new(youtify-vt-lyrics) {
+  animation: none !important;
+  opacity: 1;
 }
 html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-lyrics),
 html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-transport) {
