@@ -10458,6 +10458,8 @@ const FullLyricsPlayer = (() => {
     const overlay = $('fullLyricsPlayer');
     if (!overlay || opened) return;
 
+    // Keep the outgoing pane visible until the fullscreen overlay has closed.
+    toggleQueue(false);
     opened = true;
     overlay.inert = false;
     overlay.style.display = '';
@@ -10499,7 +10501,6 @@ const FullLyricsPlayer = (() => {
     endingQueueTrack = null;
     clearPastLyrics();
     warpedBackdrop?.sync();
-    toggleQueue(false);
     document.getElementById('mainContent').style.display = "";
     document.getElementById('sidebar').style.display = "";
     document.getElementById('player').style.display = "";
@@ -10568,12 +10569,15 @@ const BigLyricsMorph = (() => {
       $('fullLyricsPlayer')?.dataset.layout !== 'minimal';
   }
 
+  function miniLyricsSelected() {
+    const stage = $('playerEmbedStage');
+    return !!stage && !stage.classList.contains('flipped') && !stage.classList.contains('show-queue');
+  }
+
   function miniLyricsVisible() {
     const embed = $('playerEmbed');
-    const stage = $('playerEmbedStage');
     const lyrics = $('playerEmbedLyricsContent');
-    if (!embed || !lyrics || stage?.classList.contains('flipped') ||
-        stage?.classList.contains('show-queue')) return false;
+    if (!embed || !lyrics) return false;
     const rect = embed.getBoundingClientRect();
     const style = getComputedStyle(embed);
     if (style.display === 'none' || style.visibility === 'hidden' ||
@@ -10587,10 +10591,10 @@ const BigLyricsMorph = (() => {
   }
 
   function visible(node) {
-    if (!node) return false;
+    if (!node || node.hidden) return false;
     const rect = node.getBoundingClientRect();
     const style = getComputedStyle(node);
-    return style.display !== 'none' && style.visibility !== 'hidden' &&
+    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' &&
       rect.width > 2 && rect.height > 2 &&
       rect.right > 0 && rect.bottom > 0 &&
       rect.left < window.innerWidth && rect.top < window.innerHeight;
@@ -10639,11 +10643,19 @@ const BigLyricsMorph = (() => {
     }
   }
 
+  function finishWithoutMorph() {
+    const state = active;
+    if (!state) return;
+    cancel();
+    changeNormally(state.opening);
+  }
+
   function navigate(opening) {
     cancel();
     if (opening === FullLyricsPlayer.isOpen()) return;
 
-    if (!supported() || (opening && !miniLyricsVisible())) {
+    if (!supported() || !miniLyricsSelected() ||
+        (opening ? !miniLyricsVisible() : !visible($('fullLyricsContent')))) {
       changeNormally(opening);
       return;
     }
@@ -10657,7 +10669,7 @@ const BigLyricsMorph = (() => {
       return;
     }
 
-    const state = { revision: ++revision, cleaned: false, priorStyles: new Map(), transition: null };
+    const state = { opening, revision: ++revision, cleaned: false, priorStyles: new Map(), transition: null };
     const name = (node, value) => {
       if (!node) return;
       if (!state.priorStyles.has(node)) state.priorStyles.set(node, node.style.viewTransitionName);
@@ -10675,7 +10687,8 @@ const BigLyricsMorph = (() => {
         // never await requestAnimationFrame here (it cannot run yet).
         changeNormally(opening);
         for (const pair of selected) {
-          if (visible(pair.newNode)) name(pair.newNode, pair.name);
+          const lyricPair = pair.name === 'youtify-vt-lyrics';
+          if (visible(pair.newNode) && (!lyricPair || opening || miniLyricsSelected())) name(pair.newNode, pair.name);
         }
       });
       state.transition.finished.then(() => cleanup(state), () => cleanup(state));
@@ -10689,21 +10702,21 @@ const BigLyricsMorph = (() => {
   const open = () => navigate(true);
   const close = () => navigate(false);
 
-  window.addEventListener('resize', cancel);
-  document.addEventListener('youtify:app-layout-change', cancel);
+  window.addEventListener('resize', finishWithoutMorph);
+  document.addEventListener('youtify:app-layout-change', finishWithoutMorph);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) cancel();
+    if (document.hidden) finishWithoutMorph();
   });
   document.addEventListener('DOMContentLoaded', () => {
     for (const id of ['fullLyricsSwapSide', 'fullLyricsQueueButton', 'fullLyricsShowLyrics']) {
-      $(id)?.addEventListener('click', cancel, true);
+      $(id)?.addEventListener('click', finishWithoutMorph, true);
     }
-    $('fullLyricsSettingsOptions')?.addEventListener('change', cancel, true);
-    $('audioPlayer')?.addEventListener('loadstart', cancel);
-    $('audioPlayer2')?.addEventListener('loadstart', cancel);
+    $('fullLyricsSettingsOptions')?.addEventListener('change', finishWithoutMorph, true);
+    $('audioPlayer')?.addEventListener('loadstart', finishWithoutMorph);
+    $('audioPlayer2')?.addEventListener('loadstart', finishWithoutMorph);
   });
 
-  return { open, close };
+  return { open, close, isOpening: () => active?.opening === true };
 })();
 
 function openFullLyricsPlayer() {
@@ -10871,7 +10884,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && FullLyricsPlayer.isOpen() && !document.getElementById('fullLyricsSourcePicker')?.open) {
+  if (e.key === 'Escape' && (FullLyricsPlayer.isOpen() || BigLyricsMorph.isOpening()) &&
+      !document.getElementById('fullLyricsSourcePicker')?.open) {
     if (e.defaultPrevented || document.getElementById('fullLyricsSettingsDialog')?.open) return;
     e.preventDefault();
     const queueButton = document.getElementById('fullLyricsQueueButton');

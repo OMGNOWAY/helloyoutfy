@@ -14,28 +14,26 @@ assert(!controllerCode.includes('setEnabled'), 'Animation cannot be disabled sep
 
 assert(html.includes('::view-transition-group(*)'), 'CSS view transition animation exists');
 
-// Shared controls and lyrics should move continuously, without opacity
-// crossfades or an overlapping fullscreen entrance animation.
-const sharedNames = ['art', 'title', 'artist', 'progress',
-  'transport', 'mute', 'volume', 'lyrics'];
+// Artwork and lyrics keep a single snapshot. Controls blend during movement.
 const oldStart = html.indexOf('::view-transition-old(youtify-vt-art)');
 const newStart = html.indexOf('::view-transition-new(youtify-vt-art)');
-const pairStart = html.indexOf('::view-transition-image-pair(youtify-vt-lyrics)');
-assert(oldStart >= 0 && newStart > oldStart && pairStart > newStart);
-const oldSharedRule = html.slice(oldStart, newStart);
-const newSharedRule = html.slice(newStart, pairStart);
-for (const name of sharedNames) {
-  assert(oldSharedRule.includes('::view-transition-old(youtify-vt-' + name + ')'),
-    'source snapshot ' + name + ' is defined');
-  assert(newSharedRule.includes('::view-transition-new(youtify-vt-' + name + ')'),
-    'destination snapshot ' + name + ' is defined');
+const oldSharedRule = html.slice(oldStart, html.indexOf('}', oldStart));
+const newSharedRule = html.slice(newStart, html.indexOf('}', newStart));
+for (const name of ['art', 'title', 'artist', 'lyrics']) {
+  assert(oldSharedRule.includes('::view-transition-old(youtify-vt-' + name + ')'));
+  assert(newSharedRule.includes('::view-transition-new(youtify-vt-' + name + ')'));
 }
-assert(/animation:\s*none\s*!important;\s*opacity:\s*0\s*;/.test(oldSharedRule),
-  'old shared snapshots do not crossfade');
-assert(/animation:\s*none\s*!important;\s*opacity:\s*1\s*;/.test(newSharedRule),
-  'new shared snapshots stay fully visible');
-assert(!/youtify-vt-(?:old|new)-(?:controls|lyrics)/.test(html),
-  'shared element opacity keyframes were removed');
+assert(/animation:\s*none\s*!important;\s*opacity:\s*0\s*;/.test(oldSharedRule));
+assert(/animation:\s*none\s*!important;\s*opacity:\s*1\s*;/.test(newSharedRule));
+for (const [layer, fade] of [['old', 'out'], ['new', 'in']]) {
+  for (const name of ['progress', 'transport', 'mute', 'volume']) {
+    const start = html.indexOf(`::view-transition-${layer}(youtify-vt-${name})`);
+    assert(start >= 0);
+    const rule = html.slice(start, html.indexOf('}', start));
+    assert(rule.includes(`youtify-vt-controls-${fade}`));
+    assert(rule.includes('mix-blend-mode: plus-lighter'));
+  }
+}
 assert(/html\.youtify-big-lyrics-view-transition #fullLyricsPlayer\s*,\s*html\.youtify-big-lyrics-view-transition #fullLyricsPlayer \*\s*\{\s*transition:\s*none\s*!important/.test(html),
   'fullscreen CSS transitions do not compete with browser snapshots');
 
@@ -128,7 +126,8 @@ function setup(options = {}) {
     },
     dispatch(type) { for (const handler of this.listeners.get(type) || []) handler(); }
   };
-  let pending = [], skipped = 0, transitions = [];
+  const pending = [], transitions = [];
+  let skipped = 0;
   if (!options.unsupported) {
     doc.startViewTransition = update => {
       calls++;
@@ -151,7 +150,8 @@ function setup(options = {}) {
     addEventListener(type, callback) {
       if (!this.listeners.has(type)) this.listeners.set(type, []);
       this.listeners.get(type).push(callback);
-    }
+    },
+    dispatch(type) { for (const handler of this.listeners.get(type) || []) handler(); }
   };
   const load = new Function('document','window','localStorage','getComputedStyle',
     'FullLyricsPlayer','lyricsManager','console',controllerCode + '\nreturn BigLyricsMorph;');
@@ -216,11 +216,11 @@ async function check(name, run) {
     await Promise.resolve();await Promise.resolve();
     assert(!t.open);assert(t.clean());assert(t.skipped>=1);
   });
-  await check('cancel on audio loading does not leave names', async () => {
+  await check('audio loading finishes a pending open and clears names', async () => {
     const t=setup();t.controller.open();
     t.elements.get('audioPlayer').dispatch('loadstart');t.flush();
     await Promise.resolve();await Promise.resolve();
-    assert(!t.open);assert(t.clean());assert(t.skipped>=1);
+    assert(t.open);assert(t.clean());assert(t.skipped>=1);
   });
   await check('old disabled preference no longer blocks Big Lyrics morph', async () => {
     const t=setup({disabled:true});
@@ -228,22 +228,45 @@ async function check(name, run) {
     await Promise.resolve();await Promise.resolve();
     assert(t.open);assert(t.clean());
   });
-  await check('changing to Classic mid-animation cancels transition', async () => {
+  await check('switching to Classic finishes a pending open', async () => {
     const t=setup();
     t.controller.open();
     t.doc.body.classList.remove('big-lyrics-layout');
     t.doc.dispatch('youtify:app-layout-change');
     t.flush();
-    await Promise.resolve();await Promise.resolve();
-    assert(!t.open);assert(t.clean());assert(t.skipped>=1);
-    t.controller.open();t.flush();
     await Promise.resolve();
-    assert(t.open);assert.equal(t.calls,1);
+    assert(t.open); assert(t.clean()); assert.equal(t.skipped, 1);
+    t.controller.close();
+    assert(!t.open); assert.equal(t.calls, 1);
   });
-  await check('album side change cancels active transition', async () => {
-    const t=setup();t.controller.open();t.elements.get('fullLyricsSwapSide').dispatch('click');t.flush();
-    await Promise.resolve();await Promise.resolve();
-    assert(!t.open);assert(t.clean());
+  await check('resize finishes both pending open and pending close', async () => {
+    const t = setup();
+    t.controller.open();
+    t.win.dispatch('resize');
+    t.flush();
+    await Promise.resolve();
+    assert(t.open); assert(t.clean());
+    t.controller.close();
+    t.win.dispatch('resize');
+    t.flush();
+    await Promise.resolve();
+    assert(!t.open); assert(t.clean()); assert.equal(t.skipped, 2);
+  });
+  await check('closing uses fallback if either lyrics pane is hidden', async () => {
+    const cases = [
+      t => t.elements.get('playerEmbedStage').classList.add('flipped'),
+      t => t.elements.get('playerEmbedStage').classList.add('show-queue'),
+      t => { t.elements.get('fullLyricsContent').hidden = true; }
+    ];
+    for (const hideLyrics of cases) {
+      const t = setup();
+      t.controller.open();
+      t.flush();
+      await Promise.resolve();
+      hideLyrics(t);
+      t.controller.close();
+      assert(!t.open); assert(t.clean()); assert.equal(t.calls, 1);
+    }
   });
   await check('open and close repeatedly restore names', async () => {
     const t=setup();
