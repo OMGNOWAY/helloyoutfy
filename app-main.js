@@ -10671,19 +10671,26 @@ const BigLyricsMorph = (() => {
     const state = active;
     if (!state) return;
     active = null;
+    const finishingClose = state.direction === 'close' && FullLyricsPlayer.isOpen();
+    // Finish the close in one paint: cancelling the fullscreen background
+    // animation otherwise restores the opaque background for a frame.
+    if (finishingClose) state.overlay?.classList.add('big-lyrics-morph-finalizing');
     if (state.raf) cancelAnimationFrame(state.raf);
-    // Never allow a rejected or interrupted animation to leave the real
-    // fullscreen lyrics and transport controls in a transformed state.
     for (const animation of state.animations) {
       try { animation.cancel(); } catch (error) { console.warn('Big Lyrics transition cleanup:', error); }
     }
     for (const item of state.pieces) item.node.remove();
     state.overlay?.classList.remove('big-lyrics-morph-entering', 'big-lyrics-morph-lyrics-running', 'big-lyrics-morph-controls-running', 'big-lyrics-morph-exiting');
     document.body.classList.remove('big-lyrics-morph-closing');
-    if (state.direction === 'close' && FullLyricsPlayer.isOpen()) {
+    if (finishingClose) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
       lastMini = null;
+      // The closed overlay remains invisible under its normal CSS after
+      // the temporary no-transition guard is removed.
+      requestAnimationFrame(() => {
+        state.overlay?.classList.remove('big-lyrics-morph-finalizing');
+      });
     }
   }
 
@@ -10869,6 +10876,7 @@ const BigLyricsMorph = (() => {
 
   function open() {
     clear();
+    $('fullLyricsPlayer')?.classList.remove('big-lyrics-morph-finalizing');
     if (FullLyricsPlayer.isOpen()) return;
     lastMini = null;
     if (!enabledForTransition() || !miniReady() || !miniHasLyrics() ||
