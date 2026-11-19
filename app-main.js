@@ -10400,12 +10400,194 @@ const FullLyricsPlayer = (() => {
   };
 })();
 
+// Experimental shared-element transition between the embedded mini lyrics
+// and the fullscreen lyrics viewport. We only animate a lightweight, inert
+// visual copy — the real am-lyrics element stays with LyricsManager.
+const BigLyricsMorph = (() => {
+  const STORAGE_KEY = 'youtify_mini_lyrics_expand';
+  let enabled = false;
+  let active = null;
+  try { enabled = localStorage.getItem(STORAGE_KEY) === 'on'; } catch {}
+
+  const byId = id => document.getElementById(id);
+  const boundsValid = rect => rect && Number.isFinite(rect.x) &&
+    rect.width >= 90 && rect.height >= 65 &&
+    rect.bottom > 0 && rect.top < window.innerHeight &&
+    rect.right > 0 && rect.left < window.innerWidth;
+
+  function allowed() {
+    return enabled &&
+      document.body.classList.contains('big-lyrics-layout') &&
+      !document.body.classList.contains('performance-mode') &&
+      !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches &&
+      window.innerWidth > 860 &&
+      typeof Element !== 'undefined' && typeof Element.prototype.animate === 'function';
+  }
+
+  function miniPanel() {
+    const mini = byId('playerEmbed');
+    const stage = byId('playerEmbedStage');
+    if (!mini || getComputedStyle(mini).display === 'none' ||
+        stage?.classList.contains('flipped') ||
+        stage?.classList.contains('show-queue')) return null;
+    return boundsValid(mini.getBoundingClientRect()) ? mini : null;
+  }
+
+  function lyricSnapshot(host) {
+    let result = [];
+    const nodes = host ? Array.from(host.querySelectorAll('.lyrics-line')) : [];
+    if (nodes.length) {
+      const activeIndex = Math.max(0, nodes.findIndex(node => node.classList.contains('active')));
+      result = nodes.slice(Math.max(0, activeIndex - 1), activeIndex + 2)
+        .map((node, index) => ({
+          text: (node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+          current: nodes.indexOf(node) === activeIndex
+        })).filter(item => item.text);
+    }
+
+    // am-lyrics renders in a shadow root. Use its parsed, already-fetched
+    // lyrics instead of cloning the web component or triggering another fetch.
+    if (!result.length && lyricsManager?.parsedLines?.length) {
+      const lines = lyricsManager.parsedLines;
+      const ms = Math.max(0, Number(audio?.currentTime || 0) * 1000);
+      let current = 0;
+      for (let i = 0; i < lines.length; i++) {
+        if (Number(lines[i].startMs) <= ms) current = i;
+        else break;
+      }
+      result = lines.slice(Math.max(0, current - 1), current + 2)
+        .map((line, index, subset) => ({
+          text: String(line.text || '').slice(0, 180),
+          current: line === lines[current]
+        })).filter(item => item.text);
+    }
+    if (!result.length) {
+      const fallback = (host?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 150);
+      result = [{ text: fallback || 'Lyrics', current: true }];
+    }
+    return result;
+  }
+
+  function cleanup() {
+    const current = active;
+    if (!current) return;
+    active = null;
+    // Cancelling an interrupted transition must not keep the mini panel hidden.
+    current.animation?.cancel();
+    current.ghost.remove();
+    if (current.mini) current.mini.style.visibility = current.previousVisibility;
+    current.overlay?.classList.remove('big-lyrics-morph-entering');
+  }
+
+  function fly(from, to, direction, lines, mini, overlay) {
+    if (!boundsValid(from) || !boundsValid(to)) return false;
+    const ghost = document.createElement('div');
+    ghost.className = 'big-lyrics-morph-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+
+    for (const item of lines) {
+      const line = document.createElement('div');
+      line.className = 'big-lyrics-morph-line' + (item.current ? ' is-current' : '');
+      line.textContent = item.text;
+      ghost.appendChild(line);
+    }
+    Object.assign(ghost.style, {
+      left: from.left + 'px',
+      top: from.top + 'px',
+      width: from.width + 'px',
+      height: from.height + 'px'
+    });
+    document.body.appendChild(ghost);
+    const previousVisibility = mini?.style.visibility ?? '';
+    if (direction === 'close' && mini) mini.style.visibility = 'hidden';
+
+    const frame = (rect, entering) => ({
+      left: rect.left + 'px',
+      top: rect.top + 'px',
+      width: rect.width + 'px',
+      height: rect.height + 'px',
+      borderRadius: entering ? '19px' : '10px',
+      backgroundColor: entering ? 'rgba(18,24,34,.76)' : 'rgba(18,24,34,.06)',
+      borderColor: entering ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,0)',
+      opacity: entering ? 1 : .15
+    });
+    let animation;
+    try {
+      animation = ghost.animate(
+        [frame(from, direction === 'open'), frame(to, direction === 'close')],
+        { duration: 490, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: 'forwards' }
+      );
+    } catch (error) {
+      ghost.remove();
+      if (mini) mini.style.visibility = previousVisibility;
+      overlay?.classList.remove('big-lyrics-morph-entering');
+      return false;
+    }
+
+    const state = active = { ghost, animation, mini, overlay, previousVisibility };
+    const finish = () => { if (active === state) cleanup(); };
+    animation.finished.then(finish, finish);
+    return true;
+  }
+
+  function open() {
+    cleanup();
+    if (FullLyricsPlayer.isOpen()) return;
+    const mini = allowed() && miniPanel();
+    const from = mini?.getBoundingClientRect();
+    const lines = mini ? lyricSnapshot(byId('playerEmbedLyricsContent')) : [];
+    const overlay = byId('fullLyricsPlayer');
+    if (mini && overlay) overlay.classList.add('big-lyrics-morph-entering');
+    FullLyricsPlayer.open();
+    if (!mini || !overlay) return;
+
+    const to = byId('fullLyricsContent')?.getBoundingClientRect();
+    if (!fly(from, to, 'open', lines, null, overlay)) {
+      overlay.classList.remove('big-lyrics-morph-entering');
+    }
+  }
+
+  function close() {
+    cleanup();
+    if (!FullLyricsPlayer.isOpen()) return;
+    const useMotion = allowed();
+    const full = byId('fullLyricsContent');
+    const from = useMotion ? full?.getBoundingClientRect() : null;
+    const lines = useMotion ? lyricSnapshot(full) : [];
+    const overlay = byId('fullLyricsPlayer');
+    FullLyricsPlayer.close();
+
+    // The same am-lyrics web component moves back to the mini host. Never
+    // create a replacement component or a second source of lyric updates.
+    if (useMotion && lyricsManager?.amActive) lyricsManager.placeAm();
+    const mini = useMotion && miniPanel();
+    if (!mini || !boundsValid(from)) return;
+    fly(from, mini.getBoundingClientRect(), 'close', lines, mini, overlay);
+  }
+
+  function setEnabled(value) {
+    enabled = !!value;
+    try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch {}
+    if (!enabled) cleanup();
+    const button = byId('miniLyricsExpandToggle');
+    button?.setAttribute('aria-checked', String(enabled));
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const button = byId('miniLyricsExpandToggle');
+    if (!button) return;
+    button.setAttribute('aria-checked', String(enabled));
+    button.addEventListener('click', () => setEnabled(!enabled));
+  });
+  return { open, close, setEnabled };
+})();
+
 function openFullLyricsPlayer() {
-  FullLyricsPlayer.open();
+  BigLyricsMorph.open();
 }
 
 function closeFullLyricsPlayer() {
-  FullLyricsPlayer.close();
+  BigLyricsMorph.close();
 }
 
 function seekFullLyricsProgress(event) {
