@@ -914,6 +914,71 @@ body.big-lyrics-layout #player .player-right .volume-slider {
   }
 }
 
+
+/* Big Lyrics desktop: spacious player groups and a mini-lyrics panel whose
+   bottom edge meets the floating navigation dock's bottom edge. */
+@media (min-width: 861px) {
+  body.big-lyrics-layout #app #player {
+    height: calc(100% + 102px - clamp(12px, 2.5vh, 28px)) !important;
+    min-height: 0;
+    gap: clamp(13px, 1.7vh, 20px);
+  }
+  body.big-lyrics-layout #player .player-track {
+    gap: clamp(16px, 2.2vh, 26px);
+  }
+  body.big-lyrics-layout #player #playerTitle {
+    margin-bottom: 7px;
+  }
+  body.big-lyrics-layout #player .player-controls-section {
+    gap: 15px;
+  }
+  body.big-lyrics-layout #player .player-right {
+    gap: clamp(12px, 1.25vw, 18px) !important;
+  }
+}
+
+/* The full bar is draggable, and the knob remains visible even at rest.
+   Keep this scoped to the optional layout to preserve the classic design. */
+body.big-lyrics-layout #player :is(#progressBar, .player-right .volume-slider) {
+  position: relative;
+  height: 7px !important;
+  overflow: visible !important;
+  border-radius: 999px !important;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.big-lyrics-layout #player :is(#progressBar, .player-right .volume-slider)::before {
+  content: "";
+  position: absolute;
+  inset: -12px 0;
+}
+body.big-lyrics-layout #player :is(#progressBar, .player-right .volume-slider)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--slider-progress, 0%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 9px #0006;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+body.big-lyrics-layout #player #progressBar .progress-fill::after {
+  display: none;
+}
+body.big-lyrics-layout #player :is(#progressBar, .player-right .volume-slider):focus-visible {
+  outline: 2px solid #d6e7ff;
+  outline-offset: 9px;
+}
+body.big-lyrics-layout #player :is(#progressBar, .player-right .volume-slider).is-dragging :is(.progress-fill, .volume-fill) {
+  transition: none !important;
+}
+
 /* Keep Big Lyrics' own entrance/exit transition from fading the
    snapshots while the browser handles the shared-element movement. */
 html.youtify-big-lyrics-view-transition #fullLyricsPlayer,
@@ -1295,7 +1360,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
       </div>
       <div class="progress-section">
         <span class="time" id="currentTime">0:00</span>
-        <div class="progress-bar" id="progressBar" onclick="seekTo(event)">
+        <div class="progress-bar" id="progressBar" role="slider" tabindex="0" aria-label="Playback position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0:00 of 0:00">
           <div class="progress-fill" id="progressFill"></div>
         </div>
         <span class="time" id="duration">0:00</span>
@@ -1376,7 +1441,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
   <path d="M16 9.5a4 4 0 0 1 0 5"></path>
   <path d="M18.8 7a7.5 7.5 0 0 1 0 10"></path>
 </svg></button>
-<div class="volume-slider" onclick="setVolume(event)">
+<div class="volume-slider" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-valuetext="100 percent">
           <div class="volume-fill" id="volumeFill" style="width: 100%;"></div>
       </div>
     </div>
