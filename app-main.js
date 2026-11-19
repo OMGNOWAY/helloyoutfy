@@ -10690,6 +10690,7 @@ const BigLyricsMorph = (() => {
   const close = () => navigate(false);
 
   window.addEventListener('resize', cancel);
+  document.addEventListener('youtify:app-layout-change', cancel);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) cancel();
   });
