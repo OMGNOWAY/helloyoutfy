@@ -2967,21 +2967,27 @@ isPlaying2 = false;
   }
 
   static updateProgressBar() {
-    const fill     = document.getElementById('progressFill');
-    const current  = document.getElementById('currentTime');
+    const fill = document.getElementById('progressFill');
+    const current = document.getElementById('currentTime');
     const duration = document.getElementById('duration');
-    const percent = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.max(0, Math.min(100, audio.currentTime / audio.duration * 100)) : 0;
-    if (fill) fill.style.width = percent + '%';
     const progressSlider = document.getElementById('progressBar');
+    const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+    // During a drag, update the slider preview but leave audio.currentTime
+    // untouched until the pointer is released.
+    const pending = progressSlider?.dataset?.previewSeconds;
+    const previewSeconds = pending === undefined ? NaN : Number(pending);
+    const liveSeconds = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+    const currentSeconds = Math.max(0, Math.min(durationSeconds,
+      Number.isFinite(previewSeconds) ? previewSeconds : liveSeconds));
+    const percent = durationSeconds > 0 ? currentSeconds / durationSeconds * 100 : 0;
+    if (fill) fill.style.width = percent + '%';
     if (progressSlider) {
-      const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
-      const currentSeconds = Number.isFinite(audio.currentTime) ? Math.max(0, Math.min(durationSeconds, audio.currentTime)) : 0;
       progressSlider.style.setProperty('--slider-progress', percent + '%');
       progressSlider.setAttribute('aria-valuemax', String(Math.round(durationSeconds)));
       progressSlider.setAttribute('aria-valuenow', String(Math.round(currentSeconds)));
       progressSlider.setAttribute('aria-valuetext', `${Utils.formatTime(currentSeconds)} of ${Utils.formatTime(durationSeconds)}`);
     }
-    if (current)  current.textContent  = Utils.formatTime(audio.currentTime);
+    if (current) current.textContent = Utils.formatTime(currentSeconds);
     if (duration) duration.textContent = Utils.formatTime(audio.duration);
     if (lyricsManager?.isOpen) lyricsManager.handleTimeUpdate();
   }
@@ -3257,15 +3263,21 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
   const sliderFrom = target => target?.closest?.(selector) || null;
   const isSeek = node => node.id === 'progressBar';
 
-  function setFromClientX(node, x) {
+  function setFromClientX(node, x, commitSeek = false) {
     const rect = node.getBoundingClientRect();
     if (!(rect.width > 0)) return;
     const fraction = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
     if (isSeek(node)) {
       if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
-      PlayerController.seekSeconds(fraction * audio.duration);
+      const seconds = fraction * audio.duration;
+      if (commitSeek) {
+        delete node.dataset.previewSeconds;
+        PlayerController.seekSeconds(seconds);
+        FullLyricsPlayer?.syncPlayback?.();
+      } else {
+        node.dataset.previewSeconds = String(seconds);
+      }
       PlayerController.updateProgressBar();
-      FullLyricsPlayer?.syncPlayback?.();
     } else {
       PlayerController.applyVolume(fraction);
     }
@@ -3291,7 +3303,11 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
     if (!activePointer || activePointer.id !== event.pointerId) return;
     const slider = activePointer.slider;
     activePointer = null;
-    if (commit) setFromClientX(slider, event.clientX);
+    if (commit) setFromClientX(slider, event.clientX, true);
+    else if (isSeek(slider)) {
+      delete slider.dataset.previewSeconds;
+      PlayerController.updateProgressBar();
+    }
     slider.classList.remove('is-dragging');
     try { slider.releasePointerCapture?.(event.pointerId); } catch {}
   }
@@ -3299,16 +3315,20 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
   document.addEventListener('pointercancel', event => release(event, false));
   document.addEventListener('lostpointercapture', event => {
     if (activePointer?.slider === event.target) {
-      activePointer.slider.classList.remove('is-dragging');
+      const slider = activePointer.slider;
+      slider.classList.remove('is-dragging');
       activePointer = null;
+      if (isSeek(slider)) {
+        delete slider.dataset.previewSeconds;
+        PlayerController.updateProgressBar();
+      }
     }
   }, true);
 
-  // Keep mouse clicks available for browsers without Pointer Events.
   if (typeof PointerEvent === 'undefined') {
     document.addEventListener('click', event => {
       const slider = sliderFrom(event.target);
-      if (slider) setFromClientX(slider, event.clientX);
+      if (slider) setFromClientX(slider, event.clientX, true);
     });
   }
   document.addEventListener('keydown', event => {
