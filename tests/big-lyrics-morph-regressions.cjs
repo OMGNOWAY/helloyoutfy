@@ -115,7 +115,7 @@ function setup(options = {}) {
 
   const storage = new Map([['youtify_mini_lyrics_expand', options.disabled ? 'off' : 'on']]);
   const win = {
-    innerWidth: options.mobile ? 760 : 1720,
+    innerWidth: options.mobile ? 760 : 1720, innerHeight: 900,
     matchMedia: () => ({ matches: !!options.reduceMotion }),
     listeners: new Map(),
     addEventListener(type, callback) {
