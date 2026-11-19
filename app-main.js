@@ -10443,20 +10443,13 @@ const BigLyricsMorph = (() => {
 
   // Each pair follows actual DOM geometry, so swapping the album to the
   // right automatically reverses the direction of the movement.
+  // Album and track labels can safely fly as lightweight snapshots.
+  // Native fullscreen controls are animated as ONE live group below,
+  // never as disconnected fake bars, buttons or input sliders.
   const pairs = [
     ['art', '#playerImg', '#fullLyricsArt', 'art'],
     ['title', '#playerTitle', '#fullLyricsTitle', 'text'],
-    ['artist', '#playerArtist', '#fullLyricsArtist', 'text'],
-    ['progress', '#progressBar', '#fullLyricsProgress', 'bar'],
-    ['elapsed', '#currentTime', '#fullLyricsCurrentTime', 'text'],
-    ['duration', '#duration', '#fullLyricsDuration', 'text'],
-    ['shuffle', '.player-controls > button:nth-child(1)', '.full-lyrics-buttons > button:nth-child(1)', 'button'],
-    ['previous', '.player-controls > button:nth-child(2)', '.full-lyrics-buttons > button:nth-child(2)', 'button'],
-    ['play', '.player-controls > button:nth-child(3)', '.full-lyrics-buttons > button:nth-child(3)', 'button'],
-    ['next', '.player-controls > button:nth-child(4)', '.full-lyrics-buttons > button:nth-child(4)', 'button'],
-    ['repeat', '.player-controls > button:nth-child(5)', '.full-lyrics-buttons > button:nth-child(5)', 'button'],
-    ['mute', '#volumebutton', '#fullLyricsMute', 'button'],
-    ['volume', '.player-right .volume-slider', '#fullLyricsVolume', 'bar']
+    ['artist', '#playerArtist', '#fullLyricsArtist', 'text']
   ];
 
   function targetFor(pair, fullscreen) {
@@ -10552,6 +10545,53 @@ const BigLyricsMorph = (() => {
     };
   }
 
+  // The embedded player has two control rows, while fullscreen uses one
+  // continuous control group. Measure their actual rectangles so both
+  // player-side options are handled without guessing target coordinates.
+  function controlsGeometry(fullscreen) {
+    const root = $(fullscreen ? 'fullLyricsPlayer' : 'player');
+    if (!root) return null;
+    const nodes = fullscreen
+      ? [root.querySelector('.full-lyrics-controls')]
+      : [root.querySelector('.player-controls-section'), root.querySelector('.player-right')];
+    const rects = nodes.filter(Boolean).map(node => node.getBoundingClientRect())
+      .filter(withinViewport);
+    if (!rects.length || (fullscreen ? rects.length !== 1 : rects.length !== 2)) return null;
+    const left = Math.min(...rects.map(r => r.left));
+    const top = Math.min(...rects.map(r => r.top));
+    const right = Math.max(...rects.map(r => r.right));
+    const bottom = Math.max(...rects.map(r => r.bottom));
+    const width = right - left, height = bottom - top;
+    return width > 20 && height > 20 ? { left, top, width, height } : null;
+  }
+
+  // Move only the actual controls. This retains the native progress/volume
+  // tracks and play/pause circle at every animation frame.
+  function moveLiveControls(state, mini, full, opening) {
+    const node = $('fullLyricsPlayer')?.querySelector('.full-lyrics-controls');
+    state.overlay?.classList.add('big-lyrics-morph-controls-running');
+    if (!node || !mini || !full) return Promise.resolve();
+
+    // Uniform scaling keeps buttons circular and progress tracks intact.
+    const scale = Math.max(.6, Math.min(1, mini.width / full.width, mini.height / full.height));
+    const offsetX = mini.left + (mini.width - full.width * scale) / 2 - full.left;
+    const offsetY = mini.top + (mini.height - full.height * scale) / 2 - full.top;
+    const compact = {
+      transform: 'translate(' + offsetX + 'px, ' + offsetY + 'px) scale(' + scale + ')',
+      opacity: .94
+    };
+    const native = { transform: 'translate(0px, 0px) scale(1)', opacity: 1 };
+    try {
+      const animation = node.animate(opening ? [compact, native] : [native, compact], {
+        duration: DURATION, easing: EASING, fill: 'forwards'
+      });
+      state.animations.push(animation);
+      return animation.finished.catch(() => {});
+    } catch {
+      return Promise.resolve();
+    }
+  }
+
   function capture(fullscreen) {
     const items = [];
     for (const pair of pairs) {
@@ -10615,7 +10655,7 @@ const BigLyricsMorph = (() => {
     if (state.raf) cancelAnimationFrame(state.raf);
     for (const animation of state.animations) animation.cancel();
     for (const item of state.pieces) item.node.remove();
-    state.overlay?.classList.remove('big-lyrics-morph-entering', 'big-lyrics-morph-lyrics-running', 'big-lyrics-morph-exiting');
+    state.overlay?.classList.remove('big-lyrics-morph-entering', 'big-lyrics-morph-lyrics-running', 'big-lyrics-morph-controls-running', 'big-lyrics-morph-exiting');
     document.body.classList.remove('big-lyrics-morph-closing');
     // A close interrupted by Escape, toggling, resize, etc. must finish.
     if (state.direction === 'close' && FullLyricsPlayer.isOpen()) {
@@ -10721,18 +10761,17 @@ const BigLyricsMorph = (() => {
       state.raf = requestAnimationFrame(() => {
         if (active !== state) return;
         const full = lyricGeometry(true);
+        const fullControls = controlsGeometry(true);
         const after = capture(true);
         const targets = new Map(after.map(item => [item.key, item]));
         const pending = [];
         for (const item of state.pieces) {
           const dest = targets.get(item.key);
           if (!dest) { item.node.remove(); continue; }
-          // During the transition, the icons use the native fullscreen
-          // appearance (including the white Play/Pause circle).
-          updatePieceVisual(item, dest);
           pending.push(tween(state, item.snapshot, dest, item));
         }
         pending.push(moveLiveLyrics(state, mini, full, true));
+        pending.push(moveLiveControls(state, lastMini?.controlsRect, fullControls, true));
         Promise.all(pending).then(() => finish(state));
       });
     });
@@ -10742,6 +10781,7 @@ const BigLyricsMorph = (() => {
     const overlay = $('fullLyricsPlayer');
     const mini = lastMini?.lyrics;
     const targets = new Map((lastMini?.controls || []).map(item => [item.key, item]));
+    const fullControls = controlsGeometry(true);
     const state = {
       direction: 'close', overlay, animations: [], pieces: before.map(snapshot => ({
         key: snapshot.key, snapshot, node: createPiece(snapshot)
@@ -10757,20 +10797,37 @@ const BigLyricsMorph = (() => {
       pending.push(tween(state, item.snapshot, dest, item));
     }
     pending.push(moveLiveLyrics(state, mini, full, false));
+    pending.push(moveLiveControls(state, lastMini?.controlsRect, fullControls, false));
     // Let the underlying app reappear behind the transitioning fullscreen
     // backdrop without moving the real synced lyric component prematurely.
     for (const id of ['mainContent', 'sidebar', 'player']) {
       const node = $(id);
       if (node) node.style.display = '';
     }
+    // Fade just the fullscreen *background*, never the actual lyrics or
+    // transport buttons. Fading the entire overlay caused the exit glitch.
     if (overlay?.animate) {
-      const fade = overlay.animate([
-        { opacity: 1, offset: 0 },
-        { opacity: 1, offset: .48 },
-        { opacity: 0, offset: 1 }
-      ], { duration: DURATION, easing: EASING, fill: 'forwards' });
-      state.animations.push(fade);
-      pending.push(fade.finished.catch(() => {}));
+      try {
+        const background = overlay.animate([
+          { backgroundColor: 'rgb(17,24,32)', offset: 0 },
+          { backgroundColor: 'rgb(17,24,32)', offset: .28 },
+          { backgroundColor: 'rgba(17,24,32,0)', offset: 1 }
+        ], { duration: DURATION, easing: EASING, fill: 'forwards' });
+        state.animations.push(background);
+        pending.push(background.finished.catch(() => {}));
+        const backdropNode = overlay.querySelector('.full-lyrics-backdrop');
+        if (backdropNode?.animate) {
+          const backdropFade = backdropNode.animate([
+            { opacity: 1, offset: 0 },
+            { opacity: 1, offset: .25 },
+            { opacity: 0, offset: 1 }
+          ], { duration: DURATION, easing: EASING, fill: 'forwards' });
+          state.animations.push(backdropFade);
+          pending.push(backdropFade.finished.catch(() => {}));
+        }
+      } catch (error) {
+        console.warn('Big Lyrics background fade unavailable', error);
+      }
     }
     Promise.all(pending).then(() => finish(state));
   }
@@ -10785,14 +10842,16 @@ const BigLyricsMorph = (() => {
     const before = capture(false);
     const mini = lyricGeometry(false);
     if (!before.length || !mini) { FullLyricsPlayer.open(); return; }
-    lastMini = { controls: before, lyrics: mini };
+    const controlsRect = controlsGeometry(false);
+    if (!controlsRect) { FullLyricsPlayer.open(); return; }
+    lastMini = { controls: before, controlsRect, lyrics: mini };
     beginOpening(before, mini);
   }
 
   function close() {
     clear();
     if (!FullLyricsPlayer.isOpen()) return;
-    if (!enabledForTransition() || !miniLyricsSelected() || !lastMini?.lyrics) {
+    if (!enabledForTransition() || !miniLyricsSelected() || !lastMini?.lyrics || !lastMini?.controlsRect) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
       lastMini = null;
