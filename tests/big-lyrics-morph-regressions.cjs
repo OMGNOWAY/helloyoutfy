@@ -8,6 +8,10 @@ const end = app.indexOf('function openFullLyricsPlayer() {', start);
 assert(start >= 0 && end > start, 'Big Lyrics controller exists');
 const controllerCode = app.slice(start, end);
 assert(!controllerCode.includes('requestAnimationFrame(resolve)'), 'transition updates must not await paused rendering');
+assert(!html.includes('id="miniLyricsExpandToggle"'), 'Animation has no separate settings toggle');
+assert(!controllerCode.includes('youtify_mini_lyrics_expand'), 'Old animation setting is ignored');
+assert(!controllerCode.includes('setEnabled'), 'Animation cannot be disabled separately');
+
 assert(html.includes('::view-transition-group(*)'), 'CSS view transition animation exists');
 
 // Shared controls and lyrics should move continuously, without opacity
@@ -74,7 +78,7 @@ function setup(options = {}) {
   };
   const documentElement = put('html');
   const body = put('body');
-  body.classList.add('big-lyrics-layout');
+  if (!options.classic) body.classList.add('big-lyrics-layout');
   if (options.performance) body.classList.add('performance-mode');
   const overlay = put('fullLyricsPlayer');
   overlay.dataset = { layout: options.minimal ? 'minimal' : 'classic' };
@@ -85,7 +89,7 @@ function setup(options = {}) {
   if (!options.noLyrics) lyrics.lyrics = new Node('line');
   const fullLyrics = put('fullLyricsContent', rect(80, 100, 810, 650));
   fullLyrics.lyrics = new Node('bigLine');
-  for (const key of ['miniLyricsExpandToggle','fullLyricsSwapSide',
+  for (const key of ['fullLyricsSwapSide',
     'fullLyricsQueueButton','fullLyricsShowLyrics','fullLyricsSettingsOptions',
     'audioPlayer','audioPlayer2']) put(key);
 
@@ -193,7 +197,7 @@ async function check(name, run) {
     assert(t.movedBack > 0);
   });
   for (const [name, options] of Object.entries({
-    disabled: { disabled:true }, unsupported: { unsupported:true },
+    classic: { classic:true }, unsupported: { unsupported:true },
     minimal: { minimal:true }, mobile: { mobile:true },
     reducedMotion: { reduceMotion:true }, performance: { performance:true },
     eqSelected: { eqSelected:true }, noLyrics: { noLyrics:true },
@@ -218,10 +222,23 @@ async function check(name, run) {
     await Promise.resolve();await Promise.resolve();
     assert(!t.open);assert(t.clean());assert(t.skipped>=1);
   });
-  await check('disable toggle mid-animation safely skips transition', async () => {
-    const t=setup();t.controller.open();t.controller.setEnabled(false);t.flush();
+  await check('old disabled preference no longer blocks Big Lyrics morph', async () => {
+    const t=setup({disabled:true});
+    t.controller.open();assert.equal(t.calls,1);t.flush();
     await Promise.resolve();await Promise.resolve();
-    assert(!t.open);assert(t.clean());assert.equal(t.storage.get('youtify_mini_lyrics_expand'),'off');
+    assert(t.open);assert(t.clean());
+  });
+  await check('changing to Classic mid-animation cancels transition', async () => {
+    const t=setup();
+    t.controller.open();
+    t.doc.body.classList.remove('big-lyrics-layout');
+    t.doc.dispatch('youtify:app-layout-change');
+    t.flush();
+    await Promise.resolve();await Promise.resolve();
+    assert(!t.open);assert(t.clean());assert(t.skipped>=1);
+    t.controller.open();t.flush();
+    await Promise.resolve();
+    assert(t.open);assert.equal(t.calls,1);
   });
   await check('album side change cancels active transition', async () => {
     const t=setup();t.controller.open();t.elements.get('fullLyricsSwapSide').dispatch('click');t.flush();
