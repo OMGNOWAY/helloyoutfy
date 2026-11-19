@@ -523,17 +523,14 @@ body.big-lyrics-layout.performance-mode :is(.lyrics-panel, .effects-panel, .yc-p
   background: var(--layout-solid, #182131f5) !important;
   box-shadow: none !important;
 }
-body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
-  background: var(--layout-inset-surface) !important;
-  border: 1px solid var(--layout-stroke) !important;
-  border-radius: 15px;
-  box-shadow: none !important;
+/* Settings and the other dialogs share the same frame and controls. */
+.app-dialog-overlay, dialog.app-dialog {
+  --dialog-gutter: clamp(10px, 3vw, 36px);
+  --dialog-header-inline: 22px;
+  --dialog-content-inline: clamp(12px, 3vw, 26px);
+  --dialog-content-top: 18px;
 }
-
-/* Dialogs use the same palette as Settings and the Big Lyrics controls. */
 .app-dialog-overlay {
-  --dialog-gutter: clamp(10px, 3vw, 32px);
-  --dialog-pad: clamp(14px, 3vw, 22px);
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -541,66 +538,86 @@ body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
   place-items: center;
   padding: var(--dialog-gutter);
 }
-body.big-lyrics-layout .app-dialog-overlay {
+body.big-lyrics-layout :is(.app-dialog-overlay, #changelogModal.app-dialog-overlay),
+body.big-lyrics-layout dialog.app-dialog::backdrop {
   background: color-mix(in srgb, var(--layout-scrim) 82%, transparent) !important;
   -webkit-backdrop-filter: blur(9px) saturate(115%) !important;
   backdrop-filter: blur(9px) saturate(115%) !important;
 }
-.app-dialog-overlay.active { display: grid; }
+.app-dialog-overlay.active { display: grid; grid-template-columns: minmax(0, 1fr); }
 body.big-lyrics-layout .app-dialog-overlay.transient-dialog { z-index: 1202; }
 body.big-lyrics-layout #changelogModal { z-index: 9999; }
 
-body.big-lyrics-layout .app-dialog-overlay .app-dialog {
-  display: grid;
+body.big-lyrics-layout :is(.app-dialog-overlay > .app-dialog, #changelogModal > .app-dialog, dialog.app-dialog) {
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(100%, var(--dialog-width, 28rem));
+  width: min(var(--dialog-available, 100%), var(--dialog-width, 31rem));
   max-height: calc(100dvh - 2 * var(--dialog-gutter));
   min-width: 0;
   overflow: hidden;
   color: var(--layout-ink);
   background: var(--layout-chat-surface, var(--layout-modal-surface)) !important;
   border: 1px solid var(--layout-edge) !important;
-  border-radius: 24px;
+  border-radius: 26px;
   box-shadow: 0 18px 58px #0005, inset 0 1px var(--layout-stroke) !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
-.app-dialog-overlay.active .app-dialog {
+.app-dialog-overlay > .app-dialog, dialog.app-dialog[open] { display: grid; }
+body.big-lyrics-layout dialog.app-dialog {
+  position: fixed;
+  inset: 0;
+  --dialog-available: calc(100% - 2 * var(--dialog-gutter));
+  max-width: none;
+  margin: auto;
+  padding: 0;
+  font-size: .92rem;
+}
+:is(.app-dialog-overlay.active > .app-dialog, dialog.app-dialog[open]) {
   animation: app-dialog-in .22s cubic-bezier(.22, 1, .36, 1);
 }
 @keyframes app-dialog-in {
   from { opacity: 0; transform: translateY(8px) scale(.985); }
   to { opacity: 1; transform: none; }
 }
-body.big-lyrics-layout.performance-mode .app-dialog-overlay {
+body.big-lyrics-layout.performance-mode :is(.app-dialog-overlay, #changelogModal.app-dialog-overlay),
+body.big-lyrics-layout.performance-mode dialog.app-dialog::backdrop {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
-body.big-lyrics-layout.performance-mode .app-dialog-overlay .app-dialog {
+body.big-lyrics-layout.performance-mode :is(.app-dialog-overlay > .app-dialog, #changelogModal > .app-dialog, dialog.app-dialog) {
   animation: none;
   background: var(--layout-solid, #181f2c) !important;
   box-shadow: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .app-dialog-overlay.active .app-dialog { animation: none; }
+  :is(.app-dialog-overlay.active > .app-dialog, dialog.app-dialog[open]) { animation: none; }
+}
+@media (max-width: 650px) {
+  .app-dialog-overlay, dialog.app-dialog {
+    --dialog-header-inline: 14px;
+    --dialog-content-top: 12px;
+  }
 }
 
-.app-dialog-wide { --dialog-width: 42rem; }
+.app-dialog-wide { --dialog-width: 44rem; }
 .app-dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px var(--dialog-pad, 16px);
+  padding: 18px var(--dialog-header-inline, 16px);
   border-bottom: 1px solid var(--layout-stroke);
+}
+@media (max-width: 650px) {
+  .app-dialog-header { padding-block: 12px; }
 }
 .app-dialog-title {
   min-width: 0;
   margin: 0;
   color: var(--layout-ink);
-  font-size: clamp(1.125rem, 2.5vw, 1.375rem);
-  font-weight: 550;
-  line-height: 1.2;
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  font-weight: 400;
+  line-height: 1.1;
   overflow-wrap: anywhere;
 }
 body.big-lyrics-layout .app-dialog-close {
@@ -617,11 +634,11 @@ body.big-lyrics-layout .app-dialog-close {
   cursor: pointer;
 }
 body.big-lyrics-layout .app-dialog-close:hover { background: var(--layout-active); }
-.app-dialog-close svg { width: 17px; height: 17px; }
+.app-dialog-close svg { width: 18px; height: 18px; }
 .app-dialog-body {
   min-width: 0;
   min-height: 0;
-  padding: var(--dialog-pad);
+  padding: var(--dialog-content-top) var(--dialog-content-inline) 22px;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -631,20 +648,54 @@ body.big-lyrics-layout .app-dialog-close:hover { background: var(--layout-active
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px var(--dialog-pad);
+  padding: 12px var(--dialog-content-inline);
   border-top: 1px solid var(--layout-stroke);
 }
-.app-dialog :is(.form-group, .settings-section):last-child { margin-bottom: 0; }
+/* Reuse the inset cards and action spacing from Settings. */
+.dialog-stack {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+body.big-lyrics-layout .dialog-card {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface) !important;
+  border: 1px solid var(--layout-stroke) !important;
+  border-radius: 15px;
+  box-shadow: none !important;
+}
+.dialog-card-title {
+  margin: 0 0 9px;
+  color: var(--layout-ink);
+  font-size: 1rem;
+  font-weight: 400;
+}
+.dialog-card-description {
+  margin: 0;
+  color: var(--layout-muted);
+  font-size: .88rem;
+  line-height: 1.45;
+}
+.dialog-card :is(.form-group, .queue-list) { margin-bottom: 12px; }
+.dialog-card :is(.form-group, .queue-list):last-child { margin-bottom: 0; }
+.dialog-card .form-label {
+  margin: 0 0 6px;
+  color: var(--layout-ink);
+  text-transform: none;
+  letter-spacing: normal;
+}
 .app-dialog .dialog-fields {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 .app-dialog .dialog-fields .form-input { flex: 1 1 11rem; }
-.app-dialog .dialog-actions {
+.dialog-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
 }
@@ -653,7 +704,7 @@ body.big-lyrics-layout :is(.app-dialog, .app-dialog-header) :is(button, input, t
   outline-offset: 2px;
   box-shadow: none !important;
 }
-body.big-lyrics-layout .app-dialog :is(.form-input, .te-hex, #_te_name, #_te_json_out) {
+body.big-lyrics-layout .app-dialog :is(.form-input, .te-hex, #_te_name) {
   min-width: 0;
   color: var(--layout-ink);
   background: var(--layout-inset-surface) !important;
@@ -663,45 +714,38 @@ body.big-lyrics-layout .app-dialog :is(.form-input, .te-hex, #_te_name, #_te_jso
 }
 .app-dialog :is(input, textarea)::placeholder { color: var(--layout-muted); }
 .app-dialog textarea { resize: vertical; }
-body.big-lyrics-layout .app-dialog :is(.btn, ._te_btn) {
-  min-height: 36px;
+body.big-lyrics-layout .app-dialog .btn {
+  min-height: 37px;
   border-radius: 12px !important;
   box-shadow: none !important;
 }
-body.big-lyrics-layout .app-dialog :is(.btn.primary, ._te_btn.pri) {
+body.big-lyrics-layout .app-dialog .btn.primary {
   color: var(--layout-control-ink, #172130) !important;
   background: var(--layout-control, #f3f6ff) !important;
 }
-body.big-lyrics-layout .app-dialog :is(.btn.primary, ._te_btn.pri):hover {
+body.big-lyrics-layout .app-dialog .btn.primary:hover {
   background: var(--layout-control-hover, #dce8f9) !important;
 }
-body.big-lyrics-layout .app-dialog :is(.btn.secondary, ._te_btn.sec, ._te_btn.ghost) {
+body.big-lyrics-layout .app-dialog .btn.secondary {
   color: var(--layout-ink);
   background: var(--layout-inset-surface) !important;
   border: 1px solid var(--layout-edge) !important;
 }
-body.big-lyrics-layout .app-dialog :is(.btn.secondary, ._te_btn.sec, ._te_btn.ghost):hover {
+body.big-lyrics-layout .app-dialog .btn.secondary:hover {
   background: var(--layout-hover) !important;
 }
-body.big-lyrics-layout .app-dialog :is(.settings-section, .track-info-stats, .te-row, #_te_banner, #_te_palette, #_te_footer) {
-  background: var(--layout-inset-surface) !important;
-  border-color: var(--layout-stroke) !important;
-  box-shadow: none !important;
-}
+.app-dialog .track-info-header { gap: 14px; }
 .app-dialog .track-info-details { min-width: 0; overflow-wrap: anywhere; }
-.app-dialog .track-info-details h3 { font-size: clamp(1.25rem, 4vw, 1.85rem); }
-.app-dialog .track-info-cover { width: clamp(74px, 24vw, 144px); height: auto; aspect-ratio: 1; }
-.app-dialog .track-info-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 12px; }
-.app-dialog .stat-value { font-size: clamp(.95rem, 3.5vw, 1.5rem); text-shadow: none; overflow-wrap: anywhere; }
+.app-dialog .track-info-details h3 { font-size: 1.35rem; font-weight: 400; }
+.app-dialog .track-info-cover { width: clamp(66px, 22vw, 128px); height: auto; aspect-ratio: 1; }
+.app-dialog .track-info-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.app-dialog .stat-value { color: var(--layout-ink); font-size: clamp(.95rem, 3.5vw, 1.5rem); text-shadow: none; overflow-wrap: anywhere; }
 .app-dialog .duplicate-track {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--layout-stroke);
-  border-radius: 12px;
-  background: var(--layout-inset-surface);
+  padding-block: 9px;
 }
 .app-dialog .duplicate-track .queue-info { flex: 1 1 8rem; }
 .app-dialog .duplicate-track .queue-img { width: 44px; height: 44px; }
@@ -711,21 +755,25 @@ body.big-lyrics-layout .app-dialog .btn.dialog-danger {
   border-color: transparent !important;
 }
 body.big-lyrics-layout .app-dialog .btn.dialog-danger:hover { background: #902537 !important; }
-.app-dialog :is(.pl-pick-list, .pl-lib-list) { overscroll-behavior: contain; }
-.app-dialog :is(.pl-pick-row, .pl-lib-row, .shortcut-item) {
-  color: var(--layout-ink);
-  background: var(--layout-inset-surface);
-  border: 1px solid var(--layout-stroke);
-  border-radius: 12px;
+.app-dialog .dialog-card :is(.pl-pick-list, .pl-lib-list) {
+  margin: 0;
+  gap: 0;
+  overscroll-behavior: contain;
 }
-.app-dialog :is(.pl-pick-row, .pl-lib-row):hover { background: var(--layout-hover); }
-.app-dialog .shortcuts-list { display: grid; gap: 6px; }
+.app-dialog .dialog-card :is(.pl-pick-row, .pl-lib-row, .shortcut-item) {
+  color: var(--layout-ink);
+  background: transparent;
+}
+.app-dialog .dialog-card :is(.pl-pick-row, .pl-lib-row):hover { background: var(--layout-hover); }
+.dialog-card :is(.duplicate-track, .pl-pick-row, .pl-lib-row, .shortcut-item) + :is(.duplicate-track, .pl-pick-row, .pl-lib-row, .shortcut-item) {
+  border-top: 1px solid var(--layout-stroke);
+}
 .app-dialog .shortcut-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 10px;
+  padding-block: 9px;
 }
 .app-dialog .shortcut-key {
   flex: none;
@@ -735,29 +783,29 @@ body.big-lyrics-layout .app-dialog .btn.dialog-danger:hover { background: #90253
   border-radius: 6px;
 }
 #effectsPanel .app-dialog-header { margin-bottom: 14px; padding: 0 0 12px; }
+#effectsPanel .dialog-card { margin-bottom: 12px; }
 
-body.big-lyrics-layout .yc-lightbox-bar :is(a, button) {
-  color: var(--layout-ink);
+body.big-lyrics-layout .yc-lightbox-bar {
+  align-items: center;
+  padding: 6px;
   background: var(--layout-chat-surface, var(--layout-modal-surface));
   border: 1px solid var(--layout-edge);
-  border-radius: 999px;
+  border-radius: 15px;
 }
-body.big-lyrics-layout .yc-lightbox-bar :is(a, button):hover {
-  background: var(--layout-solid, #181f2c);
+body.big-lyrics-layout .yc-lightbox-bar a {
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface);
+  border: 1px solid var(--layout-edge);
+  border-radius: 12px;
 }
+body.big-lyrics-layout .yc-lightbox-bar a:hover { background: var(--layout-active); }
 
-#changelogModal .app-dialog { --dialog-width: 34rem; }
-.changelog-release + .changelog-release { margin-top: 18px; }
+#changelogModal .app-dialog { --dialog-width: 38rem; }
 .changelog-version {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 0 0 8px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--layout-stroke);
-  font-size: 1rem;
-  font-weight: 650;
 }
 .changelog-current {
   padding: 2px 8px;
@@ -777,12 +825,6 @@ body.big-lyrics-layout #settingsModal .settings-dialog {
   --dialog-width: 850px;
   grid-template-rows: auto minmax(0, 1fr);
   height: min(610px, calc(100dvh - 2 * var(--dialog-gutter)));
-}
-#settingsModal .settings-header { padding-block: 18px; }
-#settingsModal .settings-header h2 {
-  font-size: clamp(1.7rem, 3vw, 2.3rem);
-  font-weight: 400;
-  line-height: 1.1;
 }
 #settingsModal .settings-workspace {
   display: grid;
@@ -827,47 +869,13 @@ body.big-lyrics-layout #settingsModal .settings-dialog {
   background: var(--layout-active);
   border-color: var(--layout-edge);
 }
-#settingsModal .settings-content {
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 18px clamp(12px, 3vw, 26px) 22px;
-  scrollbar-width: thin;
-}
 #settingsModal .settings-page[hidden] { display: none; }
-#settingsModal .settings-page {
-  display: grid;
-  gap: 12px;
-}
 #settingsModal .settings-page > h3 {
   margin: 0;
   color: var(--layout-ink);
   font-size: 1.35rem;
   font-weight: 400;
 }
-body.big-lyrics-layout #settingsModal .settings-card {
-  margin: 0;
-  padding: 14px;
-}
-#settingsModal .settings-card h4 {
-  margin: 0 0 9px;
-  color: var(--layout-ink);
-  font-size: 1rem;
-  font-weight: 400;
-}
-#settingsModal .settings-card p {
-  margin: 0;
-  color: var(--layout-muted);
-  font-size: .88rem;
-  line-height: 1.45;
-}
-#settingsModal .settings-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-#settingsModal .settings-actions .btn { min-height: 37px; border-radius: 12px; }
 #settingsModal .settings-card .setting-toggle-row {
   padding-block: 9px;
   border-color: var(--layout-stroke);
@@ -951,20 +959,7 @@ body.big-lyrics-layout #settingsModal .settings-card {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#settingsModal .settings-key .form-label {
-  margin: 12px 0 6px;
-  color: var(--layout-ink);
-  text-transform: none;
-  letter-spacing: normal;
-}
-#settingsModal .settings-key .form-input {
-  width: 100%;
-  color: var(--layout-ink);
-  background: var(--layout-inset-surface);
-  border: 1px solid var(--layout-edge);
-  box-shadow: none;
-}
-#settingsModal .settings-key .form-input::placeholder { color: var(--layout-muted); }
+#settingsModal .settings-key .form-label { margin-top: 12px; }
 #settingsModal .settings-api-help summary { color: var(--layout-ink); cursor: pointer; }
 #settingsModal .settings-api-help ul {
   display: grid;
@@ -975,7 +970,6 @@ body.big-lyrics-layout #settingsModal .settings-card {
 }
 #settingsModal .settings-api-help a { color: var(--settings-accent); }
 @media (max-width: 650px) {
-  #settingsModal .settings-header { padding: 12px 14px; }
   #settingsModal .settings-workspace {
     grid-template: auto minmax(0, 1fr) / minmax(0, 1fr);
   }
@@ -994,8 +988,6 @@ body.big-lyrics-layout #settingsModal .settings-card {
     font-size: .82rem;
   }
   #settingsModal .settings-tab svg { display: none; }
-  #settingsModal .settings-content { padding-top: 12px; }
-  #settingsModal .settings-card { min-width: 0; }
   #settingsModal #themeGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 body.big-lyrics-layout #app > .yc-workspace[hidden],
@@ -2978,108 +2970,37 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon { width: calc(22 * var(--full-lyrics-unit)); height: calc(22 * var(--full-lyrics-unit)); flex: none; }
   #fullLyricsPlayer .full-lyrics-credits .full-lyrics-icon svg { width: calc(14 * var(--full-lyrics-unit)); height: calc(14 * var(--full-lyrics-unit)); }
   #fullLyricsPlayer .full-lyrics-dialog {
-    --menu-fill: color-mix(in srgb, var(--full-lyrics-ink) 8%, transparent);
-    --menu-selected: color-mix(in srgb, var(--full-lyrics-ink) 19%, transparent);
-    --menu-border: color-mix(in srgb, var(--full-lyrics-ink) 15%, transparent);
-    box-sizing: border-box;
-    position: fixed;
-    width: min(24rem, calc(100vw - 1.5rem));
-    max-height: calc(100dvh - 1.5rem);
-    margin: auto;
-    padding: .875rem;
-    overflow: auto;
-    overscroll-behavior: contain;
-    color: var(--full-lyrics-ink);
-    background: var(--full-lyrics-float-color);
-    border: 1px solid var(--full-lyrics-float-border);
-    border-radius: 1.125rem;
-    font-size: .875rem;
+    --full-lyrics-ink: var(--layout-ink);
+    --full-lyrics-muted: var(--layout-muted);
+    --menu-fill: var(--layout-inset-surface);
+    --menu-selected: var(--layout-active);
+    --menu-border: var(--layout-stroke);
     line-height: 1.4;
-    box-shadow: inset 0 1px 0 #ffffff0d, 0 .65rem 2rem #0006;
-  }
-  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-    body:not(.performance-mode) #fullLyricsPlayer .full-lyrics-dialog {
-      background: color-mix(in srgb, var(--full-lyrics-float-color) 49%, transparent);
-      -webkit-backdrop-filter: blur(26px) saturate(1.14) brightness(.66);
-      backdrop-filter: blur(26px) saturate(1.14) brightness(.66);
-    }
-  }
-  #fullLyricsPlayer .full-lyrics-dialog[open] {
-    animation: full-lyrics-row-in .22s cubic-bezier(.22, 1, .36, 1);
-  }
-  #fullLyricsPlayer .full-lyrics-dialog::backdrop { background: #0002; }
-  #fullLyricsPlayer .full-lyrics-dialog-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: .75rem;
-    margin-bottom: .55rem;
-    padding: 0 .25rem .45rem .4rem;
-    border-bottom: 1px solid var(--menu-border);
-  }
-  #fullLyricsPlayer .full-lyrics-dialog-header h2 {
-    margin: 0;
-    font-size: 1.0625rem;
-    line-height: 1.2;
-  }
-  #fullLyricsPlayer .full-lyrics-dialog-close {
-    width: 2rem;
-    height: 2rem;
-  }
-  #fullLyricsPlayer .full-lyrics-dialog-close svg { width: .875rem; height: .875rem; }
-  #fullLyricsPlayer #fullLyricsSettingsDialog[open] {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    overflow: hidden;
-  }
-  #fullLyricsPlayer .full-lyrics-settings-header .full-lyrics-dialog-header {
-    margin: 0;
-    padding-bottom: .15rem;
-    border: 0;
   }
   #fullLyricsPlayer .full-lyrics-settings-links {
     display: flex;
     flex-wrap: wrap;
-    gap: .35rem .875rem;
-    padding: .15rem .4rem .6rem;
-    border-bottom: 1px solid var(--menu-border);
-    font-size: .8rem;
+    gap: 4px;
+    padding: 6px var(--dialog-content-inline);
+    border-bottom: 1px solid var(--layout-stroke);
+    background: color-mix(in srgb, var(--layout-inset-surface) 60%, transparent);
   }
   #fullLyricsPlayer .full-lyrics-settings-links a {
-    color: var(--full-lyrics-muted);
-    text-decoration: underline;
-    text-decoration-color: var(--menu-selected);
-    text-underline-offset: .22em;
+    padding: 6px 10px;
+    border-radius: 12px;
+    color: var(--layout-muted);
+    text-decoration: none;
   }
   #fullLyricsPlayer .full-lyrics-settings-links a:hover {
-    color: var(--full-lyrics-ink);
-    text-decoration-color: currentColor;
-  }
-  #fullLyricsPlayer .full-lyrics-settings-rows {
-    display: grid;
-    min-height: 0;
-    gap: .75rem;
-    padding: .25rem .4rem .2rem;
-    margin: 0;
-    overflow: auto;
-    overscroll-behavior: contain;
-    scroll-behavior: smooth;
-    scrollbar-width: thin;
-    scrollbar-color: var(--menu-selected) transparent;
+    color: var(--layout-ink);
+    background: var(--layout-hover);
   }
   #fullLyricsPlayer .full-lyrics-settings-section {
     display: grid;
     gap: .55rem;
-    padding-block-start: .55rem;
   }
-  #fullLyricsPlayer .full-lyrics-settings-section + .full-lyrics-settings-section {
-    border-top: 1px solid var(--menu-border);
-  }
-  #fullLyricsPlayer .full-lyrics-settings-section h3 {
-    margin: 0;
-    font-size: 1rem;
-    line-height: 1.3;
-  }
+  #fullLyricsSettingsOptions { scroll-behavior: smooth; }
+  #fullLyricsPlayer .full-lyrics-settings-section .dialog-card-title { margin: 0; }
   #fullLyricsPlayer .full-lyrics-setting-stepper {
     display: flex;
     align-items: center;
@@ -3162,7 +3083,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
   }
   #fullLyricsPlayer .full-lyrics-dialog :is(button, a, h3):focus-visible,
   #fullLyricsPlayer .full-lyrics-dialog input:focus-visible + span {
-    outline: 2px solid var(--full-lyrics-ink);
+    outline: 2px solid var(--layout-focus);
     outline-offset: 2px;
   }
   #fullLyricsPlayer .full-lyrics-setting {
@@ -3194,11 +3115,11 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     transition: translate .18s ease;
   }
   #fullLyricsPlayer .full-lyrics-setting input:checked + span {
-    background: var(--full-lyrics-ink);
+    background: var(--layout-control, #f3f6ff);
   }
   #fullLyricsPlayer .full-lyrics-setting input:checked + span::before {
     translate: 1.1rem 0;
-    background: var(--full-lyrics-menu-base, #161616);
+    background: var(--layout-control-ink, #172130);
   }
   #fullLyricsPlayer .full-lyrics-settings-hint {
     margin: .3rem 0 0;
@@ -3676,10 +3597,6 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     color: var(--bg-primary, #111820);
   }
   body.performance-mode #fullLyricsPlayer :is(.full-lyrics-topbar, .full-lyrics-queue) { background: var(--bg-secondary, #222); }
-  body.performance-mode #fullLyricsPlayer .full-lyrics-dialog {
-    background: color-mix(in srgb, var(--full-lyrics-menu-base) 79%, transparent);
-    animation: none;
-  }
   body.full-lyrics-open #ycAdmBtn {
     --full-lyrics-unit: min(calc(100vw / 1366), calc(100dvh / 768));
     top: calc(14 * var(--full-lyrics-unit));
@@ -3801,32 +3718,36 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
       </section>
     </div>
   </div>
-  <dialog id="fullLyricsSourcePicker" class="full-lyrics-dialog" aria-labelledby="fullLyricsSourceTitle">
-    <div class="full-lyrics-dialog-header">
-      <h2 id="fullLyricsSourceTitle">Lyrics source</h2>
-      <button id="fullLyricsSourceClose" class="full-lyrics-icon full-lyrics-dialog-close" type="button" aria-label="Close lyrics source picker" autofocus>
+  <dialog id="fullLyricsSourcePicker" class="app-dialog full-lyrics-dialog" aria-labelledby="fullLyricsSourceTitle">
+    <header class="app-dialog-header">
+      <h2 class="app-dialog-title" id="fullLyricsSourceTitle">Lyrics source</h2>
+      <button id="fullLyricsSourceClose" class="app-dialog-close" type="button" aria-label="Close lyrics source picker" autofocus>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
       </button>
+    </header>
+    <div class="app-dialog-body">
+      <div class="dialog-card">
+        <div id="fullLyricsSourceOptions" class="full-lyrics-source-options"></div>
+        <p id="fullLyricsSourceStatus" role="status"></p>
+      </div>
     </div>
-    <div id="fullLyricsSourceOptions" class="full-lyrics-source-options"></div>
-    <p id="fullLyricsSourceStatus" role="status"></p>
   </dialog>
-  <dialog id="fullLyricsSettingsDialog" class="full-lyrics-dialog" aria-labelledby="fullLyricsSettingsTitle">
+  <dialog id="fullLyricsSettingsDialog" class="app-dialog full-lyrics-dialog" aria-labelledby="fullLyricsSettingsTitle">
     <div class="full-lyrics-settings-header">
-      <div class="full-lyrics-dialog-header">
-        <h2 id="fullLyricsSettingsTitle">Big lyrics settings</h2>
-        <button id="fullLyricsSettingsClose" class="full-lyrics-icon full-lyrics-dialog-close" type="button" aria-label="Close big lyrics settings" autofocus>
+      <header class="app-dialog-header">
+        <h2 class="app-dialog-title" id="fullLyricsSettingsTitle">Big lyrics settings</h2>
+        <button id="fullLyricsSettingsClose" class="app-dialog-close" type="button" aria-label="Close big lyrics settings" autofocus>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
         </button>
-      </div>
+      </header>
       <nav class="full-lyrics-settings-links" aria-label="Jump to a settings section">
         <a href="#fullLyricsSettingsAppearance">Appearance</a>
         <a href="#fullLyricsSettingsLyrics">Lyrics</a>
       </nav>
     </div>
-    <form id="fullLyricsSettingsOptions" class="full-lyrics-settings-rows">
-      <section class="full-lyrics-settings-section" aria-labelledby="fullLyricsSettingsAppearance">
-        <h3 id="fullLyricsSettingsAppearance" tabindex="-1">Appearance</h3>
+    <form id="fullLyricsSettingsOptions" class="app-dialog-body dialog-stack full-lyrics-settings-rows">
+      <section class="dialog-card full-lyrics-settings-section" aria-labelledby="fullLyricsSettingsAppearance">
+        <h3 class="dialog-card-title" id="fullLyricsSettingsAppearance" tabindex="-1">Appearance</h3>
         <fieldset>
           <legend>Layout</legend>
           <div class="full-lyrics-segments">
@@ -3842,8 +3763,8 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
           <span class="full-lyrics-setting-switch" aria-hidden="true"></span>
         </label>
       </section>
-      <section class="full-lyrics-settings-section" aria-labelledby="fullLyricsSettingsLyrics">
-        <h3 id="fullLyricsSettingsLyrics" tabindex="-1">Lyrics</h3>
+      <section class="dialog-card full-lyrics-settings-section" aria-labelledby="fullLyricsSettingsLyrics">
+        <h3 class="dialog-card-title" id="fullLyricsSettingsLyrics" tabindex="-1">Lyrics</h3>
         <div>
           <div class="full-lyrics-setting-stepper">
             <span id="fullLyricsFontLabel">Text size</span>
@@ -3914,17 +3835,17 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 </svg></button>
   </div>
 
-  <div class="settings-section">
+  <div class="dialog-card settings-section">
     <input style="visibility: hidden" id="pitchCheckbox" type="checkbox">
-    <div class="settings-section-title">Playback Speed</div>
+    <h3 class="dialog-card-title">Playback Speed</h3>
     <div class="eq-slider">
       <label>Speed<span id="speedValue">1</span></label>
       <input type="range" min="0.1" max="2" step="0.05" value="1" id="speedSlider" oninput="setPlaybackSpeed(this.value); document.getElementById('speedValue').innerHTML = `${this.value}`;">
     </div>
   </div>
 
-  <div class="settings-section">
-    <div class="settings-section-title">Equalizer</div>
+  <div class="dialog-card settings-section">
+    <h3 class="dialog-card-title">Equalizer</h3>
     <div class="eq-slider">
       <label>Bass <span id="bassValue">0</span></label>
       <input type="range" min="-36" max="36" value="0" id="bassSlider" oninput="updateEQ('bass', this.value)">
@@ -3939,8 +3860,8 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     </div>
   </div>
 
-  <div class="settings-section">
-    <div class="settings-section-title">Crossfade</div>
+  <div class="dialog-card settings-section">
+    <h3 class="dialog-card-title">Crossfade</h3>
     <div class="crossfade-control">
       <span>Off</span>
       <input type="range" min="0" max="10" value="0" id="crossfadeSlider" oninput="updateCrossfade(this.value)">
@@ -3949,8 +3870,8 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Crossfade duration: <span id="crossfadeValue2">5</span>s</p>
   </div>
 
-  <div class="settings-section">
-    <div class="settings-section-title">Volume Boost</div>
+  <div class="dialog-card settings-section">
+    <h3 class="dialog-card-title">Volume Boost</h3>
     <div class="eq-slider">
       <label>Gain <span id="gainValue">100%</span></label>
       <input type="range" min="50" max="150" value="100" id="gainSlider" oninput="updateGain(this.value)">
@@ -3963,7 +3884,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 <!-- Settings Modal -->
 <div class="app-dialog-overlay" id="settingsModal">
   <div class="app-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <header class="app-dialog-header settings-header">
+    <header class="app-dialog-header">
       <h2 class="app-dialog-title" id="settingsTitle">Settings</h2>
       <button class="app-dialog-close" type="button" onclick="closeSettings()" aria-label="Close settings" title="Close settings">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -3988,11 +3909,11 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
           API Keys
         </button>
       </div>
-      <div class="settings-content">
-        <section class="settings-page" id="settings-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance">
+      <div class="app-dialog-body settings-content">
+        <section class="settings-page dialog-stack" id="settings-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance">
           <h3>Appearance</h3>
-          <div class="settings-card settings-section">
-            <h4>Theme</h4>
+          <div class="dialog-card settings-card settings-section">
+            <h4 class="dialog-card-title">Theme</h4>
             <div class="theme-grid" id="themeGrid">
               <button type="button" class="color-swatch active" data-theme="default" aria-pressed="true" style="--swatch-base:#10141d;--swatch-mid:#334358;--swatch-accent:#b9cce4" onclick="changeTheme('default')">
                 <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Default</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
@@ -4019,13 +3940,13 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
                 <span class="settings-swatch-preview" aria-hidden="true"></span><span class="settings-swatch-label">Dark Red</span><span class="settings-swatch-check" aria-hidden="true">&#10003;</span>
               </button>
             </div>
-            <div class="settings-actions">
+            <div class="dialog-actions">
               <button class="btn secondary" type="button" onclick="openThemeMaker()" id="ctb">Create Theme</button>
               <button class="btn secondary" type="button" onclick="importThemeUI()">Import Theme</button>
             </div>
           </div>
-          <div class="settings-card settings-section">
-            <h4>Display</h4>
+          <div class="dialog-card settings-card settings-section">
+            <h4 class="dialog-card-title">Display</h4>
             <div id="settingsAppearanceToggles">
             <div class="setting-toggle-row">
               <span class="setting-toggle-label"><span id="aabLabel">Album Art Background</span></span>
@@ -4042,9 +3963,9 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
             </div>
           </div>
         </section>
-        <section class="settings-page" id="settings-player" role="tabpanel" aria-labelledby="settings-tab-player" hidden>
+        <section class="settings-page dialog-stack" id="settings-player" role="tabpanel" aria-labelledby="settings-tab-player" hidden>
           <h3>Player</h3>
-          <div class="settings-card settings-section">
+          <div class="dialog-card settings-card settings-section">
             <div class="setting-toggle-row">
               <span class="setting-toggle-label"><span id="performanceModeBtnLabel">Performance Mode</span><small>Reduce visual effects to lighten GPU usage.</small></span>
               <button class="toggle-slider" id="performanceModeBtn" type="button" role="switch" aria-labelledby="performanceModeBtnLabel" aria-checked="false" onclick="togglePerformanceMode()">
@@ -4053,9 +3974,9 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
             </div>
           </div>
         </section>
-        <section class="settings-page" id="settings-chat" role="tabpanel" aria-labelledby="settings-tab-chat" hidden>
+        <section class="settings-page dialog-stack" id="settings-chat" role="tabpanel" aria-labelledby="settings-tab-chat" hidden>
           <h3>Chat</h3>
-          <div class="settings-card settings-section">
+          <div class="dialog-card settings-card settings-section">
             <div class="setting-toggle-row">
               <span class="setting-toggle-label"><span id="classicChatLabel">Use Classic Chat</span><small>Open chat in the original sidebar.</small></span>
               <button class="toggle-slider" id="classicChatToggle" type="button" role="switch" aria-labelledby="classicChatLabel" aria-checked="false">
@@ -4064,18 +3985,18 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
             </div>
           </div>
         </section>
-        <section class="settings-page" id="settings-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden>
+        <section class="settings-page dialog-stack" id="settings-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden>
           <h3>API Keys</h3>
-          <div class="settings-card settings-section settings-key">
-            <p>Youtify uses this key for YouTube search and additional lyrics providers.</p>
+          <div class="dialog-card settings-card settings-section settings-key">
+            <p class="dialog-card-description">Youtify uses this key for YouTube search and additional lyrics providers.</p>
             <label class="form-label" for="apiKeyInput">RapidAPI key</label>
             <input type="text" class="form-input" id="apiKeyInput" placeholder="Enter your RapidAPI key" autocomplete="off" spellcheck="false">
-            <div class="settings-actions">
+            <div class="dialog-actions">
               <button class="btn primary" type="button" onclick="saveApiKey()">Save Key</button>
               <button class="btn secondary" type="button" onclick="resetApiKey()">Reset</button>
             </div>
           </div>
-          <details class="settings-card settings-section settings-api-help">
+          <details class="dialog-card settings-card settings-section settings-api-help">
             <summary>Required RapidAPI subscriptions</summary>
             <ul>
               <li><a href="https://rapidapi.com/DataFanatic/api/spotify-scraper" target="_blank" rel="noopener">Spotify Lyrics API</a></li>
@@ -4170,7 +4091,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
         </svg>
       </button>
     </header>
-    <div class="app-dialog-body" id="changelogList" tabindex="0" role="region" aria-label="Release notes"></div>
+    <div class="app-dialog-body dialog-stack" id="changelogList" tabindex="0" role="region" aria-label="Release notes"></div>
     <footer class="app-dialog-footer">
       <button class="btn primary" type="button" onclick="closeChangelog()">Got it</button>
     </footer>
@@ -4192,7 +4113,9 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 <div class="yc-lightbox" id="ycLightbox" onclick="YoutifyChat.closeLightbox(event)">
   <div class="yc-lightbox-bar">
     <a id="ycLightboxDl" download="youtify-image.jpg" onclick="event.stopPropagation()">Download</a>
-    <button onclick="YoutifyChat.closeLightbox()">Close</button>
+    <button class="app-dialog-close" type="button" onclick="YoutifyChat.closeLightbox()" aria-label="Close image">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
   </div>
   <img id="ycLightboxImg" alt="" onclick="event.stopPropagation()">
 </div>
