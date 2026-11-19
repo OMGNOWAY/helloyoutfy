@@ -6042,7 +6042,8 @@ class ViewManager {
   }
 
   static returnTo(place) {
-    if (document.body.classList.contains('yc-chat-open')) window.YoutifyChat?.close();
+    const classes = document.body.classList;
+    if (classes.contains('yc-chat-open') && !classes.contains('yc-classic-chat')) window.YoutifyChat?.close();
     currentView = place;
     const main = document.getElementById('mainContent');
     main.innerHTML = ViewManager.HOME_HTML;
@@ -10611,9 +10612,6 @@ const FullLyricsPlayer = (() => {
 
     mirrorLyrics();
     recenter();
-    document.getElementById('mainContent').style.display = "none";
-    document.getElementById('sidebar').style.display = "none";
-    document.getElementById('player').style.display = "none";
     overlay.focus?.({ preventScroll: true });
   }
 
@@ -10629,9 +10627,6 @@ const FullLyricsPlayer = (() => {
     endingQueueTrack = null;
     clearPastLyrics();
     toggleQueue(false);
-    document.getElementById('mainContent').style.display = "";
-    document.getElementById('sidebar').style.display = "";
-    document.getElementById('player').style.display = "";
     overlay.classList.remove('open', 'full-lyrics-toolbar-near');
     overlay.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('full-lyrics-open');
@@ -11109,7 +11104,8 @@ function handleLyricsButtonClick() {
     document.getElementById('lyricsToggleBtn')?.classList.add('active');
     PlayerEmbed.showFace('lyrics');
   } else {
-    if (document.body.classList.contains('yc-chat-open')) {
+    const classes = document.body.classList;
+    if (classes.contains('yc-chat-open') && !classes.contains('yc-classic-chat')) {
       window.YoutifyChat.close();
       if (document.getElementById('lyricsPanel')?.classList.contains('open')) return;
     }
@@ -15003,9 +14999,11 @@ function renderPeople() {
 }
 
 const wideChat = window.matchMedia("(min-width: 861px)");
+const CHAT_LAYOUT_KEY = "youtify_chat_layout";
+let classicChat = false;
 
 function threadsAreVisible() {
-  return canSee("dms") || (wideChat.matches && canSee("thread"));
+  return canSee("dms") || (!classicChat && wideChat.matches && canSee("thread"));
 }
 
 function renderThreads() {
@@ -15109,7 +15107,7 @@ function renderThreads() {
 function filterThreads() {
   const box = $("ycDmList");
   if (!box) return;
-  const query = $("ycDmSearch").value.trim().toLocaleLowerCase();
+  const query = classicChat ? "" : $("ycDmSearch").value.trim().toLocaleLowerCase();
   box.querySelector(".yc-search-empty")?.remove();
   const rows = [...box.querySelectorAll("[data-thread-name]")];
   for (const row of rows) row.hidden = !row.dataset.threadName.includes(query);
@@ -15514,6 +15512,15 @@ function markLoaded() {
 }
 
 /* ---------- views ---------- */
+function placeDmList() {
+  const dms = $("ycViewDms");
+  if (!dms) return;
+  const useRail = !classicChat && state.view === "thread";
+  const parent = $(useRail ? "ycRail" : "ycBody");
+  if (parent && dms.parentElement !== parent) parent.append(dms);
+  dms.style.display = useRail || state.view === "dms" ? "flex" : "none";
+}
+
 function showView(v) {
   // Retract typing before anything clears the scope we'd be retracting from.
   if (v !== state.view) stopTyping();
@@ -15533,17 +15540,15 @@ function showView(v) {
   closeReactPicker();
   if (v !== "me" && v !== "profile") state.lastView = v;
   state.view = v;
-  const dms = $("ycViewDms");
-  const dmPanel = $(v === "thread" ? "ycRail" : "ycBody");
-  if (dms && dmPanel && dms.parentElement !== dmPanel) dmPanel.append(dms);
+  placeDmList();
   const map = {
-    gate: "ycViewGate", room: "ycViewRoom", announce: "ycViewNews", dms: "ycViewDms",
+    gate: "ycViewGate", room: "ycViewRoom", announce: "ycViewNews",
     thread: "ycViewThread", people: "ycViewPeople", me: "ycViewMe",
     profile: "ycViewProfile", group: "ycViewGroup", newgroup: "ycViewNewGroup"
   };
   Object.entries(map).forEach(([k, id]) => {
     const el = $(id);
-    if (el) el.style.display = k === v || (k === "dms" && v === "thread") ? "flex" : "none";
+    if (el) el.style.display = k === v ? "flex" : "none";
   });
 
   document.querySelectorAll(".yc-tab").forEach((t) => {
@@ -17587,9 +17592,29 @@ function paintBioCount() {
 }
 
 /* ---------- panel open/close ---------- */
+function applyChatLayout() {
+  const panel = $("ycPanel");
+  const workspace = $("ycWorkspace");
+  document.body.classList.toggle("yc-classic-chat", classicChat);
+  $("classicChatToggle").setAttribute("aria-checked", String(classicChat));
+
+  // Move the live panel so the composer, messages and listeners survive a switch.
+  if (classicChat) $("ycAnnounce").after(panel);
+  else workspace.append(panel);
+  workspace.hidden = classicChat || !panel.classList.contains("open");
+
+  closeReactPicker();
+  closeEmoji();
+  closeShare();
+  closeMentionPop();
+  placeDmList();
+  renderThreads();
+  sizeMobileChat();
+}
+
 function sizeMobileChat() {
   const workspace = $("ycWorkspace");
-  if (wideChat.matches || !panelIsOpen()) return;
+  if (classicChat || wideChat.matches || !panelIsOpen()) return;
   const playerTop = $("player").getBoundingClientRect().top;
   const chatTop = workspace.getBoundingClientRect().top;
   workspace.style.setProperty("--yc-workspace-height", Math.floor(playerTop - Math.max(0, chatTop) - 8) + "px");
@@ -17602,7 +17627,8 @@ function refreshVisible() {
 }
 
 function open() {
-  $("ycWorkspace").hidden = false;
+  $("ycWorkspace").hidden = classicChat;
+  $("ycPanel").inert = false;
   $("ycPanel").classList.add("open");
   $("ycNavButton")?.setAttribute("aria-expanded", "true");
   document.body.classList.add("yc-chat-open");
@@ -17615,11 +17641,13 @@ function open() {
   if (wideChat.matches && state.name && $("ycComposer").style.display !== "none") {
     $("ycInput").focus({ preventScroll: true });
   } else {
-    $("ycWorkspaceTitle").focus({ preventScroll: true });
+    const heading = classicChat ? $("ycPanel").querySelector(".yc-classic-close") : $("ycWorkspaceTitle");
+    heading?.focus({ preventScroll: true });
   }
 }
 function close(restoreFocus = false) {
   $("ycWorkspace").hidden = true;
+  $("ycPanel").inert = true;
   $("ycPanel").classList.remove("open");
   $("ycNavButton")?.setAttribute("aria-expanded", "false");
   document.body.classList.remove("yc-chat-open");
@@ -18070,6 +18098,16 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.value = "";
   });
 
+  const layoutToggle = $("classicChatToggle");
+  if (layoutToggle) {
+    try { classicChat = localStorage.getItem(CHAT_LAYOUT_KEY) === "classic"; } catch {}
+    if (classicChat) applyChatLayout();
+    layoutToggle.addEventListener("click", () => {
+      classicChat = !classicChat;
+      try { localStorage.setItem(CHAT_LAYOUT_KEY, classicChat ? "classic" : "workspace"); } catch {}
+      applyChatLayout();
+    });
+  }
   $("ycDmSearch")?.addEventListener("input", filterThreads);
   wideChat.addEventListener("change", renderThreads);
   window.addEventListener("resize", sizeMobileChat);
