@@ -10536,14 +10536,12 @@ const BigLyricsMorph = (() => {
       for (const pair of selected) name(pair.oldNode, pair.name);
       document.documentElement.classList.add(ROOT_CLASS);
       active = state;
-      state.transition = document.startViewTransition(async () => {
+      state.transition = document.startViewTransition(() => {
         if (state.revision !== revision) return;
         for (const pair of selected) name(pair.oldNode, 'none');
+        // View Transition callbacks run while rendering is suspended:
+        // never await requestAnimationFrame here (it cannot run yet).
         changeNormally(opening);
-        // Give the lyric web component a frame to attach to its destination
-        // before the browser captures the new state.
-        await new Promise(resolve => requestAnimationFrame(resolve));
-        if (state.revision !== revision) return;
         for (const pair of selected) {
           if (visible(pair.newNode)) name(pair.newNode, pair.name);
         }
