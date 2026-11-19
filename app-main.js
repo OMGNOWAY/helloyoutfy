@@ -10427,12 +10427,16 @@ const BigLyricsMorph = (() => {
       typeof Element.prototype.animate === 'function';
   }
 
+  function miniLyricsSelected() {
+    const stage = $('playerEmbedStage');
+    return !!stage && !stage.classList.contains('flipped') &&
+      !stage.classList.contains('show-queue');
+  }
+
   function miniReady() {
     const mini = $('playerEmbed');
-    const stage = $('playerEmbedStage');
-    return !!mini && getComputedStyle(mini).display !== 'none' &&
-      !stage?.classList.contains('flipped') &&
-      !stage?.classList.contains('show-queue') &&
+    return miniLyricsSelected() && !!mini &&
+      getComputedStyle(mini).display !== 'none' &&
       withinViewport(mini.getBoundingClientRect());
   }
 
@@ -10461,6 +10465,13 @@ const BigLyricsMorph = (() => {
 
   function ratio(el, key) {
     if (key === 'progress') {
+      if (el.id === 'fullLyricsProgress') {
+        const fill = $('fullLyricsProgressFill');
+        const track = el.querySelector('.full-lyrics-progress-track') || el;
+        const width = track.getBoundingClientRect().width;
+        return width && fill
+          ? Math.max(0, Math.min(1, fill.getBoundingClientRect().width / width)) : 0;
+      }
       const bar = $('progressBar');
       const fill = $('progressFill');
       return bar && fill && bar.clientWidth
@@ -10553,7 +10564,7 @@ const BigLyricsMorph = (() => {
       const el = targetFor(pair, fullscreen);
       if (!el) continue;
       // An unavailable album cover has no element to move.
-      if (pair[3] === 'art' && (!el.getAttribute('src') || getComputedStyle(el).visibility === 'hidden')) continue;
+      if (pair[3] === 'art' && !el.getAttribute('src')) continue;
       const snapshot = visualSnapshot(el, pair[3], pair[0]);
       if (snapshot) items.push(snapshot);
     }
@@ -10704,7 +10715,7 @@ const BigLyricsMorph = (() => {
   function close() {
     clear();
     if (!FullLyricsPlayer.isOpen()) return;
-    if (!enabledForTransition() || !miniReady()) {
+    if (!enabledForTransition() || !miniLyricsSelected()) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
       return;
