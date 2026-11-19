@@ -10560,7 +10560,8 @@ const BigLyricsMorph = (() => {
     return {
       rect: { left: view.left, top: view.top, width: view.width, height: view.height },
       focusY: inside ? (lineRect.top + lineRect.bottom) / 2 : view.top + view.height / 2,
-      fontSize: Number.isFinite(fontSize) && fontSize > 0 ? fontSize : (fullscreen ? 40 : 17)
+      fontSize: Number.isFinite(fontSize) && fontSize > 0 ? fontSize : (fullscreen ? 40 : 17),
+      hasLyrics: lines.length > 0
     };
   }
 
@@ -10795,7 +10796,7 @@ const BigLyricsMorph = (() => {
         const fullControls = controlsGeometry(true);
         // The fullscreen minimal layout uses display:contents for its control
         // group, so there's no rectangle to animate. Keep that view native.
-        if (!full || !fullControls || !supportsFullLayout() ||
+        if (!full?.hasLyrics || !fullControls || !supportsFullLayout() ||
             currentTrack() !== lastMini?.track) {
           finish(state);
           return;
@@ -10917,7 +10918,7 @@ const BigLyricsMorph = (() => {
     } catch (error) {
       console.warn('Big Lyrics fullscreen layout not ready:', error);
     }
-    if (!before?.length || !full || !controlsRect) {
+    if (!before?.length || !full?.hasLyrics || !controlsRect) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive) lyricsManager.placeAm();
       lastMini = null;
