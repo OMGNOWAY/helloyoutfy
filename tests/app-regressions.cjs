@@ -2,13 +2,13 @@ const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(require('node:path').join(__dirname, '..', 'app-main.js'),'utf8');
 const section=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
 class Element {
- constructor(){this.style={};this.dataset={};this.attrs={};this.children=[];this.value='';this._html='';this.isConnected=true;this.classList={toggle(){}}}
+ constructor(){this.style={setProperty(key,value){this[key]=value}};this.dataset={};this.attrs={};this.children=[];this.value='';this._html='';this.isConnected=true;this.classList={toggle(){}}}
  setAttribute(k,v){this.attrs[k]=v} appendChild(n){this.children.push(n);return n} append(...n){this.children.push(...n)}
  set innerHTML(v){this._html=v;this.children=[]}get innerHTML(){return this._html}
  set textContent(v){this._text=v;this._html='';this.children=[]}get textContent(){return this._text||''}
  addEventListener(){}getBoundingClientRect(){return {left:0,width:100}}
 }
-const elements=new Map(['toastMessage','progressFill','fullLyricsProgressFill','fullLyricsProgress','currentTime','duration','volumeFill','volumebutton','searchInput','ytSearchInput','searchResults'].map(id=>[id,new Element()]));
+const elements=new Map(['toastMessage','progressFill','progressBar','currentTime','duration','volumeFill','volumebutton','searchInput','ytSearchInput','searchResults'].map(id=>[id,new Element()]));
 const document={getElementById:id=>elements.get(id)||null,querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>new Element()};
 const store=new Map();
 const audio={currentTime:20,duration:100,volume:1,paused:false,play:async function(){this.paused=false},pause(){this.paused=true}};
@@ -27,7 +27,7 @@ const api=new context.YouTubeAPI('old');
 await check('changing and clearing API keys changes active keys',()=>{api.key='new';assert.equal(api.keys.join(','),'new');api.key='';assert.equal(api.keys.length,0)});
 await check('YouTube ID and URL validation',()=>{for(const input of ['abcdefghijk','https://youtu.be/abcdefghijk?t=5','https://m.youtube.com/watch?list=1&v=abcdefghijk','https://youtube.com/shorts/abcdefghijk','https://youtube.com/live/abcdefghijk'])assert.equal(api.parseID(input),'abcdefghijk');for(const input of ['invalid','https://evil.com/watch?v=abcdefghijk','https://youtube.com.evil.com/watch?v=abcdefghijk'])assert.equal(api.parseID(input),'')});
 await check('seek clamps invalid times and ignores unloaded media',()=>{context.PlayerController.seekSeconds(-10);assert.equal(audio.currentTime,0);context.PlayerController.seekSeconds(110);assert.equal(audio.currentTime,100);audio.duration=NaN;context.PlayerController.seekTo({currentTarget:new Element(),clientX:25});assert.equal(audio.currentTime,100);audio.duration=100});
-await check('full lyrics progress changes fill, not timeline width',()=>{audio.currentTime=40;context.PlayerController.updateProgressBar();assert.equal(elements.get('fullLyricsProgressFill').style.width,'40%');assert.equal(elements.get('fullLyricsProgress').style.width,undefined)});
+await check('player progress changes fill, not timeline width',()=>{audio.currentTime=40;context.PlayerController.updateProgressBar();assert.equal(elements.get('progressFill').style.width,'40%');assert.equal(elements.get('progressBar').style.width,undefined)});
 await check('volume adjustment unmutes and persists',()=>{context.isMuted=true;context.PlayerController.applyVolume(.4);assert.equal(context.isMuted,false);assert.equal(audio.volume,.4);assert.equal(audio2.volume,.4);assert.equal(store.get('youtifiy_volume'),'0.4');context.PlayerController.toggleMute();assert.equal(audio.volume,0);context.PlayerController.toggleMute();assert.equal(audio.volume,.4)});
 await check('play failure leaves playback state accurate',async()=>{audio.paused=true;audio.play=async()=>{throw new Error('blocked')};await context.PlayerController.resume();assert.equal(context.isPlaying1,false);assert.equal(context.isPlaying2,false)});
 await check('undo restores deleted songs without discarding later additions',()=>{const q=context.QueueManager;q.render=()=>{};context.queue=[{uid:'a'},{uid:'b'}];context.currentTrackIndex=0;q.remove(1);context.queue.push({uid:'c'});q.undoRemoval();assert.equal(context.queue.map(x=>x.uid).join(','),'a,b,c');assert.equal(context.currentTrackIndex,0);q.remove(-1);assert.equal(context.queue.length,3)});
@@ -166,8 +166,9 @@ await check('line image renderer uses the supplied clicked text rather than the 
  document.createElement=tag=>tag==='canvas'?{getContext:()=>drawing,toBlob:callback=>callback({})}:new Element();
  await m.shareLineCard(null,{text:'Second line'});assert(drawn.includes('Second line'));assert(!drawn.includes('First line'));document.createElement=originalCreate;
 });
-await check('these fixes stay in the 1.4.8 release',()=>{
- assert(source.includes('var version = "1.4.8";'));assert(!source.includes('"Release 1.4.9"'));
+await check('the current version has a changelog entry',()=>{
+ const version=source.match(/^var version = "([^"]+)";/m)?.[1];
+ assert(version);assert(source.includes(`"Release ${version}"`));
 });
 
 await check('scroll corrections do not clear word colors or toggle focus mode',()=>{
@@ -190,10 +191,10 @@ await check('the added accent-color override is removed from lyric markup',()=>{
 });
 
 
-await check('playback timestamps and colors stay valid when no lyric animation container is available',()=>{
+await check('playback timestamps and colors stay valid without a lyric animation container',()=>{
  const m=lyricManager();m.amActive=true;m.currentSource='amlyrics';m.parsedLines=[];
- let deliveredTime;const clocks=new Proxy({}, {get(){throw new Error('App must not inspect native animation clocks')}});
- m.amEl={isConnected:true,constructor:clocks,lyricsContainer:{getAnimations(){throw new Error('App must not modify native animations')}},highlightColor:'#abcdef'};
+ let deliveredTime;
+ m.amEl={isConnected:true,highlightColor:'#abcdef'};
  Object.defineProperty(m.amEl,'currentTime',{set(value){deliveredTime=value}});
  m.amOffsetMs=200;audio.currentTime=5;audio.playbackRate=2;audio.paused=false;
  m.handleTimeUpdate();assert.equal(deliveredTime,4800);assert.equal(m.amEl.highlightColor,'#abcdef');

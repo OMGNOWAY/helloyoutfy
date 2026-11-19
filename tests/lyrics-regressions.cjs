@@ -49,34 +49,48 @@ test('a delayed storage lookup cannot overwrite imported lyrics', async () => {
 });
 function popoutFixture() {
   const { ctx, manager } = fixture();
-  const nodes = Object.fromEntries(['pipLineMode', 'pipLyrics', 'pipCurrentLine'].map(id => [id, {
-    style: {}, textContent: '', innerHTML: '', classList: { remove() {}, add() {} }, querySelector() { return null; }
-  }]));
-  ctx.pipWindow = { document: { getElementById: id => nodes[id] } };
-  ctx.document = { getElementById: () => null, createElement: () => ({
-    textContent: '', get innerHTML() {
-      return this.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-  }) };
+  const makeNode = () => {
+    const classes = new Set();
+    return {
+      style: {}, dataset: {}, children: [], textContent: '', clientHeight: 100, offsetHeight: 20, offsetTop: 0, scrollTop: 0,
+      classList: {
+        add: name => classes.add(name),
+        contains: name => classes.has(name),
+        toggle(name, active) { if (active) classes.add(name); else classes.delete(name); }
+      },
+      appendChild(child) { this.children.push(child); },
+      replaceChildren(fragment) { this.children = [...fragment.children]; },
+      scrollTo({ top }) { this.scrollTop = top; }
+    };
+  };
+  const nodes = Object.fromEntries(['pipLineMode', 'pipLyrics'].map(id => [id, makeNode()]));
+  ctx.pipWindow = {
+    document: { getElementById: id => nodes[id], createElement: makeNode, createDocumentFragment: makeNode },
+    matchMedia: () => ({ matches: true })
+  };
   ctx.lyricsManager = manager;
   vm.runInContext(section('  function hasRealTiming() {', '  async function open() {'), ctx);
   return { ctx, manager, nodes };
 }
 test('popout updates when a new song has the same current line index', () => {
   const { ctx, manager: m, nodes } = popoutFixture();
-  m.currentSource = 'spotify'; m.currentLineIndex = 0;
-  m.parsedLines = [{ text: 'First song' }]; ctx.syncLyrics();
-  m.parsedLines = [{ text: 'Next song' }]; ctx.syncLyrics();
-  assert.equal(nodes.pipCurrentLine.textContent, 'Next song');
+  m.currentSource = 'spotify';
+  m.parsedLines = [{ startMs: 0, text: 'First song' }];
+  ctx.syncLyrics();
+  assert.equal(nodes.pipLyrics.children[0].classList.contains('active'), true);
+  ctx.queue[0] = { title: 'Next', artist: 'Artist' };
+  m.parsedLines = [{ startMs: 0, text: 'Next song' }];
+  ctx.syncLyrics();
+  assert.equal(nodes.pipLyrics.children[0].textContent, 'Next song');
+  assert.equal(nodes.pipLyrics.children[0].classList.contains('active'), true);
 });
-test('popout displays unsynced am-lyrics without copying a shadow DOM host', () => {
+test('popout displays unsynced am-lyrics as plain text rows', () => {
   const { ctx, manager: m, nodes } = popoutFixture();
   m.currentSource = 'amlyrics'; m.amEl = { cachedIsUnsynced: true };
   m.parsedLines = [{ text: 'First <line>' }, { text: 'Second & line' }];
   ctx.syncLyrics();
-  assert.match(nodes.pipLyrics.innerHTML, /First &lt;line&gt;/);
-  assert.match(nodes.pipLyrics.innerHTML, /Second &amp; line/);
-  assert(!nodes.pipLyrics.innerHTML.includes('onclick='));
+  assert.deepEqual(nodes.pipLyrics.children.map(row => row.textContent), ['First <line>', 'Second & line']);
+  assert(nodes.pipLyrics.children.every(row => !row.classList.contains('pip-seekable')));
 });
 test('am line clicks respect unsynced lyrics and clamp negative offsets', async () => {
   const { ctx, manager: m } = fixture();
@@ -114,7 +128,7 @@ test('opening full lyrics waits for saved lyrics without starting a competing re
   ctx.isPlaying1 = false; ctx.isPlaying2 = false;
   let loads = 0, fetches = 0;
   ctx.lyricsManager = { onTrackChange() { loads++; }, fetchLyrics() { fetches++; }, parsedLines: [] };
-  vm.runInContext(section('const FullLyricsPlayer =', 'function openFullLyricsPlayer()') + '\nFullLyricsPlayer.open();', ctx);
+  vm.runInContext(section('const FullLyricsPlayer =', '// Native shared-element transition') + '\nFullLyricsPlayer.open();', ctx);
   assert.equal(loads, 1);
   assert.equal(fetches, 0);
 });
@@ -145,7 +159,7 @@ test('fullscreen backdrop keeps the latest cover when artwork decodes out of ord
   ctx.isPlaying2 = false;
   ctx.lyricsManager = { onTrackChange() {} };
   ctx.queue = [{ title: 'First', albumArt: 'first.jpg' }, { title: 'Second', albumArt: 'second.jpg' }, { title: 'Third', albumArt: 'third.jpg' }];
-  vm.runInContext(section('const FullLyricsPlayer =', 'function openFullLyricsPlayer()') + '\nthis.player = FullLyricsPlayer;', ctx);
+  vm.runInContext(section('const FullLyricsPlayer =', '// Native shared-element transition') + '\nthis.player = FullLyricsPlayer;', ctx);
   ctx.player.open();
   assert.equal(nodes.get('fullLyricsBackdropB').classList.contains('shown'), false);
   decodes[0].resolve();
@@ -190,7 +204,7 @@ function endingQueueFixture(native = true) {
   const nodes = new Map(['fullLyricsPlayer', 'fullLyricsContent', 'fullLyricsEndingInfo', 'fullLyricsQueuePanel',
     'fullLyricsQueueList', 'fullLyricsQueueButton', 'fullLyricsShowLyrics', 'fullLyricsCredits', 'fullLyricsNextTrack',
     'fullLyricsLyricsSource', 'fullLyricsSongwriters', 'fullLyricsSourceRow', 'fullLyricsWritersRow',
-    'fullLyricsSwitchSource', 'mainContent', 'sidebar', 'player'].map(id => [id, node()]));
+    'fullLyricsSwitchSource', 'fullLyricsProgress', 'fullLyricsProgressFill', 'mainContent', 'sidebar', 'player'].map(id => [id, node()]));
   const panel = nodes.get('fullLyricsQueuePanel');
   panel.hidden = true;
   const lines = [0, 1].map(index => Object.assign(node(), { id: `lyrics-line-${index}`, dataset: { index: String(index) } }));
@@ -214,11 +228,24 @@ function endingQueueFixture(native = true) {
   manager.currentSource = native ? 'amlyrics' : 'imported-lrc';
   manager.parsedLines = [{ startMs: 1000, durMs: 2000 }, { startMs: 10000, endMs: 12000 }];
   ctx.lyricsManager = manager;
-  vm.runInContext(section('const FullLyricsPlayer =', 'function openFullLyricsPlayer()') + '\nthis.player = FullLyricsPlayer;', ctx);
+  vm.runInContext(section('const FullLyricsPlayer =', '// Native shared-element transition') + '\nthis.player = FullLyricsPlayer;', ctx);
   ctx.player.open();
   const advance = seconds => { ctx.audio.currentTime = seconds; ctx.player.syncPlayback(); };
   return { ctx, player: ctx.player, manager, panel, pane, lines, am, advance };
 }
+
+test('fullscreen progress updates fill and previews drag without seeking', () => {
+  const { ctx, advance } = endingQueueFixture();
+  const slider = ctx.document.getElementById('fullLyricsProgress');
+  const fill = ctx.document.getElementById('fullLyricsProgressFill');
+  advance(72);
+  assert.equal(fill.style.width, '40%');
+  assert.equal(slider.style.width, undefined);
+  slider.dataset.previewSeconds = '90';
+  advance(72);
+  assert.equal(fill.style.width, '50%');
+  assert.equal(ctx.audio.currentTime, 72);
+});
 
 test('fullscreen disappearing lyrics open Up Next after the last fade and recover after a seek', () => {
   const { player, panel, pane, lines, advance } = endingQueueFixture();
