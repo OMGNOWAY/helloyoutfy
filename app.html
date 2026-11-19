@@ -198,6 +198,12 @@ body.big-lyrics-layout #app .queue-controls { justify-content: flex-end; }
     object-fit: cover;
     box-shadow: 0 16px 44px #0006 !important;
     border: 1px solid #ffffff24 !important;
+    /* The normal 105% hover zoom gets cropped by the fitted player column.
+       Keep album art steady; clicking still opens Big Lyrics. */
+    transform: none !important;
+  }
+  body.big-lyrics-layout #player .player-img:hover {
+    transform: none !important;
   }
   body.big-lyrics-layout #player .player-info,
   body.big-lyrics-layout #player .player-controls-section {
