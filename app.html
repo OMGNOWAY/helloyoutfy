@@ -1701,6 +1701,12 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     align-items: center;
     gap: calc(10 * var(--full-lyrics-unit));
   }
+  #fullLyricsPlayer #fullLyricsProgress.is-dragging #fullLyricsProgressFill {
+    transition: none;
+  }
+  #fullLyricsPlayer #fullLyricsProgress.is-dragging .full-lyrics-progress-track {
+    height: calc(6 * var(--full-lyrics-unit));
+  }
   #fullLyricsPlayer #fullLyricsProgress {
     grid-column: 2;
     grid-row: 1;
@@ -1709,7 +1715,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     display: flex;
     align-items: center;
     cursor: pointer;
-    touch-action: manipulation;
+    touch-action: none;
   }
   #fullLyricsPlayer .full-lyrics-progress-track {
     display: block;
@@ -2688,7 +2694,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
         </div>
         <div class="full-lyrics-controls">
           <div class="full-lyrics-progress-row">
-            <div id="fullLyricsProgress" role="slider" tabindex="0" aria-label="Playback position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" onclick="seekFullLyricsProgress(event)">
+            <div id="fullLyricsProgress" role="slider" tabindex="0" aria-label="Playback position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
               <div class="full-lyrics-progress-track"><div id="fullLyricsProgressFill" class="full-lyrics-progress-fill"></div></div>
             </div>
             <span id="fullLyricsCurrentTime" class="full-lyrics-time">0:00</span>
