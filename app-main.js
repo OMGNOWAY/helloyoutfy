@@ -3258,10 +3258,10 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
 /* Drag and keyboard behavior for the embedded player progress/volume tracks.
    The visible bars remain the same DOM nodes for Big Lyrics View Transitions. */
 (function installPlayerTrackSliders() {
-  const selector = '#player #progressBar, #player .player-right .volume-slider';
+  const selector = '#player #progressBar, #fullLyricsPlayer #fullLyricsProgress, #player .player-right .volume-slider';
   let activePointer = null;
   const sliderFrom = target => target?.closest?.(selector) || null;
-  const isSeek = node => node.id === 'progressBar';
+  const isSeek = node => node.id === 'progressBar' || node.id === 'fullLyricsProgress';
 
   function setFromClientX(node, x, commitSeek = false) {
     const rect = node.getBoundingClientRect();
@@ -3278,6 +3278,7 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
         node.dataset.previewSeconds = String(seconds);
       }
       PlayerController.updateProgressBar();
+      FullLyricsPlayer?.syncPlayback?.();
     } else {
       PlayerController.applyVolume(fraction);
     }
@@ -3307,6 +3308,7 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
     else if (isSeek(slider)) {
       delete slider.dataset.previewSeconds;
       PlayerController.updateProgressBar();
+      FullLyricsPlayer?.syncPlayback?.();
     }
     slider.classList.remove('is-dragging');
     try { slider.releasePointerCapture?.(event.pointerId); } catch {}
@@ -3321,6 +3323,7 @@ const toggleRepeat  = () => PlayerController.toggleRepeat();
       if (isSeek(slider)) {
         delete slider.dataset.previewSeconds;
         PlayerController.updateProgressBar();
+        FullLyricsPlayer?.syncPlayback?.();
       }
     }
   }, true);
@@ -10389,7 +10392,12 @@ const FullLyricsPlayer = (() => {
   function syncPlayback() {
     if (!opened) return;
     const duration = Number.isFinite(audio?.duration) ? audio.duration : 0;
-    const current = Number.isFinite(audio?.currentTime) ? audio.currentTime : 0;
+    const progress = $('fullLyricsProgress');
+    const rawPreview = progress?.dataset.previewSeconds;
+    const preview = rawPreview === undefined ? NaN : Number(rawPreview);
+    const liveCurrent = Number.isFinite(audio?.currentTime) ? audio.currentTime : 0;
+    const current = Math.max(0, Math.min(duration,
+      Number.isFinite(preview) ? preview : liveCurrent));
     const percent = duration > 0 ? Math.min(100, Math.max(0, current / duration * 100)) : 0;
     const currentText = formatTime(current), durationText = formatTime(duration);
     const setTextIfChanged = (id, value) => {
@@ -10401,7 +10409,6 @@ const FullLyricsPlayer = (() => {
     };
     setTextIfChanged('fullLyricsCurrentTime', currentText);
     setTextIfChanged('fullLyricsDuration', durationText);
-    const progress = $('fullLyricsProgress');
     if (progress) {
       setAttributeIfChanged(progress, 'aria-valuemax', String(Math.round(duration)));
       setAttributeIfChanged(progress, 'aria-valuenow', String(Math.min(Math.round(duration), Math.round(current))));
