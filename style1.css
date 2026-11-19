@@ -7408,12 +7408,11 @@ body.performance-mode .yc-handle-wrap { background: var(--bg-tertiary) !importan
 
   /* song search lives in the middle of the bar */
   .sb-search-slot {
-    flex: 1 1 160px; min-width: 0; margin: 0 -10px 0 0; padding-right: 10px;
+    /* Reserve enough room so importing/loading tracks can't collapse search. */
+    flex: 1 0 152px; min-width: 152px; margin: 0 -10px 0 0; padding-right: 10px;
     display: flex; align-items: center;
     container-type: inline-size;
   }
-  /* not enough room (e.g. chat panel open): hide the box instead of squashing the buttons */
-  @container (max-width: 110px) { .sb-search-slot .search-container { display: none; } }
   .sb-search-slot .search-container { width: 100%; max-width: none; flex: 1; }
   .sb-search-slot .search-input { min-height: 46px; padding-top: 10px; padding-bottom: 10px; }
 
