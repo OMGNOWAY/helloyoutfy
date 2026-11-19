@@ -1,330 +1,215 @@
-// Focused Big Lyrics transition tests. No browser or external packages needed.
-const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname, '..', 'app-main.js'), 'utf8');
+const assert = require('node:assert/strict');
+const app = fs.readFileSync(path.join(__dirname, '..', 'app-main.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '..', 'app.html'), 'utf8');
-const start = source.indexOf('const BigLyricsMorph = (() => {');
-const stop = source.indexOf('function openFullLyricsPlayer() {', start);
-assert(start >= 0 && stop > start, 'transition controller exists');
-const moduleSource = source.slice(start, stop);
-const bounds = (x, y, width = 100, height = 32) => ({
+const start = app.indexOf('const BigLyricsMorph = (() => {');
+const end = app.indexOf('function openFullLyricsPlayer() {', start);
+assert(start >= 0 && end > start, 'Big Lyrics controller exists');
+const controllerCode = app.slice(start, end);
+assert(!controllerCode.includes('requestAnimationFrame(resolve)'), 'transition updates must not await paused rendering');
+assert(html.includes('::view-transition-group(*)'), 'CSS view transition animation exists');
+
+const rect = (x = 0, y = 0, width = 200, height = 100) => ({
   left: x, top: y, right: x + width, bottom: y + height, width, height
 });
-
 class Node {
-  constructor(name, rect = bounds(0, 0), tagName = 'DIV') {
-    Object.assign(this, {
-      name, id: name, rect, tagName, dataset: {}, style: {}, attrs: {},
-      textContent: name, clientWidth: rect.width, value: 50, max: 100,
-      listeners: {}, map: {}, lines: [], removed: false
-    });
-    const names = new Set();
+  constructor(name, area = rect()) {
+    this.name = name;
+    this.area = area;
+    this.style = { viewTransitionName: '' };
+    this.listeners = new Map();
+    const classes = new Set();
     this.classList = {
-      contains: name => names.has(name),
-      add: (...items) => items.forEach(item => names.add(item)),
-      remove: (...items) => items.forEach(item => names.delete(item))
+      add: name => classes.add(name),
+      remove: name => classes.delete(name),
+      contains: name => classes.has(name)
     };
   }
-  getBoundingClientRect() { return this.rect; }
-  getAttribute(name) { return this.attrs[name] ?? null; }
-  setAttribute(name, value) { this.attrs[name] = value; }
-  querySelector(selector) {
-    if (selector.startsWith('.lyrics-line')) return this.lines[0] || null;
-    return this.map[selector] || null;
+  getBoundingClientRect() { return this.area; }
+  querySelector(selector) { return selector.includes('lyrics-line') ? this.lyrics || null : null; }
+  addEventListener(type, callback) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(callback);
   }
-  querySelectorAll(selector) {
-    if (selector.startsWith('.lyrics-line')) return this.lines;
-    return [];
+  dispatch(type, event = {}) {
+    for (const handler of this.listeners.get(type) || []) handler(event);
   }
-  appendChild(node) { return node; }
-  cloneNode() { return new Node(this.name + '-clone', this.rect, this.tagName); }
-  remove() { this.removed = true; }
-  addEventListener(name, callback) { (this.listeners[name] ||= []).push(callback); }
-  dispatch(name, event = {}) { for (const callback of this.listeners[name] || []) callback(event); }
-  animate(frames) {
-    this.onAnimate?.(frames);
-    return { finished: Promise.resolve(), cancel() {} };
-  }
+  setAttribute(name, value) { this[name] = value; }
 }
 
-function createEnvironment(options = {}) {
+function setup(options = {}) {
   const elements = new Map();
-  const add = (name, rect, tagName) => {
-    const node = new Node(name, rect, tagName);
+  const selectors = new Map();
+  const put = (name, bounds) => {
+    const node = new Node(name, bounds || rect());
     elements.set(name, node);
     return node;
   };
-  const player = add('player', bounds(0, 0, 580, 900));
-  const overlay = add('fullLyricsPlayer', bounds(0, 0, 1720, 900));
-  overlay.dataset.layout = options.minimal ? 'minimal' : 'classic';
-  overlay.dataset.playerSide = options.albumRight ? 'right' : 'left';
-  const mini = add('playerEmbed', bounds(130, options.offscreen ? 930 : 610, 370, 185));
-  const stage = add('playerEmbedStage', bounds(0, 0));
-  if (options.eqSelected) stage.classList.add('flipped');
-  const miniLyrics = add('playerEmbedLyricsContent', bounds(135, 630, 360, 160));
-  const fullLyrics = add('fullLyricsContent', bounds(options.albumRight ? 65 : 610, 125, 865, 650));
-  if (!options.emptyLyrics) {
-    miniLyrics.lines = [new Node('m1', bounds(145, 665, 350, 24)), new Node('m2', bounds(145, 710, 350, 24))];
-    fullLyrics.lines = [new Node('f1', bounds(65, 260, 800, 52)), new Node('f2', bounds(65, 370, 800, 52))];
-    miniLyrics.lines[1].classList.add('active');
-    fullLyrics.lines[1].classList.add('active');
-  }
-  const fx = options.albumRight ? 1150 : 145;
-  player.map = {
-    '.player-controls-section': new Node('mini-controls', bounds(145, 490, 355, 90)),
-    '.player-right': new Node('mini-volume', bounds(145, 590, 355, 42)),
-    '#playerImg': new Node('mini-art', bounds(140, 50, 370, 370), 'IMG'),
-    '#playerTitle': new Node('mini-title', bounds(140, 435, 375, 40)),
-    '#playerArtist': new Node('mini-artist', bounds(140, 475, 375, 24))
-  };
-  overlay.map = {
-    '.full-lyrics-controls': new Node('native-controls',
-      options.minimal ? bounds(0, 0, 0, 0) : bounds(fx, 665, 420, 170)),
-    '.full-lyrics-backdrop': new Node('backdrop', bounds(0, 0, 1720, 900)),
-    '#fullLyricsArt': new Node('full-art', bounds(fx, 55, 480, 480), 'IMG'),
-    '#fullLyricsTitle': new Node('full-title', bounds(fx, 560, 430, 42)),
-    '#fullLyricsArtist': new Node('full-artist', bounds(fx, 610, 430, 24))
-  };
-  player.map['#playerImg'].attrs.src = 'test-cover.jpg';
-  overlay.map['#fullLyricsArt'].attrs.src = 'test-cover.jpg';
-  elements.set('playerImg', player.map['#playerImg']);
-  for (const name of ['mainContent', 'sidebar', 'miniLyricsExpandToggle',
-    'fullLyricsSwapSide', 'fullLyricsSettingsOptions', 'fullLyricsQueueButton',
-    'fullLyricsShowLyrics', 'audioPlayer', 'audioPlayer2']) add(name, bounds(0, 0, 32, 32));
-
-  const ghosts = [], animations = [], frames = new Map(), documentListeners = {};
-  const body = { classList: new Node('body').classList, appendChild(node) { ghosts.push(node); return node; } };
+  const documentElement = put('html');
+  const body = put('body');
   body.classList.add('big-lyrics-layout');
   if (options.performance) body.classList.add('performance-mode');
-  for (const el of [overlay, fullLyrics, ...Object.values(overlay.map)]) {
-    el.onAnimate = keyframes => animations.push({ name: el.name, keyframes });
+  const overlay = put('fullLyricsPlayer');
+  overlay.dataset = { layout: options.minimal ? 'minimal' : 'classic' };
+  const embed = put('playerEmbed', options.offscreen ? rect(0, 940) : rect(80, 620, 330, 190));
+  const stage = put('playerEmbedStage');
+  if (options.eqSelected) stage.classList.add('flipped');
+  const lyrics = put('playerEmbedLyricsContent', rect(85, 640, 320, 155));
+  if (!options.noLyrics) lyrics.lyrics = new Node('line');
+  const fullLyrics = put('fullLyricsContent', rect(80, 100, 810, 650));
+  fullLyrics.lyrics = new Node('bigLine');
+  for (const key of ['miniLyricsExpandToggle','fullLyricsSwapSide',
+    'fullLyricsQueueButton','fullLyricsShowLyrics','fullLyricsSettingsOptions',
+    'audioPlayer','audioPlayer2']) put(key);
+
+  const mapping = [
+    ['#player #playerImg','#fullLyricsPlayer #fullLyricsArt'],
+    ['#player #playerTitle','#fullLyricsPlayer #fullLyricsTitle'],
+    ['#player #playerArtist','#fullLyricsPlayer #fullLyricsArtist'],
+    ['#player .progress-section','#fullLyricsPlayer .full-lyrics-progress-row'],
+    ['#player .player-controls','#fullLyricsPlayer .full-lyrics-buttons'],
+    ['#player #volumebutton','#fullLyricsPlayer #fullLyricsMute'],
+    ['#player .player-right .volume-slider','#fullLyricsPlayer #fullLyricsVolume'],
+    ['#player #playerEmbedLyricsContent','#fullLyricsPlayer #fullLyricsContent']
+  ];
+  for (const [mini, full] of mapping) {
+    selectors.set(mini, mini.endsWith('playerEmbedLyricsContent') ? lyrics : put(mini, rect(100, 100, 320, 50)));
+    selectors.set(full, full.endsWith('fullLyricsContent') ? fullLyrics : put(full, rect(1050, 100, 420, 50)));
   }
-  const document = {
-    body, hidden: false, getElementById: id => elements.get(id) || null,
-    createElement: tagName => new Node('ghost', bounds(0, 0), tagName.toUpperCase()),
-    addEventListener(name, callback) { (documentListeners[name] ||= []).push(callback); }
-  };
-  let frameId = 0, opened = false, closeCount = 0;
-  const requestAnimationFrame = callback => { frames.set(++frameId, callback); return frameId; };
-  const cancelAnimationFrame = id => frames.delete(id);
-  let placements = 0;
-  const am = options.synced ? {
-    parentElement: miniLyrics,
-    shadowRoot: {
-      querySelector: () => miniLyrics.lines[0] || null,
-      querySelectorAll: () => miniLyrics.lines
-    }
-  } : null;
-  const lyricsManager = options.synced ? {
-    amActive: true, amEl: am, getAmCurrentLine: () => am.shadowRoot.querySelector('.lyrics-line'),
-    placeAm() {
-      placements++;
-      am.parentElement = opened ? fullLyrics : miniLyrics;
-      const lines = opened ? fullLyrics.lines : miniLyrics.lines;
-      am.shadowRoot.querySelector = () => lines[0] || null;
-      am.shadowRoot.querySelectorAll = () => lines;
-    }
-  } : null;
+
+  let open = false, movedBack = 0, calls = 0;
   const FullLyricsPlayer = {
-    isOpen: () => opened, open() { opened = true; lyricsManager?.placeAm(); }, close() {
-      opened = false;
-      closeCount++;
-      overlay.classList.remove('open');
-      for (const id of ['mainContent', 'sidebar', 'player']) elements.get(id).style.display = '';
-    }, recenter() {}
+    isOpen: () => open,
+    open() { open = true; },
+    close() { open = false; }
   };
+  const lyricsManager = {
+    amActive: true, amEl: { parentElement: null },
+    placeAm() { movedBack++; }
+  };
+  const doc = {
+    body, documentElement, hidden: false, getElementById: id => elements.get(id) || null,
+    querySelector: selector => selectors.get(selector) || null,
+    listeners: new Map(),
+    addEventListener(type, callback) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(callback);
+    },
+    dispatch(type) { for (const handler of this.listeners.get(type) || []) handler(); }
+  };
+  let pending = [], skipped = 0, transitions = [];
+  if (!options.unsupported) {
+    doc.startViewTransition = update => {
+      calls++;
+      let finish;
+      const finished = new Promise(resolve => { finish = resolve; });
+      const transition = {
+        finished, skipTransition() { skipped++; finish(); }
+      };
+      transitions.push(transition);
+      pending.push(() => { update(); finish(); });
+      return transition;
+    };
+  }
+
+  const storage = new Map([['youtify_mini_lyrics_expand', options.disabled ? 'off' : 'on']]);
   const win = {
-    innerWidth: options.mobile ? 800 : 1720, innerHeight: 900,
-    matchMedia: () => ({ matches: !!options.reduceMotion }), listeners: {},
-    addEventListener(name, callback) { (this.listeners[name] ||= []).push(callback); }
+    innerWidth: options.mobile ? 760 : 1720,
+    matchMedia: () => ({ matches: !!options.reduceMotion }),
+    listeners: new Map(),
+    addEventListener(type, callback) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(callback);
+    }
   };
-  const queue = [{ title: 'Test song' }];
-  const storage = { youtify_mini_lyrics_expand: options.disabled ? 'off' : 'on' };
-  const load = new Function('document','window','localStorage','Element','getComputedStyle',
-    'requestAnimationFrame','cancelAnimationFrame','FullLyricsPlayer','lyricsManager',
-    'audio','console','queue','currentTrackIndex',moduleSource + '\nreturn BigLyricsMorph;');
-  const controller = load(document, win, {
-    getItem: key => storage[key], setItem: (key, value) => { storage[key] = value; }
-  }, Node, node => ({
-    display: options.hideMini && node === mini ? 'none' : 'block',
-    visibility: 'visible', fontSize: node.name.startsWith('f') ? '40px' : '17px',
-    fontFamily: 'Arial', fontWeight: '700', color: '#fff',
-    letterSpacing: '0px', lineHeight: '1.2', backgroundColor: 'transparent',
-    borderRadius: '8px'
-  }), requestAnimationFrame, cancelAnimationFrame, FullLyricsPlayer,
-  lyricsManager, { currentTime: 40 }, { warn() {} }, queue, 0);
-  for (const callback of documentListeners.DOMContentLoaded || []) callback();
+  const load = new Function('document','window','localStorage','getComputedStyle',
+    'FullLyricsPlayer','lyricsManager','console',controllerCode + '\nreturn BigLyricsMorph;');
+  const controller = load(doc,win,{
+    getItem: k => storage.get(k),setItem: (k,v)=>storage.set(k,v)
+  },node => ({
+    display: !open && node === overlay ? 'none' :
+      open && node !== overlay && node.name.startsWith('#player ') ? 'none' : 'block',
+    visibility: 'visible'
+  }),FullLyricsPlayer,lyricsManager,{warn(){}});
+  doc.dispatch('DOMContentLoaded');
 
-  const tick = () => {
-    const jobs = [...frames.values()];
-    frames.clear();
-    jobs.forEach(job => job());
-  };
-  const settle = async () => {
-    for (let index = 0; index < 24; index++) await Promise.resolve();
-  };
-  const finish = async () => { tick(); tick(); await settle(); tick(); await settle(); };
-  const isClean = () => ghosts.every(ghost => ghost.removed) &&
-    !body.classList.contains('big-lyrics-morph-closing') &&
-    !overlay.classList.contains('big-lyrics-morph-entering') &&
-    !overlay.classList.contains('big-lyrics-morph-exiting') &&
-    !overlay.classList.contains('big-lyrics-morph-finalizing');
-  return {
-    controller, queue, win, document, elements, overlay, ghosts, animations,
-    lyricsManager, miniLyrics, fullLyrics, finish, tick, settle, isClean,
-    get opened() { return opened; }, get closeCount() { return closeCount; },
-    get placements() { return placements; }
+  function flush() {
+    for (let i = 0; i < 5; i++) {
+      const jobs = pending.splice(0);
+      jobs.forEach(job => job());
+    }
+  }
+  const clean = () => [...selectors.values()].every(node => node.style.viewTransitionName === '') &&
+    !documentElement.classList.contains('youtify-big-lyrics-view-transition');
+  return { controller, elements, selectors, doc, win, flush, clean,
+    storage, get open() { return open; }, get calls() { return calls; },
+    get skipped() { return skipped; }, get movedBack() { return movedBack; },
+    get transitions() { return transitions; }
   };
 }
 
-async function test(name, run) {
+async function check(name, run) {
   await run();
-  process.stdout.write('PASS ' + name + '\n');
+  console.log('PASS ' + name);
 }
-
 (async () => {
-  assert(html.includes('big-lyrics-morph-finalizing'), 'opaque exit flash guard is present');
-  assert(source.includes("classList.contains('big-lyrics-morph-lyrics-running')"),
-    'recenter does not fight the lyric animation');
-
-  for (const albumRight of [false, true]) {
-    await test('opening and closing with album ' + (albumRight ? 'right' : 'left'), async () => {
-      const env = createEnvironment({ albumRight });
-      env.controller.open();
-      await env.finish();
-      assert(env.opened);
-      assert.equal(env.animations.filter(a => a.name === 'native-controls').length, 1);
-      assert.equal(env.animations.filter(a => a.name === 'fullLyricsContent').length, 1);
-      assert(env.isClean());
-      env.controller.close();
-      await env.finish();
-      assert(!env.opened);
-      assert.equal(env.animations.filter(a => a.name === 'native-controls').length, 2);
-      assert.equal(env.animations.filter(a => a.name === 'fullLyricsContent').length, 2);
-      assert.equal(env.ghosts.length, 6);
-      assert(env.isClean());
-    });
-  }
-
+  await check('all 8 genuine elements participate when opening', async () => {
+    const t = setup();
+    t.controller.open();
+    assert.equal(t.calls, 1);
+    assert.equal([...t.selectors.values()].filter(n => n.style.viewTransitionName.startsWith('youtify-vt-')).length, 8);
+    t.flush(); await Promise.resolve(); await Promise.resolve();
+    assert(t.open); assert(t.clean());
+    t.controller.close();
+    t.flush(); await Promise.resolve(); await Promise.resolve();
+    assert(!t.open); assert(t.clean()); assert.equal(t.calls, 2);
+    assert(t.movedBack > 0);
+  });
   for (const [name, options] of Object.entries({
-    minimalLayout: { minimal: true }, mobile: { mobile: true },
-    reducedMotion: { reduceMotion: true }, performanceMode: { performance: true },
-    experimentalToggleOff: { disabled: true }, equalizerSelected: { eqSelected: true },
-    miniOffscreen: { offscreen: true }, lyricsNotLoaded: { emptyLyrics: true }
+    disabled: { disabled:true }, unsupported: { unsupported:true },
+    minimal: { minimal:true }, mobile: { mobile:true },
+    reducedMotion: { reduceMotion:true }, performance: { performance:true },
+    eqSelected: { eqSelected:true }, noLyrics: { noLyrics:true },
+    offscreen: { offscreen:true }
   })) {
-    await test('instant fallback: ' + name, async () => {
-      const env = createEnvironment(options);
-      env.controller.open();
-      await env.finish();
-      assert(env.opened);
-      assert.equal(env.ghosts.length, 0);
-      env.controller.close();
-      await env.finish();
-      assert(!env.opened);
-      assert(env.isClean());
+    await check('instant and clean fallback: '+name, async () => {
+      const t = setup(options);
+      t.controller.open(); t.flush(); await Promise.resolve();
+      assert(t.open); assert.equal(t.calls,0);
+      t.controller.close();t.flush();await Promise.resolve();
+      assert(!t.open);assert(t.clean());
     });
   }
-
-  await test('switching tracks uses instant close instead of stale positions', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    await env.finish();
-    env.queue[0] = { title: 'Different track' };
-    env.controller.close();
-    await env.finish();
-    assert(!env.opened);
-    assert.equal(env.animations.filter(a => a.name === 'native-controls').length, 1);
-    assert(env.isClean());
+  await check('rapid open then close cancels stale callback', async () => {
+    const t=setup();t.controller.open();t.controller.close();t.flush();
+    await Promise.resolve();await Promise.resolve();
+    assert(!t.open);assert(t.clean());assert(t.skipped>=1);
   });
-
-  await test('rapid close before entrance frames finish restores normal UI', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    env.controller.close();
-    await env.finish();
-    assert(!env.opened);
-    assert(env.isClean());
+  await check('cancel on audio loading does not leave names', async () => {
+    const t=setup();t.controller.open();
+    t.elements.get('audioPlayer').dispatch('loadstart');t.flush();
+    await Promise.resolve();await Promise.resolve();
+    assert(!t.open);assert(t.clean());assert(t.skipped>=1);
   });
-
-  await test('resize during exit cannot strand the fullscreen overlay', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    await env.finish();
-    env.controller.close();
-    env.win.listeners.resize[0]();
-    await env.finish();
-    assert(!env.opened);
-    assert(env.isClean());
+  await check('disable toggle mid-animation safely skips transition', async () => {
+    const t=setup();t.controller.open();t.controller.setEnabled(false);t.flush();
+    await Promise.resolve();await Promise.resolve();
+    assert(!t.open);assert(t.clean());assert.equal(t.storage.get('youtify_mini_lyrics_expand'),'off');
   });
-
-  await test('reopening during exit does not retain hidden classes', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    await env.finish();
-    env.controller.close();
-    env.controller.open();
-    await env.finish();
-    assert(env.opened);
-    assert(env.isClean());
+  await check('album side change cancels active transition', async () => {
+    const t=setup();t.controller.open();t.elements.get('fullLyricsSwapSide').dispatch('click');t.flush();
+    await Promise.resolve();await Promise.resolve();
+    assert(!t.open);assert(t.clean());
   });
-
-  await test('synced renderer moves back to the mini lyrics host', async () => {
-    const env = createEnvironment({ synced: true });
-    env.controller.open();
-    await env.finish();
-    assert(env.opened);
-    assert.equal(env.lyricsManager.amEl.parentElement, env.fullLyrics);
-    env.controller.close();
-    await env.finish();
-    assert(!env.opened);
-    assert.equal(env.lyricsManager.amEl.parentElement, env.miniLyrics);
-    assert(env.placements >= 2);
-    assert(env.isClean());
+  await check('open and close repeatedly restore names', async () => {
+    const t=setup();
+    for(let i=0;i<5;i++){
+      t.controller.open();t.flush();await Promise.resolve();await Promise.resolve();
+      assert(t.open);assert(t.clean());
+      t.controller.close();t.flush();await Promise.resolve();await Promise.resolve();
+      assert(!t.open);assert(t.clean());
+    }
   });
-
-  await test('an audio source change cancels stale animation safely', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    env.tick();
-    env.tick();
-    env.elements.get('audioPlayer').dispatch('loadstart');
-    await env.finish();
-    assert(env.opened);
-    assert(env.isClean());
-    env.controller.close();
-    await env.finish();
-    assert(!env.opened);
-  });
-
-  await test('switching the album side during animation leaves fullscreen usable', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    env.tick();
-    env.tick();
-    env.elements.get('fullLyricsSwapSide').dispatch('click');
-    await env.finish();
-    assert(env.opened);
-    assert(env.isClean());
-    env.controller.close();
-    await env.finish();
-    assert(!env.opened);
-  });
-
-  await test('turning off animation mid-open leaves no overlay artifacts', async () => {
-    const env = createEnvironment();
-    env.controller.open();
-    env.tick();
-    env.tick();
-    env.controller.setEnabled(false);
-    await env.finish();
-    assert(env.opened);
-    assert(env.isClean());
-    env.controller.close();
-    await env.finish();
-    assert(!env.opened);
-    assert(env.isClean());
-  });
-
-  process.stdout.write('Big Lyrics transition regression checks passed.\n');
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  console.log('Big Lyrics browser transition regression checks passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});
