@@ -4296,19 +4296,7 @@ class TrackManager {
   }
 
   static merge(keepUid, mergeUid) {
-    // Was merging playStats.trackStats, an in-memory-only object that's
-    // almost always empty when this runs (a maintenance action, not
-    // something done mid-session), so the merged duplicate's real play
-    // history in Stats (the persisted store) was silently dropped instead
-    // of combined. Merge the actual persisted stats instead.
-    const statsCache = Stats.cache.trackStats;
-    if (statsCache[mergeUid]) {
-      if (!statsCache[keepUid]) statsCache[keepUid] = { title: statsCache[mergeUid].title, artist: statsCache[mergeUid].artist, albumArt: statsCache[mergeUid].albumArt, plays: 0, totalTime: 0 };
-      statsCache[keepUid].plays     += statsCache[mergeUid].plays || 0;
-      statsCache[keepUid].totalTime += statsCache[mergeUid].totalTime || 0;
-      delete statsCache[mergeUid];
-      Stats.debouncedSave();
-    }
+    Stats.mergeDuplicate(keepUid, mergeUid).catch(error => console.warn('Could not merge playback stats:', error));
     TrackManager.delete(mergeUid);
     toast('Tracks merged');
   }
@@ -5242,220 +5230,290 @@ function rebindAudioListeners() {
 
 class StatsManager {
   constructor() {
-    this.db = null;
-    this.cache = { totalPlays: 0, totalTime: 0, trackStats: {}, playHistory: [] };
+    this.cache = StatsManager.empty();
+    this.pending = StatsManager.empty();
     this.saveTimeout = null;
-    /* Nothing may be written until a load has actually succeeded. Without this,
-       a failed read left the cache at zero and the next autosave wrote those
-       zeros over the real record — stats vanishing for no visible reason. */
-    this.loaded = false;
+    this.writes = Promise.resolve();
   }
 
-  async init() {
-    try {
-      this.db = await new Promise((resolve, reject) => {
-        const req = indexedDB.open('YoutifiyStatsDB', 1);
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => resolve(req.result);
-        req.onupgradeneeded = (e) => {
-          if (!e.target.result.objectStoreNames.contains('stats'))
-            e.target.result.createObjectStore('stats', { keyPath: 'id' });
-        };
-      });
+  static empty() {
+    return { totalPlays: 0, totalTime: 0, trackStats: Object.create(null), playHistory: [] };
+  }
 
-      const stats = await this.get('main-stats');
-      if (stats) {
-        // merge rather than assign: a play recorded before init finished would
-        // otherwise be thrown away
-        this.cache.totalPlays = Math.max(this.cache.totalPlays || 0, stats.totalPlays || 0);
-        this.cache.totalTime  = Math.max(this.cache.totalTime  || 0, stats.totalTime  || 0);
-        this.cache.trackStats = StatsManager.mergeTracks(stats.trackStats, this.cache.trackStats);
+  static request(req) {
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  static range(prefix) {
+    return IDBKeyRange.bound([prefix], [prefix, []], false, true);
+  }
+
+  static trackStats(track) {
+    return {
+      title: String(track.title || '').slice(0, 1024),
+      artist: String(track.artist || '').slice(0, 1024),
+      plays: track.plays || 0,
+      totalTime: track.totalTime || 0
+    };
+  }
+
+  static combineTracks(stored, incoming, add) {
+    return {
+      title: incoming.title || stored.title || '',
+      artist: incoming.artist || stored.artist || '',
+      plays: add(stored.plays || 0, incoming.plays || 0),
+      totalTime: add(stored.totalTime || 0, incoming.totalTime || 0)
+    };
+  }
+
+  init() {
+    this.ready = this.load().catch((error) => {
+      console.error('Could not open playback stats:', error);
+      if (typeof toast === 'function') toast("Couldn't open playback stats");
+      return false;
+    });
+    return this.ready;
+  }
+
+  async load() {
+    const req = indexedDB.open('YoutifiyStatsDB', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('stats', { keyPath: 'id' });
+    this.db = await StatsManager.request(req);
+
+    const read = (id) => StatsManager.request(this.db.transaction('stats').objectStore('stats').get(id));
+    const summary = await read('stats-v2-summary');
+    const sources = [
+      ['main-stats', () => read('main-stats')],
+      ['play-history', async () => ({ playHistory: (await read('play-history'))?.history })],
+      ['local-storage', () => this.readLocalStorage()]
+    ];
+    // A failed read can abort its transaction. Read each legacy value separately
+    // so one unreadable value cannot block the other or the new records.
+    const unread = sources.filter(([id]) => !summary?.migrated?.includes(id));
+    const legacy = await Promise.allSettled(unread.map(async ([id, readSource]) => [id, await readSource()]));
+    for (const result of legacy) {
+      if (result.status === 'rejected') console.warn('Older playback stats could not be read:', result.reason);
+    }
+    const readable = legacy.filter(result => result.status === 'fulfilled').map(result => result.value);
+    if (readable.length) {
+      try {
+        await this.transaction(async (store) => {
+          const summary = await StatsManager.request(store.get('stats-v2-summary'));
+          const migrated = new Set(summary?.migrated);
+          for (const [id, data] of readable) {
+            if (migrated.has(id)) continue;
+            migrated.add(id);
+            await this.writeRecords(
+              store, data || {}, id === 'main-stats' ? (a, b) => a + b : Math.max, [...migrated]
+            );
+          }
+        });
+      } catch (error) {
+        console.warn('Older playback stats could not be imported:', error);
       }
+    }
 
-      const history = await this.get('play-history');
-      if (history) this.cache.playHistory = StatsManager.mergeHistory(history.history, this.cache.playHistory);
+    const store = this.db.transaction('stats').objectStore('stats');
+    const [totals, tracks, history] = await Promise.all([
+      StatsManager.request(store.get('stats-v2-summary')),
+      StatsManager.request(store.getAll(StatsManager.range('stats-v2-track'))),
+      StatsManager.request(store.getAll(StatsManager.range('stats-v2-history')))
+    ]);
+    this.applySaved({
+      totalPlays: totals?.totalPlays || 0,
+      totalTime: totals?.totalTime || 0,
+      trackStats: Object.fromEntries(tracks.map(({ id, ...track }) => [id[1], track]))
+    });
+    this.cache.playHistory = this.cache.playHistory.concat(history.reverse().map(({ id, ...play }) => play)).slice(0, 1000);
+    return true;
+  }
 
-      this.loaded = true;          // only now is it safe to write
-      await this.migrate();
-      console.log('✅ StatsManager initialized');
-    } catch (e) {
-      // leave loaded=false so we never overwrite good data with an empty cache
-      console.error('StatsManager init failed — stats will not be written this session:', e);
-      if (typeof toast === 'function') toast("Couldn't load your stats, so they won't be updated this session");
+  readLocalStorage() {
+    if (localStorage.getItem('stats_migrated')) return null;
+    return {
+      ...JSON.parse(localStorage.getItem('youtifiy_stats')),
+      playHistory: JSON.parse(localStorage.getItem('youtifiy_history'))
+    };
+  }
+
+  async transaction(update) {
+    const tx = this.db.transaction('stats', 'readwrite');
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onabort = () => reject(tx.error || new Error('Playback stats write aborted'));
+    });
+    const operation = async () => {
+      try {
+        return await update(tx.objectStore('stats'));
+      } catch (error) {
+        try { tx.abort(); } catch {}
+        throw error;
+      }
+    };
+    const [saved] = await Promise.all([operation(), done]);
+    return saved;
+  }
+
+  async writeRecords(store, data, combine, migrated) {
+    const request = StatsManager.request;
+    const summary = await request(store.get('stats-v2-summary')) || {};
+    const saved = StatsManager.empty();
+    saved.totalPlays = combine(summary.totalPlays || 0, data.totalPlays || 0);
+    saved.totalTime = combine(summary.totalTime || 0, data.totalTime || 0);
+    store.put({
+      id: 'stats-v2-summary',
+      totalPlays: saved.totalPlays,
+      totalTime: saved.totalTime,
+      migrated: migrated || summary.migrated || []
+    });
+
+    await Promise.all(Object.entries(data.trackStats || {}).map(async ([uid, track]) => {
+      const id = ['stats-v2-track', uid];
+      const previous = await request(store.get(id)) || {};
+      const next = StatsManager.combineTracks(previous, StatsManager.trackStats(track || {}), combine);
+      store.put({ id, ...next });
+      saved.trackStats[uid] = next;
+    }));
+
+    if (data.playHistory?.length) {
+      for (const play of data.playHistory.slice(0, 1000).reverse()) {
+        if (!play) continue;
+        const track = String(play.track || '');
+        const time = String(play.time || '');
+        const { title, artist } = StatsManager.trackStats(play);
+        const id = ['stats-v2-history', time, track || title];
+        store.put({ id, track, time, title, artist });
+      }
+      const keys = await request(store.getAllKeys(StatsManager.range('stats-v2-history')));
+      for (const key of keys.slice(0, -1000)) store.delete(key);
+    }
+    return saved;
+  }
+
+  enqueue(operation) {
+    const next = this.writes.then(async () => {
+      if (await this.ready) return operation();
+    });
+    this.writes = next.catch(() => {});
+    return next;
+  }
+
+  applySaved(saved) {
+    this.cache.totalPlays = saved.totalPlays + this.pending.totalPlays;
+    this.cache.totalTime = saved.totalTime + this.pending.totalTime;
+    for (const [uid, track] of Object.entries(saved.trackStats)) {
+      this.cache.trackStats[uid] = StatsManager.combineTracks(
+        track, this.pending.trackStats[uid] || {}, (a, b) => a + b
+      );
     }
   }
 
-  async migrate() {
-    if (localStorage.getItem('stats_migrated')) return;
+  async flush() {
+    const pending = this.pending;
+    if (!pending.totalPlays && !pending.totalTime && !pending.playHistory.length) return;
+
+    this.pending = StatsManager.empty();
     try {
-      const oldStats   = localStorage.getItem('youtifiy_stats');
-      const oldHistory = localStorage.getItem('youtifiy_history');
-      if (oldStats) {
-        const parsed = JSON.parse(oldStats);
-        this.cache.totalPlays = parsed.totalPlays || 0;
-        this.cache.totalTime  = parsed.totalTime  || 0;
-        this.cache.trackStats = parsed.trackStats || {};
-        await this.save();
+      const saved = await this.transaction(store => this.writeRecords(store, pending, (a, b) => a + b));
+      this.applySaved(saved);
+    } catch (error) {
+      this.pending.totalPlays += pending.totalPlays;
+      this.pending.totalTime += pending.totalTime;
+      this.pending.playHistory = this.pending.playHistory.concat(pending.playHistory).slice(0, 1000);
+      for (const [uid, track] of Object.entries(pending.trackStats)) {
+        this.pending.trackStats[uid] = StatsManager.combineTracks(track, this.pending.trackStats[uid] || {}, (a, b) => a + b);
       }
-      if (oldHistory) { this.cache.playHistory = JSON.parse(oldHistory) || []; await this.saveHistory(); }
-      localStorage.setItem('stats_migrated', 'true');
-      localStorage.removeItem('youtifiy_stats');
-      localStorage.removeItem('youtifiy_history');
-    } catch (e) {}
+      throw error;
+    }
   }
 
-  async get(id) {
-    if (!this.db) return null;
-    return new Promise((resolve, reject) => {
-      const req = this.db.transaction(['stats'], 'readonly').objectStore('stats').get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      // a failed read must NOT look like "no stats yet"
-      req.onerror   = () => reject(req.error || new Error('stats read failed'));
-    });
-  }
-
-  /* Highest wins per track, so a second tab with a staler cache can't erase
-     plays the other tab recorded. */
-  static mergeTracks(a, b) {
-    const out = Object.assign({}, a || {});
-    Object.entries(b || {}).forEach(([uid, t]) => {
-      const old = out[uid];
-      out[uid] = !old ? t : {
-        title:     t.title    || old.title,
-        artist:    t.artist   || old.artist,
-        albumArt:  t.albumArt || old.albumArt,
-        plays:     Math.max(old.plays     || 0, t.plays     || 0),
-        totalTime: Math.max(old.totalTime || 0, t.totalTime || 0)
-      };
-    });
-    return out;
-  }
-
-  static mergeHistory(a, b) {
-    const seen = new Set();
-    return [...(a || []), ...(b || [])]
-      .filter((h) => {
-        if (!h) return false;
-        const k = (h.time || '') + '\u0001' + (h.track || h.title || '');
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      })
-      .sort((x, y) => String(y.time || '').localeCompare(String(x.time || '')))
-      .slice(0, 1000);
-  }
-
-  /* Read-merge-write inside one transaction. Two tabs open used to mean the
-     last one to autosave stamped its own cache over the other's. */
-  async save() {
-    if (!this.db || !this.loaded) return;
-    return new Promise((resolve) => {
-      const tx = this.db.transaction(['stats'], 'readwrite');
-      const store = tx.objectStore('stats');
-      const req = store.get('main-stats');
-      req.onsuccess = () => {
-        const stored = req.result || {};
-        this.cache.totalPlays = Math.max(stored.totalPlays || 0, this.cache.totalPlays || 0);
-        this.cache.totalTime  = Math.max(stored.totalTime  || 0, this.cache.totalTime  || 0);
-        this.cache.trackStats = StatsManager.mergeTracks(stored.trackStats, this.cache.trackStats);
-        store.put({
-          id: 'main-stats',
-          totalPlays: this.cache.totalPlays,
-          totalTime:  this.cache.totalTime,
-          trackStats: this.cache.trackStats,
-          lastUpdated: Date.now()
-        });
-      };
-      req.onerror = () => { /* couldn't read, so don't write over it */ };
-      tx.oncomplete = () => resolve();
-      tx.onerror    = () => resolve();
-      tx.onabort    = () => resolve();
-    });
-  }
-
-  async saveHistory() {
-    if (!this.db || !this.loaded) return;
-    return new Promise((resolve) => {
-      const tx = this.db.transaction(['stats'], 'readwrite');
-      const store = tx.objectStore('stats');
-      const req = store.get('play-history');
-      req.onsuccess = () => {
-        const stored = (req.result && req.result.history) || [];
-        this.cache.playHistory = StatsManager.mergeHistory(stored, this.cache.playHistory);
-        store.put({ id: 'play-history', history: this.cache.playHistory, lastUpdated: Date.now() });
-      };
-      req.onerror = () => {};
-      tx.oncomplete = () => resolve();
-      tx.onerror    = () => resolve();
-      tx.onabort    = () => resolve();
-    });
+  save() {
+    clearTimeout(this.saveTimeout);
+    this.saveTimeout = null;
+    return this.enqueue(() => this.flush()).catch(error => console.warn('Could not save playback stats:', error));
   }
 
   recordPlay(track) {
-    this.cache.playHistory.unshift({ track: track.uid, title: track.title, artist: track.artist, albumArt: track.albumArt, time: new Date().toISOString() });
-    if (this.cache.playHistory.length > 1000) this.cache.playHistory.pop();
-    this.cache.totalPlays++;
-    if (!this.cache.trackStats[track.uid]) {
-      this.cache.trackStats[track.uid] = { title: track.title, artist: track.artist, albumArt: track.albumArt, plays: 0, totalTime: 0 };
+    const { title, artist } = StatsManager.trackStats(track);
+    const play = { track: track.uid, title, artist, time: new Date().toISOString() };
+    for (const stats of [this.cache, this.pending]) {
+      stats.playHistory.unshift(play);
+      if (stats.playHistory.length > 1000) stats.playHistory.pop();
+      stats.totalPlays++;
+      stats.trackStats[track.uid] ||= { title, artist, plays: 0, totalTime: 0 };
+      stats.trackStats[track.uid].plays++;
     }
-    this.cache.trackStats[track.uid].plays++;
-    clearTimeout(this.saveTimeout);
-    this.saveTimeout = setTimeout(() => { this.save(); this.saveHistory(); }, 2000);
+    this.debouncedSave(2000);
   }
 
   updatePlayTime(seconds) {
-    if (currentTrackIndex === -1) return;
     const track = queue[currentTrackIndex];
     if (!track || !this.cache.trackStats[track.uid]) return;
-    this.cache.trackStats[track.uid].totalTime += seconds;
     this.cache.totalTime += seconds;
+    this.cache.trackStats[track.uid].totalTime += seconds;
+    this.pending.totalTime += seconds;
+    this.pending.trackStats[track.uid] ||= { ...StatsManager.trackStats(track), plays: 0, totalTime: 0 };
+    this.pending.trackStats[track.uid].totalTime += seconds;
     this.debouncedSave();
   }
 
-  debouncedSave() {
-    clearTimeout(this.saveTimeout);
-    this.saveTimeout = setTimeout(() => this.save(), 5000);
+  // A steady stream of playback ticks must not keep pushing the save back.
+  debouncedSave(delay = 5000) {
+    if (this.saveTimeout === null) this.saveTimeout = setTimeout(() => this.save(), delay);
   }
 
   getStats() { return { ...this.cache }; }
   getHistory() { return [...this.cache.playHistory]; }
 
-  /* Folds a server copy in without ever removing anything local. Album art only
-     exists on this device, so keep whatever we already had. */
-  async mergeFromServer(rec) {
-    if (!rec || !this.loaded) return;
-    const incoming = {};
-    Object.entries(rec.tracks || {}).forEach(([uid, t]) => {
-      if (!t) return;
-      const local = this.cache.trackStats[uid];
-      incoming[uid] = {
-        title:     t.title  || (local && local.title)  || 'Unknown',
-        artist:    t.artist || (local && local.artist) || 'Unknown Artist',
-        albumArt:  (local && local.albumArt) || '',
-        plays:     t.plays || 0,
-        totalTime: t.totalTime || 0
-      };
+  mergeFromServer(rec) {
+    if (!rec) return;
+    return this.enqueue(async () => {
+      await this.flush();
+      const saved = await this.transaction(store => this.writeRecords(store, {
+        ...rec, trackStats: rec.tracks
+      }, Math.max));
+      this.applySaved(saved);
+      if (typeof renderStatsView === 'function' && document.getElementById('statTotalPlays')) renderStatsView();
     });
-    this.cache.trackStats = StatsManager.mergeTracks(this.cache.trackStats, incoming);
-    this.cache.totalPlays = Math.max(this.cache.totalPlays || 0, rec.totalPlays || 0);
-    this.cache.totalTime  = Math.max(this.cache.totalTime  || 0, rec.totalTime  || 0);
-    await this.save();
-    try { if (typeof renderStatsView === 'function' && document.getElementById('statTotalPlays')) renderStatsView(); } catch (e) {}
   }
 
-  /* Deliberate wipe, so it bypasses the merge that protects against accidents. */
-  async reset() {
-    this.cache = { totalPlays: 0, totalTime: 0, trackStats: {}, playHistory: [] };
-    this.loaded = true;
-    if (!this.db) return;
-    await new Promise((resolve) => {
-      const tx = this.db.transaction(['stats'], 'readwrite');
-      const store = tx.objectStore('stats');
-      store.put({ id: 'main-stats', totalPlays: 0, totalTime: 0, trackStats: {}, lastUpdated: Date.now() });
-      store.put({ id: 'play-history', history: [], lastUpdated: Date.now() });
-      tx.oncomplete = () => resolve();
-      tx.onerror    = () => resolve();
-      tx.onabort    = () => resolve();
+  mergeDuplicate(keepUid, mergeUid) {
+    if (keepUid === mergeUid) return Promise.resolve();
+    return this.enqueue(async () => {
+      await this.flush();
+      const saved = await this.transaction(async (store) => {
+        const id = ['stats-v2-track', mergeUid];
+        const duplicate = await StatsManager.request(store.get(id));
+        if (!duplicate) return null;
+        const keep = await StatsManager.request(store.get(['stats-v2-track', keepUid]));
+        const transfer = keep ? { ...duplicate, title: keep.title, artist: keep.artist } : duplicate;
+        const saved = await this.writeRecords(store, { trackStats: { [keepUid]: transfer } }, (a, b) => a + b);
+        store.delete(id);
+        return saved;
+      });
+      if (saved) {
+        delete this.cache.trackStats[mergeUid];
+        this.applySaved(saved);
+      }
+    });
+  }
+
+  reset() {
+    return this.enqueue(async () => {
+      await this.transaction((store) => {
+        store.clear();
+        store.put({ id: 'stats-v2-summary', migrated: ['main-stats', 'play-history', 'local-storage'] });
+      });
+      this.cache = StatsManager.empty();
+      this.pending = StatsManager.empty();
+      try {
+        localStorage.removeItem('youtifiy_stats');
+        localStorage.removeItem('youtifiy_history');
+      } catch {}
+      return true;
     });
   }
 }
@@ -5463,6 +5521,9 @@ class StatsManager {
 // Singleton
 const Stats = new StatsManager();
 Stats.init();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) Stats.save();
+});
 
 // ============================================================================
 // STATS VIEW
@@ -5470,6 +5531,8 @@ Stats.init();
 
 function renderStatsView() {
   const stats = Stats.getStats();
+  const libraryArt = new Map([...queue, ...tracks].filter(track => track.albumArt).map(track => [track.uid, track.albumArt]));
+  const cover = (uid) => Utils.escapeHtml(libraryArt.get(uid) || '');
   document.getElementById('searchContainer').style.display = "none";
   document.getElementById('statTotalPlays').textContent = stats.totalPlays.toLocaleString();
   document.getElementById('statTotalTime').textContent  = Math.floor(stats.totalTime / 3600) + 'h';
@@ -5495,7 +5558,7 @@ function renderStatsView() {
     ? '<p style="color:var(--text-muted);">No play data yet. Play some songs!</p>'
     : topTracks.slice(0, 10).map(([uid, track]) => `
       <div class="top-track-item" onclick="playTrackByUid('${uid}')" style="cursor:pointer;">
-        <img src="${track.albumArt || ''}" alt="" style="width:52px;height:52px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border);">
+        <img src="${cover(uid)}" alt="" style="width:52px;height:52px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border);">
         <div class="top-track-info" style="flex:1;"><h5 style="font-size:14px;margin-bottom:4px;">${Utils.escapeHtml(track.title || 'Unknown')}</h5><p style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(track.artist || 'Unknown Artist')}</p></div>
         <div class="top-track-plays" style="font-size:14px;color:var(--accent);font-weight:700;padding:6px 12px;background:rgba(var(--shadow-glow),0.5);border-radius:var(--radius-sm);">${track.plays} plays</div>
       </div>`).join('');
@@ -5505,7 +5568,7 @@ function renderStatsView() {
     ? '<p style="color:var(--text-muted);">No history yet</p>'
     : history.slice(0, 10).map(h => `
       <div class="top-track-item" onclick="playTrackByUid('${h.track}')" style="cursor:pointer;">
-        <img src="${h.albumArt || ''}" alt="" style="width:52px;height:52px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border);">
+        <img src="${cover(h.track)}" alt="" style="width:52px;height:52px;border-radius:var(--radius-sm);object-fit:cover;border:1px solid var(--border);">
         <div class="top-track-info" style="flex:1;"><h5 style="font-size:14px;margin-bottom:4px;">${Utils.escapeHtml(h.title || 'Unknown')}</h5><p style="font-size:12px;color:var(--text-muted);">${Utils.escapeHtml(h.artist || 'Unknown')} • ${Utils.timeAgo(h.time)}</p></div>
       </div>`).join('');
 }
@@ -5518,9 +5581,18 @@ function playTrackByUid(uid) {
   else { queue.unshift(track); QueueManager.render(); playTrackAtIndex(0, audio, 0); }
 }
 
-function resetStats() {
+async function resetStats() {
   if (!confirm('Reset all playback statistics? This cannot be undone.')) return;
-  Stats.reset();
+  try {
+    if (!await Stats.reset()) {
+      toast("Couldn't reset playback statistics");
+      return;
+    }
+  } catch (error) {
+    console.warn('Could not reset playback stats:', error);
+    toast("Couldn't reset playback statistics");
+    return;
+  }
   playStats = { totalPlays: 0, totalTime: 0, trackStats: {} };
   playHistory = [];
   toast('Statistics reset');
