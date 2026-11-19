@@ -10,6 +10,32 @@ const controllerCode = app.slice(start, end);
 assert(!controllerCode.includes('requestAnimationFrame(resolve)'), 'transition updates must not await paused rendering');
 assert(html.includes('::view-transition-group(*)'), 'CSS view transition animation exists');
 
+// Shared controls and lyrics should move continuously, without opacity
+// crossfades or an overlapping fullscreen entrance animation.
+const sharedNames = ['art', 'title', 'artist', 'progress',
+  'transport', 'mute', 'volume', 'lyrics'];
+const oldStart = html.indexOf('::view-transition-old(youtify-vt-art)');
+const newStart = html.indexOf('::view-transition-new(youtify-vt-art)');
+const pairStart = html.indexOf('::view-transition-image-pair(youtify-vt-lyrics)');
+assert(oldStart >= 0 && newStart > oldStart && pairStart > newStart);
+const oldSharedRule = html.slice(oldStart, newStart);
+const newSharedRule = html.slice(newStart, pairStart);
+for (const name of sharedNames) {
+  assert(oldSharedRule.includes('::view-transition-old(youtify-vt-' + name + ')'),
+    'source snapshot ' + name + ' is defined');
+  assert(newSharedRule.includes('::view-transition-new(youtify-vt-' + name + ')'),
+    'destination snapshot ' + name + ' is defined');
+}
+assert(/animation:\s*none\s*!important;\s*opacity:\s*0\s*;/.test(oldSharedRule),
+  'old shared snapshots do not crossfade');
+assert(/animation:\s*none\s*!important;\s*opacity:\s*1\s*;/.test(newSharedRule),
+  'new shared snapshots stay fully visible');
+assert(!/youtify-vt-(?:old|new)-(?:controls|lyrics)/.test(html),
+  'shared element opacity keyframes were removed');
+assert(/html\.youtify-big-lyrics-view-transition #fullLyricsPlayer\s*,\s*html\.youtify-big-lyrics-view-transition #fullLyricsPlayer \*\s*\{\s*transition:\s*none\s*!important/.test(html),
+  'fullscreen CSS transitions do not compete with browser snapshots');
+
+
 const rect = (x = 0, y = 0, width = 200, height = 100) => ({
   left: x, top: y, right: x + width, bottom: y + height, width, height
 });
