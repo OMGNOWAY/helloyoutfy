@@ -326,55 +326,65 @@ class Utils {
   }
 
   static createModal(title, wide = false, onClose) {
-    const settingsOpener = document.activeElement?.closest('#settingsModal.active button');
+    const opener = document.activeElement;
     const backdrop = document.createElement('div');
-    backdrop.className = 'modal-overlay active';
-    backdrop.style.zIndex = '1000';
+    backdrop.className = 'app-dialog-overlay transient-dialog active';
 
     const modalEl = document.createElement('div');
-    modalEl.className = wide ? 'modal wide' : 'modal';
+    modalEl.className = wide ? 'app-dialog app-dialog-wide' : 'app-dialog';
+    modalEl.setAttribute('role', 'dialog');
+    modalEl.setAttribute('aria-modal', 'true');
+    modalEl.setAttribute('aria-label', title);
 
-    const header = document.createElement('div');
-    header.className = 'modal-header';
+    const header = document.createElement('header');
+    header.className = 'app-dialog-header';
     header.innerHTML = `
-      <h2 class="modal-title">${title}</h2>
-      <button class="modal-close"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <line x1="18" y1="6" x2="6" y2="18"></line>
-  <line x1="6" y1="6" x2="18" y2="18"></line>
-</svg></button>`;
+      <h2 class="app-dialog-title"></h2>
+      <button class="app-dialog-close" type="button" aria-label="Close dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="m6 6 12 12M18 6 6 18"/>
+        </svg>
+      </button>`;
+    header.firstElementChild.textContent = title;
 
     const body = document.createElement('div');
-    body.className = 'modal-body';
+    body.className = 'app-dialog-body';
 
-    modalEl.appendChild(header);
-    modalEl.appendChild(body);
+    modalEl.append(header, body);
     backdrop.appendChild(modalEl);
     document.body.appendChild(backdrop);
 
     const close = () => {
+      if (!backdrop.isConnected) return;
       backdrop.remove();
       onClose?.();
-      settingsOpener?.focus({ preventScroll: true });
+      opener?.focus({ preventScroll: true });
     };
-    const closeButton = header.querySelector('.modal-close');
+    const closeButton = header.querySelector('.app-dialog-close');
     closeButton.addEventListener('click', close);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
-
-    if (settingsOpener) {
-      modalEl.setAttribute('role', 'dialog');
-      modalEl.setAttribute('aria-modal', 'true');
-      modalEl.setAttribute('aria-label', title);
-      closeButton.setAttribute('aria-label', 'Close ' + title);
-      closeButton.focus({ preventScroll: true });
-      backdrop.addEventListener('keydown', event => {
-        if (event.key !== 'Escape') return;
-        event.preventDefault();
-        event.stopPropagation();
-        close();
-      });
-    }
+    backdrop.addEventListener('keydown', event => Utils.handleDialogKeys(event, backdrop, close));
+    closeButton.focus({ preventScroll: true });
 
     return { element: backdrop, body, close };
+  }
+
+  static handleDialogKeys(event, dialog, close) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    } else if (event.key === 'Tab') {
+      const controls = [...dialog.querySelectorAll('button, input, select, textarea, summary, a[href], [tabindex]')]
+        .filter(node => !node.matches(':disabled') && node.tabIndex >= 0 && node.getClientRects().length && getComputedStyle(node).visibility === 'visible');
+      const first = controls[0];
+      const last = controls.at(-1);
+      const target = event.shiftKey && event.target === first ? last : !event.shiftKey && event.target === last ? first : null;
+      if (target) {
+        event.preventDefault();
+        target.focus();
+      }
+    }
   }
 
   static addGlobalCSS(cssRules) {
@@ -2536,9 +2546,9 @@ class ThemeManager {
   static openImporter() {
     const imodal = Utils.createModal('Import Theme');
     imodal.body.innerHTML = `
-      <label class="form-label">Paste theme JSON code</label>
+      <label class="form-label" for="themejson">Paste theme JSON code</label>
       <textarea id="themejson" class="form-input" style="min-height:100px" placeholder='{"name":"mytheme","theme":["#14141a","#121316","#22222a","#30303a","#ffffff","#909090","#00ffa1","#00cc81","#34363d","#202330","#22222a"]}'></textarea>
-      <button id="applytheme" class="btn secondary" style="margin-top:12px">Import Theme</button>`;
+      <div class="dialog-actions"><button id="applytheme" class="btn primary">Import Theme</button></div>`;
 
     document.getElementById('applytheme').addEventListener('click', () => {
       try {
@@ -4299,7 +4309,7 @@ class TrackManager {
           <div class="form-group"><label class="form-label">Title</label><input type="text" class="form-input" id="editTitle" value="${Utils.escapeHtml(track.title || '')}"></div>
           <div class="form-group"><label class="form-label">Artist</label><input type="text" class="form-input" id="editArtist" value="${Utils.escapeHtml(track.artist || '')}"></div>
           <div class="form-group"><label class="form-label">Album</label><input type="text" class="form-input" id="editAlbum" value="${Utils.escapeHtml(track.album || '')}"></div>
-          <div style="display:flex;gap:8px;margin-top:16px;">
+          <div class="dialog-actions">
             <button class="btn primary" onclick="saveTrackInfo('${track.uid}')">Save Changes</button>
             <button class="btn secondary" onclick="findDuplicates('${track.uid}')">Find Duplicates</button>
           </div>
@@ -4350,11 +4360,11 @@ class TrackManager {
 
     const modal = Utils.createModal(`Found ${duplicates.length} Duplicates`, true);
     modal.body.innerHTML = `<p style="margin-bottom:16px;color:var(--text-muted);">Similar tracks found:</p><div class="queue-list">${duplicates.map(d => `
-      <div class="queue-item">
+      <div class="duplicate-track">
         <img src="${d.albumArt || ''}" class="queue-img">
         <div class="queue-info"><div class="queue-track-title">${Utils.escapeHtml(d.title)}</div><div class="queue-track-artist">${Utils.escapeHtml(d.artist)}</div></div>
         <button class="btn secondary" onclick="mergeTracks('${trackUid}','${d.uid}')">Merge</button>
-        <button class="btn secondary" onclick="deleteTrack('${d.uid}')" style="background:#ff4444;border-color:#ff4444;color:white;">Delete</button>
+        <button class="btn dialog-danger" onclick="deleteTrack('${d.uid}')">Delete</button>
       </div>`).join('')}</div>`;
   }
 
@@ -4792,11 +4802,11 @@ class PlaylistManager {
 
   // ---------- dialogs ----------
   static promptName({ title, initial = '', confirmText = 'OK' }, onDone) {
-    const modal = Utils.createModal(PlaylistManager.esc(title));
+    const modal = Utils.createModal(title);
     modal.body.innerHTML = `
       <div class="form-group">
         <input type="text" class="form-input" maxlength="60" placeholder="Playlist name..." value="${PlaylistManager.esc(initial)}">
-        <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+        <div class="dialog-actions">
           <button class="btn secondary pl-cancel">Cancel</button>
           <button class="btn primary pl-ok">${PlaylistManager.esc(confirmText)}</button>
         </div>
@@ -4812,7 +4822,6 @@ class PlaylistManager {
     modal.body.querySelector('.pl-cancel').addEventListener('click', modal.close);
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); submit(); }
-      if (e.key === 'Escape') modal.close();
     });
     setTimeout(() => { input.focus(); input.select(); }, 30);
   }
@@ -4825,8 +4834,8 @@ class PlaylistManager {
     const keys = list.map(t => PlaylistManager.keyFor(t));
 
     modal.body.innerHTML = `
-      <div class="form-group" style="display:flex;gap:8px;">
-        <input type="text" class="form-input" maxlength="60" placeholder="New playlist name..." style="flex:1;">
+      <div class="form-group dialog-fields">
+        <input type="text" class="form-input" maxlength="60" placeholder="New playlist name...">
         <button class="btn primary pl-create">Create</button>
       </div>
       <div class="pl-pick-list"></div>`;
@@ -4872,7 +4881,7 @@ class PlaylistManager {
     const pl = PlaylistManager.get(id);
     if (!pl) return;
     if (!tracks.length) { toast('Your library is empty right now'); return; }
-    const modal = Utils.createModal(`Add songs to ${PlaylistManager.esc(pl.name)}`, true);
+    const modal = Utils.createModal(`Add songs to ${pl.name}`, true);
     const have = new Set(pl.items.map(i => i.key));
     const byKey = new Map();
     tracks.forEach(t => { const k = PlaylistManager.keyFor(t); if (k && !byKey.has(k)) byKey.set(k, t); });
@@ -4882,12 +4891,12 @@ class PlaylistManager {
     let shown = [];
 
     modal.body.innerHTML = `
-      <div class="form-group" style="display:flex;gap:8px;">
-        <input type="text" class="form-input pl-lib-search" placeholder="Search your songs..." style="flex:1;">
+      <div class="form-group dialog-fields">
+        <input type="text" class="form-input pl-lib-search" placeholder="Search your songs...">
         <button class="btn secondary pl-lib-all">Select shown</button>
       </div>
       <div class="pl-lib-list"></div>
-      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+      <div class="dialog-actions">
         <button class="btn secondary pl-lib-cancel">Cancel</button>
         <button class="btn primary pl-lib-add" disabled>Add</button>
       </div>`;
@@ -5702,10 +5711,8 @@ class SettingsManager {
   }
 
   static handleKeydown(event, modal) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      SettingsManager.close();
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      Utils.handleDialogKeys(event, modal, SettingsManager.close);
       return;
     }
 
@@ -5728,18 +5735,6 @@ class SettingsManager {
         event.stopPropagation();
         SettingsManager.selectSection(tabs[next], modal);
         tabs[next].focus();
-      }
-    }
-
-    if (event.key === 'Tab') {
-      const controls = [...modal.querySelectorAll('button, input, summary, a[href]')]
-        .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
-      const first = controls[0];
-      const last = controls.at(-1);
-      const target = event.shiftKey && event.target === first ? last : !event.shiftKey && event.target === last ? first : null;
-      if (target) {
-        event.preventDefault();
-        target.focus();
       }
     }
   }
@@ -6348,48 +6343,49 @@ console.log('Usage:\n  checkMemory()      - Run full analysis\n  monitorMemory(3
 // ============================================================================
 
 class ChangelogManager {
+  static opener = null;
+
   static formatText(text) {
-    return text.replace(/\(<(.*?)>\)/g, '<span style="font-size:0.65em;color:var(--text-seccondary);font-weight:400;margin-left:0px;">$1</span>');
+    return text.replace(/\(<(.*?)>\)/g, '<small class="changelog-note">$1</small>');
   }
 
   static show(force = true) {
     const lastSeen = localStorage.getItem('lastChangelogVersion');
     const modal    = document.getElementById('changelogModal');
     const list     = document.getElementById('changelogList');
-    if (!modal || !list) return;
+    if (!modal || !list || modal.classList.contains('active')) return;
     if (!force && lastSeen === version) return;
 
-    list.innerHTML = '';
+    ChangelogManager.opener = document.activeElement;
     const versions = Object.keys(CHANGELOG_DATA).sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+    list.innerHTML = versions.map(ver => `
+      <section class="changelog-release">
+        <h3 class="changelog-version">${ver}${ver === version || ver === 'Release ' + version
+          ? ' <span class="changelog-current">Current</span>' : ''}</h3>
+        <ul>${CHANGELOG_DATA[ver].map(item => `<li>${ChangelogManager.formatText(item)}</li>`).join('')}</ul>
+      </section>`).join('');
 
-    versions.forEach(ver => {
-      const header = document.createElement('div');
-      header.style.cssText = 'margin-top:20px;margin-bottom:10px;border-bottom:1px solid var(--text-primary);padding-bottom:5px;';
-      header.innerHTML = `<strong style="color:white;font-size:1.1em;">${ver}</strong>`;
-      if (ver === version || ver === 'Release ' + version) header.innerHTML += ` <span style="font-size:0.7em;background:var(--accent-primary);color:white;padding:2px 6px;border-radius:10px;vertical-align:middle;margin-left:8px;">CURRENT</span>`;
-      list.appendChild(header);
-
-      const ul = document.createElement('ul');
-      ul.style.cssText = 'list-style:none;padding:0;';
-      CHANGELOG_DATA[ver].forEach(item => {
-        const li = document.createElement('li');
-        li.style.cssText = 'margin-bottom:8px;line-height:1.5;font-size:14px;display:flex;align-items:flex-start;gap:8px;';
-        li.innerHTML = `<span style="color:var(--accent-primary);margin-top:2px;">•</span> <span>${ChangelogManager.formatText(item)}</span>`;
-        ul.appendChild(li);
-      });
-      list.appendChild(ul);
-    });
-
-    modal.style.display = 'flex';
+    modal.classList.add('active');
+    list.scrollTop = 0;
+    modal.querySelector('.app-dialog-close').focus({ preventScroll: true });
     localStorage.setItem('lastChangelogVersion', version);
   }
 
-  static close() { document.getElementById('changelogModal').style.display = 'none'; }
+  static close() {
+    document.getElementById('changelogModal').classList.remove('active');
+    ChangelogManager.opener?.focus({ preventScroll: true });
+    ChangelogManager.opener = null;
+  }
 }
 
 const formatChangelogText = (...args) => ChangelogManager.formatText(...args);
 const showChangelogModal  = (...args) => ChangelogManager.show(...args);
 const closeChangelog      = () => ChangelogManager.close();
+const changelogOverlay = document.getElementById('changelogModal');
+changelogOverlay.addEventListener('click', event => {
+  if (event.target === changelogOverlay) closeChangelog();
+});
+changelogOverlay.addEventListener('keydown', event => Utils.handleDialogKeys(event, changelogOverlay, closeChangelog));
 
 // ============================================================================
 // LYRICS MANAGER
@@ -9033,7 +9029,7 @@ ${this.parsedLines.map((line, idx) => `<div class="lyrics-line" data-index="${id
 
 function addLyricsSettings() {
   const section = document.getElementById('trackManagementSection');
-  const container = section?.parentNode || document.querySelector('#settingsModal .modal');
+  const container = section?.parentNode || document.querySelector('#settingsModal .settings-dialog');
   if (!container) return;
   document.getElementById('lyricsSettingsSection')?.remove();
   const settings = document.createElement('div');
@@ -9332,7 +9328,8 @@ if (navigator.mediaSession) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.target.isContentEditable || e.target.closest?.('input, textarea, select, button, a, [role="slider"], [role="button"]')) return;
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.target.isContentEditable ||
+      e.target.closest?.('.app-dialog, input, textarea, select, button, a, [role="slider"], [role="button"]')) return;
   switch (e.code) {
     case 'Space':       e.preventDefault(); PlayerController.toggle(); break;
     case 'ArrowRight':  e.preventDefault(); PlayerController.seekSeconds(audio.currentTime + 5); break;
@@ -16860,28 +16857,26 @@ function initAdmin() {
 #ycAdmBtn:hover{border-color:var(--accent,#1db954)}
 #ycAdmBtn .n{display:none;margin-left:6px;background:#ef4444;border-radius:9px;padding:1px 6px;font-size:11px}
 #ycAdmBtn.alert .n{display:inline}
-#ycAdmOverlay{position:fixed;inset:0;z-index:99991;display:none;background:rgba(0,0,0,.6);align-items:flex-start;justify-content:center;overflow-y:auto;padding:18px 10px}
-#ycAdmOverlay.show{display:flex}
-#ycAdm{width:100%;max-width:760px;background:#141418;color:#eee;border:1px solid rgba(255,255,255,.1);border-radius:16px;font:14px system-ui,sans-serif;overflow:hidden}
+#ycAdmOverlay.app-dialog-overlay{z-index:99991}
+#ycAdm.app-dialog{--dialog-width:760px;font:14px system-ui,sans-serif}
 #ycAdm *{box-sizing:border-box}
-#ycAdm .top{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;background:#141418;z-index:2}
-#ycAdm .top b{font-size:15px}
 #ycAdm .top .sp{flex:1}
-#ycAdm .body{padding:6px 16px 18px}
+#ycAdm .app-dialog-body{padding-top:0}
 #ycAdm h3{margin:20px 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.6;display:flex;align-items:center;gap:8px}
 #ycAdm h3 .sp{flex:1}
-#ycAdm button{font:600 12.5px system-ui,sans-serif;padding:7px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#eee;cursor:pointer}
-#ycAdm button:hover{border-color:rgba(255,255,255,.35)}
-#ycAdm button.pri{background:var(--accent,#1db954);border-color:transparent;color:#000}
+#ycAdm button:not(.app-dialog-close){font:600 12.5px system-ui,sans-serif;padding:7px 11px;border-radius:12px;border:1px solid var(--layout-edge);background:var(--layout-inset-surface);color:var(--layout-ink);cursor:pointer}
+#ycAdm .app-dialog-close{font-size:20px}
+#ycAdm button:hover{background:var(--layout-active)}
+#ycAdm button.pri{background:var(--layout-control,#f3f6ff);border-color:transparent;color:var(--layout-control-ink,#172130)}
 #ycAdm button.dng:hover{color:#f87171;border-color:#f87171}
 #ycAdm button:disabled{opacity:.5;cursor:default}
-#ycAdm input[type=text],#ycAdm textarea,#ycAdm select{width:100%;background:rgba(255,255,255,.05);color:#eee;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px 10px;font:14px system-ui,sans-serif}
+#ycAdm input[type=text],#ycAdm textarea,#ycAdm select{width:100%;background:var(--layout-inset-surface);color:var(--layout-ink);border:1px solid var(--layout-edge);border-radius:12px;padding:8px 10px;font:14px system-ui,sans-serif}
 #ycAdm textarea{min-height:70px;resize:vertical}
 #ycAdm label{display:block;font-size:12px;opacity:.65;margin:10px 0 4px}
 #ycAdm .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
-#ycAdm .card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px}
+#ycAdm .card{background:var(--layout-inset-surface);border:1px solid var(--layout-stroke);border-radius:12px;padding:12px}
 #ycAdm .empty{opacity:.5;padding:12px;text-align:center;font-size:13px}
-#ycAdm .person{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin-bottom:8px}
+#ycAdm .person{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--layout-stroke);border-radius:12px;margin-bottom:8px}
 #ycAdm .person.stale{border-color:rgba(251,191,36,.4)}
 #ycAdm .person.restricted{border-color:rgba(239,68,68,.45)}
 #ycAdm .person .mid{flex:1;min-width:0}
@@ -16895,7 +16890,7 @@ function initAdmin() {
 #ycAdm .tag.ok{background:rgba(34,197,94,.18);color:#4ade80}
 #ycAdm .tag.m{background:rgba(239,68,68,.2);color:#f87171}
 #ycAdm .feed{max-height:230px;overflow-y:auto}
-#ycAdm .msg{display:flex;gap:8px;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
+#ycAdm .msg{display:flex;gap:8px;padding:8px 6px;border-bottom:1px solid var(--layout-stroke)}
 #ycAdm .msg:last-child{border:none}
 #ycAdm .msg .c{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
 #ycAdm .msg .c .hd{font-size:11.5px;opacity:.55;margin-bottom:2px}
@@ -16914,18 +16909,21 @@ function initAdmin() {
 
   /* ---------- skeleton ---------- */
   const btn = h("button", { id: "ycAdmBtn", type: "button", onclick: () => toggle(true) }, "🛠 Admin", h("span", { class: "n", id: "ycAdmN" }));
-  const overlay = h("div", { id: "ycAdmOverlay", onclick: (e) => { if (e.target === overlay) toggle(false); } });
-  const panel = h("div", { id: "ycAdm" });
+  const overlay = h("div", { id: "ycAdmOverlay", class: "app-dialog-overlay", onclick: (e) => { if (e.target === overlay) toggle(false); } });
+  const panel = h("div", { id: "ycAdm", class: "app-dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "ycAdmTitle" });
   overlay.appendChild(panel);
   document.body.append(btn, overlay);
-
-  function onKey(e) { if (e.key === "Escape" && open) toggle(false); }
-  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("keydown", event => Utils.handleDialogKeys(event, overlay, () => toggle(false)));
 
   function toggle(on) {
     open = on;
-    overlay.classList.toggle("show", on);
-    if (on) { build(); }
+    overlay.classList.toggle("active", on);
+    if (on) {
+      build();
+      panel.querySelector(".top button").focus({ preventScroll: true });
+    } else {
+      btn.focus({ preventScroll: true });
+    }
   }
 
   /* The skeleton (inputs) is built once so typing isn't wiped by live updates;
@@ -16954,9 +16952,9 @@ function initAdmin() {
     const renameIn = h("input", { type: "text", id: "ycAdmRename", placeholder: "new chat name (pick a person)" });
 
     panel.append(
-      h("div", { class: "top" }, h("b", { text: "Youtify Control" }), h("span", { id: "ycAdmPulse", style: "opacity:.6;font-size:12px" }), h("span", { class: "sp" }),
-        h("button", { type: "button", onclick: () => toggle(false) }, "Close")),
-      h("div", { class: "body" },
+      h("header", { class: "top app-dialog-header" }, h("h2", { id: "ycAdmTitle", class: "app-dialog-title", text: "Youtify Control" }), h("span", { id: "ycAdmPulse", style: "opacity:.6;font-size:12px" }), h("span", { class: "sp" }),
+        h("button", { class: "app-dialog-close", type: "button", "aria-label": "Close admin panel", onclick: () => toggle(false) }, "×")),
+      h("div", { class: "app-dialog-body" },
         h("h3", null, "Who's connected"),
         h("div", { class: "ver" }, h("span", { text: "Latest version" }), ver, h("label", null, auto, "Auto-notify people on old versions")),
         h("div", { id: "ycAdmUpd" }),

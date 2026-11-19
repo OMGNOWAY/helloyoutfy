@@ -286,6 +286,7 @@ body.big-lyrics-layout {
   --layout-muted: #c5c8d3;
   --layout-edge: #ffffff26;
   --layout-stroke: #ffffff15;
+  --layout-modal-surface: #151b28d9;
   --layout-surface: #121621a6;
   --layout-inset-surface: #1015205e;
   --layout-hover: #ffffff16;
@@ -512,18 +513,15 @@ body.big-lyrics-layout #mainContent :is(.album-tracklist, .layout-playlist-track
 }
 body.big-lyrics-layout #mainContent .tracklist-header { border-color: var(--layout-stroke) !important; }
 
-body.big-lyrics-layout :is(.modal, .lyrics-panel, .effects-panel, .yc-panel, .uq-panel, #devConsole, #changelogModal > div) {
+body.big-lyrics-layout :is(.lyrics-panel, .effects-panel, .yc-panel, .uq-panel, #devConsole) {
   color: var(--layout-ink);
   background: var(--layout-surface) !important;
   border: 1px solid var(--layout-edge) !important;
   box-shadow: 0 18px 58px #0005 !important;
 }
-body.big-lyrics-layout.performance-mode :is(.modal, .lyrics-panel, .effects-panel, .yc-panel, .uq-panel, #devConsole, #changelogModal > div) {
+body.big-lyrics-layout.performance-mode :is(.lyrics-panel, .effects-panel, .yc-panel, .uq-panel, #devConsole) {
   background: var(--layout-solid, #182131f5) !important;
   box-shadow: none !important;
-}
-body.big-lyrics-layout :is(.modal-overlay, #changelogModal) {
-  background: var(--layout-scrim);
 }
 body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
   background: var(--layout-inset-surface) !important;
@@ -531,54 +529,261 @@ body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
   border-radius: 15px;
   box-shadow: none !important;
 }
-body.big-lyrics-layout #settingsModal {
-  padding: clamp(10px, 3vw, 36px);
-  background: color-mix(in srgb, var(--layout-scrim) 82%, transparent);
-  backdrop-filter: blur(9px) saturate(115%);
+
+/* Dialogs use the same palette as Settings and the Big Lyrics controls. */
+.app-dialog-overlay {
+  --dialog-gutter: clamp(10px, 3vw, 32px);
+  --dialog-pad: clamp(14px, 3vw, 22px);
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  place-items: center;
+  padding: var(--dialog-gutter);
 }
-body.big-lyrics-layout #settingsModal .settings-dialog {
-  --settings-accent: var(--layout-focus, var(--accent));
+body.big-lyrics-layout .app-dialog-overlay {
+  background: color-mix(in srgb, var(--layout-scrim) 82%, transparent) !important;
+  -webkit-backdrop-filter: blur(9px) saturate(115%) !important;
+  backdrop-filter: blur(9px) saturate(115%) !important;
+}
+.app-dialog-overlay.active { display: grid; }
+body.big-lyrics-layout .app-dialog-overlay.transient-dialog { z-index: 1202; }
+body.big-lyrics-layout #changelogModal { z-index: 9999; }
+
+body.big-lyrics-layout .app-dialog-overlay .app-dialog {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: min(100%, 850px);
-  max-width: none;
-  height: min(610px, calc(100dvh - 2 * clamp(10px, 3vw, 36px)));
-  max-height: none;
-  padding: 0;
-  border-radius: 26px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(100%, var(--dialog-width, 28rem));
+  max-height: calc(100dvh - 2 * var(--dialog-gutter));
+  min-width: 0;
   overflow: hidden;
-  background: var(--layout-chat-surface, var(--layout-surface)) !important;
+  color: var(--layout-ink);
+  background: var(--layout-chat-surface, var(--layout-modal-surface)) !important;
+  border: 1px solid var(--layout-edge) !important;
+  border-radius: 24px;
+  box-shadow: 0 18px 58px #0005, inset 0 1px var(--layout-stroke) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
-body.big-lyrics-layout.performance-mode #settingsModal { backdrop-filter: none; }
-body.big-lyrics-layout.performance-mode #settingsModal .settings-dialog {
-  background: var(--layout-solid) !important;
+.app-dialog-overlay.active .app-dialog {
+  animation: app-dialog-in .22s cubic-bezier(.22, 1, .36, 1);
 }
-#settingsModal .settings-dialog::before { content: none; }
-#settingsModal .settings-header {
+@keyframes app-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+body.big-lyrics-layout.performance-mode .app-dialog-overlay {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+body.big-lyrics-layout.performance-mode .app-dialog-overlay .app-dialog {
+  animation: none;
+  background: var(--layout-solid, #181f2c) !important;
+  box-shadow: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-dialog-overlay.active .app-dialog { animation: none; }
+}
+
+.app-dialog-wide { --dialog-width: 42rem; }
+.app-dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 22px;
+  gap: 12px;
+  padding: 14px var(--dialog-pad, 16px);
   border-bottom: 1px solid var(--layout-stroke);
 }
-#settingsModal .settings-header h2 {
+.app-dialog-title {
+  min-width: 0;
   margin: 0;
   color: var(--layout-ink);
+  font-size: clamp(1.125rem, 2.5vw, 1.375rem);
+  font-weight: 550;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+body.big-lyrics-layout .app-dialog-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--layout-edge);
+  border-radius: 50%;
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface);
+  cursor: pointer;
+}
+body.big-lyrics-layout .app-dialog-close:hover { background: var(--layout-active); }
+.app-dialog-close svg { width: 17px; height: 17px; }
+.app-dialog-body {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--dialog-pad);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.app-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px var(--dialog-pad);
+  border-top: 1px solid var(--layout-stroke);
+}
+.app-dialog :is(.form-group, .settings-section):last-child { margin-bottom: 0; }
+.app-dialog .dialog-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.app-dialog .dialog-fields .form-input { flex: 1 1 11rem; }
+.app-dialog .dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+body.big-lyrics-layout :is(.app-dialog, .app-dialog-header) :is(button, input, textarea, select, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--layout-focus) !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout .app-dialog :is(.form-input, .te-hex, #_te_name, #_te_json_out) {
+  min-width: 0;
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface) !important;
+  border: 1px solid var(--layout-edge) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+.app-dialog :is(input, textarea)::placeholder { color: var(--layout-muted); }
+.app-dialog textarea { resize: vertical; }
+body.big-lyrics-layout .app-dialog :is(.btn, ._te_btn) {
+  min-height: 36px;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+body.big-lyrics-layout .app-dialog :is(.btn.primary, ._te_btn.pri) {
+  color: var(--layout-control-ink, #172130) !important;
+  background: var(--layout-control, #f3f6ff) !important;
+}
+body.big-lyrics-layout .app-dialog :is(.btn.primary, ._te_btn.pri):hover {
+  background: var(--layout-control-hover, #dce8f9) !important;
+}
+body.big-lyrics-layout .app-dialog :is(.btn.secondary, ._te_btn.sec, ._te_btn.ghost) {
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface) !important;
+  border: 1px solid var(--layout-edge) !important;
+}
+body.big-lyrics-layout .app-dialog :is(.btn.secondary, ._te_btn.sec, ._te_btn.ghost):hover {
+  background: var(--layout-hover) !important;
+}
+body.big-lyrics-layout .app-dialog :is(.settings-section, .track-info-stats, .te-row, #_te_banner, #_te_palette, #_te_footer) {
+  background: var(--layout-inset-surface) !important;
+  border-color: var(--layout-stroke) !important;
+  box-shadow: none !important;
+}
+.app-dialog .track-info-details { min-width: 0; overflow-wrap: anywhere; }
+.app-dialog .track-info-details h3 { font-size: clamp(1.25rem, 4vw, 1.85rem); }
+.app-dialog .track-info-cover { width: clamp(74px, 24vw, 144px); height: auto; aspect-ratio: 1; }
+.app-dialog .track-info-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 12px; }
+.app-dialog .stat-value { font-size: clamp(.95rem, 3.5vw, 1.5rem); text-shadow: none; overflow-wrap: anywhere; }
+.app-dialog .duplicate-track {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--layout-stroke);
+  border-radius: 12px;
+  background: var(--layout-inset-surface);
+}
+.app-dialog .duplicate-track .queue-info { flex: 1 1 8rem; }
+.app-dialog .duplicate-track .queue-img { width: 44px; height: 44px; }
+body.big-lyrics-layout .app-dialog .btn.dialog-danger {
+  color: #fff !important;
+  background: #a82e40 !important;
+  border-color: transparent !important;
+}
+body.big-lyrics-layout .app-dialog .btn.dialog-danger:hover { background: #902537 !important; }
+.app-dialog :is(.pl-pick-list, .pl-lib-list) { overscroll-behavior: contain; }
+.app-dialog :is(.pl-pick-row, .pl-lib-row, .shortcut-item) {
+  color: var(--layout-ink);
+  background: var(--layout-inset-surface);
+  border: 1px solid var(--layout-stroke);
+  border-radius: 12px;
+}
+.app-dialog :is(.pl-pick-row, .pl-lib-row):hover { background: var(--layout-hover); }
+.app-dialog .shortcuts-list { display: grid; gap: 6px; }
+.app-dialog .shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+}
+.app-dialog .shortcut-key {
+  flex: none;
+  padding: 2px 6px;
+  color: var(--layout-muted);
+  border: 1px solid var(--layout-edge);
+  border-radius: 6px;
+}
+#effectsPanel .app-dialog-header { margin-bottom: 14px; padding: 0 0 12px; }
+
+body.big-lyrics-layout .yc-lightbox-bar :is(a, button) {
+  color: var(--layout-ink);
+  background: var(--layout-chat-surface, var(--layout-modal-surface));
+  border: 1px solid var(--layout-edge);
+  border-radius: 999px;
+}
+body.big-lyrics-layout .yc-lightbox-bar :is(a, button):hover {
+  background: var(--layout-solid, #181f2c);
+}
+
+#changelogModal .app-dialog { --dialog-width: 34rem; }
+.changelog-release + .changelog-release { margin-top: 18px; }
+.changelog-version {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--layout-stroke);
+  font-size: 1rem;
+  font-weight: 650;
+}
+.changelog-current {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--layout-inset-surface);
+  border: 1px solid var(--layout-edge);
+  color: var(--layout-focus);
+  font-size: .72rem;
+}
+.changelog-release ul { padding-inline-start: 1.15rem; font-size: .875rem; line-height: 1.5; }
+.changelog-release li + li { margin-top: 5px; }
+.changelog-release li::marker { color: var(--layout-focus); }
+.changelog-note { color: var(--layout-muted); }
+
+body.big-lyrics-layout #settingsModal .settings-dialog {
+  --settings-accent: var(--layout-focus, var(--accent));
+  --dialog-width: 850px;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: min(610px, calc(100dvh - 2 * var(--dialog-gutter)));
+}
+#settingsModal .settings-header { padding-block: 18px; }
+#settingsModal .settings-header h2 {
   font-size: clamp(1.7rem, 3vw, 2.3rem);
   font-weight: 400;
   line-height: 1.1;
 }
-#settingsModal .modal-close {
-  flex: none;
-  border-radius: 50%;
-  border-color: var(--layout-edge);
-  color: var(--layout-ink);
-  background: var(--layout-inset-surface);
-  transform: none;
-}
-#settingsModal .modal-close:hover { background: var(--layout-active); }
-#settingsModal .modal-close svg { width: 18px; height: 18px; }
 #settingsModal .settings-workspace {
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr);
@@ -792,9 +997,6 @@ body.big-lyrics-layout #settingsModal .settings-card {
   #settingsModal .settings-content { padding-top: 12px; }
   #settingsModal .settings-card { min-width: 0; }
   #settingsModal #themeGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-@media (prefers-reduced-motion: reduce) {
-  #settingsModal, #settingsModal .settings-dialog { animation: none; }
 }
 body.big-lyrics-layout #app > .yc-workspace[hidden],
 body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #app > #mainContent { display: none !important; }
@@ -3704,9 +3906,9 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 
 <!-- EFFECTS PANEL -->
 <div class="effects-panel" id="effectsPanel">
-  <div class="modal-header" style="margin-bottom: 24px;">
-    <h2 class="modal-title">Audio Effects</h2>
-    <button class="modal-close" onclick="toggleEffects()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <div class="app-dialog-header">
+    <h2 class="app-dialog-title">Audio Effects</h2>
+    <button class="app-dialog-close" type="button" onclick="toggleEffects()" aria-label="Close audio effects"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <line x1="18" y1="6" x2="6" y2="18"></line>
   <line x1="6" y1="6" x2="18" y2="18"></line>
 </svg></button>
@@ -3759,11 +3961,11 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 
 
 <!-- Settings Modal -->
-<div class="modal-overlay" id="settingsModal">
-  <div class="modal settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <header class="settings-header">
-      <h2 id="settingsTitle">Settings</h2>
-      <button class="modal-close" type="button" onclick="closeSettings()" aria-label="Close settings" title="Close settings">
+<div class="app-dialog-overlay" id="settingsModal">
+  <div class="app-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <header class="app-dialog-header settings-header">
+      <h2 class="app-dialog-title" id="settingsTitle">Settings</h2>
+      <button class="app-dialog-close" type="button" onclick="closeSettings()" aria-label="Close settings" title="Close settings">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
       </button>
     </header>
@@ -3958,20 +4160,21 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     </div>
 </div>
 
-<div id="changelogModal" style="font-family: something; display: none; position: fixed; top: 0px; left: 0px; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
-    <div style="background:var(--bg-primary); width:90%; max-width:500px; max-height:80vh; border-radius:16px; border:1px solid var(--border); display:flex; flex-direction:column; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);">
-
-        <div style="padding:20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
-            <h2 style="margin:0; font-size:1.5em; color:var(--text-primary);">What's New</h2>
-            <button onclick="closeChangelog()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:24px; line-height:1;">×</button>
-        </div>
-
-        <div id="changelogList" style="padding:20px; overflow-y:auto; flex:1; scrollbar-width:thin;"></div>
-
-        <div style="padding:15px; border-top:1px solid var(--border); text-align:right;">
-            <button onclick="closeChangelog()" style="font-family: something; background:var(--accent-primary); color:white; border:none; padding:10px 24px; border-radius:8px; font-weight:600; cursor:pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Got it</button>
-        </div>
-    </div>
+<div class="app-dialog-overlay" id="changelogModal">
+  <div class="app-dialog" role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+    <header class="app-dialog-header">
+      <h2 class="app-dialog-title" id="changelogTitle">What's New</h2>
+      <button class="app-dialog-close" type="button" onclick="closeChangelog()" aria-label="Close changelog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="m6 6 12 12M18 6 6 18"/>
+        </svg>
+      </button>
+    </header>
+    <div class="app-dialog-body" id="changelogList" tabindex="0" role="region" aria-label="Release notes"></div>
+    <footer class="app-dialog-footer">
+      <button class="btn primary" type="button" onclick="closeChangelog()">Got it</button>
+    </footer>
+  </div>
 </div>
 <!-- ==========================================================================
      YOUTIFY CHAT  —  markup
