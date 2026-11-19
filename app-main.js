@@ -11136,8 +11136,9 @@ document.addEventListener('DOMContentLoaded', () => {
     syncBackground();
   }
 
+  select.value = 'big-lyrics';
   try {
-    if (localStorage.getItem('youtify_app_layout') === 'big-lyrics') select.value = 'big-lyrics';
+    if (localStorage.getItem('youtify_app_layout') === 'classic') select.value = 'classic';
   } catch {}
   select.addEventListener('change', () => {
     try { localStorage.setItem('youtify_app_layout', select.value); } catch {}
