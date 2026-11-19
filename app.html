@@ -537,10 +537,9 @@ body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
 }
 body.big-lyrics-layout #settingsModal .settings-section-title { color: var(--layout-ink); }
 body.big-lyrics-layout #app > .yc-workspace[hidden],
-body.big-lyrics-layout.full-lyrics-open #app > .yc-workspace,
-body.big-lyrics-layout.yc-chat-open #app > #mainContent { display: none !important; }
-body.big-lyrics-layout.yc-chat-open #app { margin-right: 0; }
-body.big-lyrics-layout.yc-chat-open #sidebar .nav-item.active {
+body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #app > #mainContent { display: none !important; }
+body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #app { margin-right: 0; }
+body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #sidebar .nav-item.active {
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
@@ -577,7 +576,7 @@ body.big-lyrics-layout #app > .yc-workspace {
   font: inherit;
 }
 #ycWorkspace .yc-close:hover { background: var(--layout-active); }
-body.big-lyrics-layout #ycPanel {
+body.big-lyrics-layout #ycWorkspace #ycPanel {
   position: relative;
   inset: auto;
   display: grid;
@@ -594,33 +593,38 @@ body.big-lyrics-layout #ycPanel {
   color: var(--layout-ink);
   box-shadow: 0 12px 30px #0003, inset 0 1px var(--layout-stroke);
 }
-body.big-lyrics-layout:not(.performance-mode) #ycPanel {
+body.big-lyrics-layout:not(.performance-mode) #ycWorkspace #ycPanel {
   background: var(--layout-chat-surface) !important;
   backdrop-filter: blur(20px) saturate(117%);
 }
-body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
-#ycPanel .yc-rail,
-#ycPanel .yc-conversation {
+body.big-lyrics-layout.performance-mode #ycWorkspace #ycPanel { backdrop-filter: none; }
+#ycWorkspace #ycPanel .yc-rail,
+#ycWorkspace #ycPanel .yc-conversation {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
-#ycPanel .yc-rail {
+#ycWorkspace #ycPanel .yc-rail {
   padding: 12px 8px;
   gap: 10px;
   background: color-mix(in srgb, var(--layout-inset-surface) 55%, transparent);
   border-inline-end: 1px solid var(--layout-stroke);
 }
-#ycPanel .yc-conversation { position: relative; }
-#ycPanel .yc-head {
+#ycWorkspace #ycPanel .yc-conversation { position: relative; }
+#ycWorkspace #ycPanel .yc-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   justify-content: space-between;
   gap: 6px;
   padding: 0 4px;
   border: 0;
 }
-#ycPanel .yc-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
-#ycPanel .yc-tabs {
+#ycWorkspace #ycPanel .yc-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+#ycWorkspace #ycPanel .yc-me-btn { grid-area: 1 / 2; }
+#ycWorkspace #ycPanel .yc-classic-close { display: none; }
+#ycWorkspace #ycPanel .yc-tabs {
+  grid-area: 2 / 1 / 3 / -1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   flex: none;
@@ -628,19 +632,19 @@ body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
   background: var(--layout-inset-surface);
   border-color: var(--layout-stroke);
 }
-#ycPanel .yc-tab {
+#ycWorkspace #ycPanel .yc-tab {
   min-height: 34px;
   padding: 4px 19px 4px 6px;
   justify-content: start;
   border-radius: 10px;
   color: var(--layout-muted);
 }
-#ycPanel .yc-tab:is(:hover, .active) {
+#ycWorkspace #ycPanel .yc-tab:is(:hover, .active) {
   color: var(--layout-ink);
   background: var(--layout-hover);
   box-shadow: none;
 }
-#ycPanel .yc-tab :is(.yc-badge, .yc-count) {
+#ycWorkspace #ycPanel .yc-tab :is(.yc-badge, .yc-count) {
   position: absolute;
   inset-inline-end: 2px;
   padding-inline: 3px;
@@ -648,21 +652,21 @@ body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
   max-width: 24px;
   font-size: 9px;
 }
-#ycPanel .yc-rail #ycDmList { padding: 2px 0; gap: 5px; }
-#ycPanel #ycDmList button.yc-row {
+#ycWorkspace #ycPanel .yc-rail #ycDmList { padding: 2px 0; gap: 5px; }
+#ycWorkspace #ycPanel #ycDmList button.yc-row {
   width: 100%;
   text-align: start;
   font: inherit;
 }
-#ycPanel .yc-rail .yc-row { padding: 6px; gap: 6px; }
-#ycPanel .yc-rail .yc-row .yc-av { width: 28px; height: 28px; font-size: 11px; }
-#ycPanel .yc-rail .yc-row .yc-row-name { font-size: 12px; }
-#ycPanel #ycDmList .yc-row-sub { display: block; }
-#ycPanel .yc-rail .yc-row .yc-row-sub { font-size: 10px; }
-#ycPanel .yc-row-time { color: var(--layout-muted); font-size: 11px; flex-shrink: 0; }
-#ycPanel .yc-rail .yc-row-time { display: none; }
+#ycWorkspace #ycPanel .yc-rail .yc-row { padding: 6px; gap: 6px; }
+#ycWorkspace #ycPanel .yc-rail .yc-row .yc-av { width: 28px; height: 28px; font-size: 11px; }
+#ycWorkspace #ycPanel .yc-rail .yc-row .yc-row-name { font-size: 12px; }
+#ycWorkspace #ycPanel #ycDmList .yc-row-sub { display: block; }
+#ycWorkspace #ycPanel .yc-rail .yc-row .yc-row-sub { font-size: 10px; }
+#ycWorkspace #ycPanel .yc-row-time { color: var(--layout-muted); font-size: 11px; flex-shrink: 0; }
+#ycWorkspace #ycPanel .yc-rail .yc-row-time { display: none; }
 
-#ycPanel .yc-dm-search {
+#ycWorkspace #ycPanel .yc-dm-search {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -673,8 +677,8 @@ body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
   border: 1px solid var(--layout-stroke);
   border-radius: 13px;
 }
-#ycPanel .yc-dm-search svg { flex: none; width: 15px; height: 15px; }
-#ycPanel .yc-dm-search input {
+#ycWorkspace #ycPanel .yc-dm-search svg { flex: none; width: 15px; height: 15px; }
+#ycWorkspace #ycPanel .yc-dm-search input {
   width: 100%;
   min-width: 0;
   padding: 0;
@@ -685,69 +689,69 @@ body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
   font: inherit;
   font-size: 13px;
 }
-#ycPanel .yc-dm-search input::placeholder { color: var(--layout-muted); }
-#ycPanel .yc-dm-search:focus-within { border-color: var(--layout-focus); }
-#ycPanel .yc-rail .yc-dm-search { margin: 2px 0 8px; }
+#ycWorkspace #ycPanel .yc-dm-search input::placeholder { color: var(--layout-muted); }
+#ycWorkspace #ycPanel .yc-dm-search:focus-within { border-color: var(--layout-focus); }
+#ycWorkspace #ycPanel .yc-rail .yc-dm-search { margin: 2px 0 8px; }
 
-#ycPanel :is(.yc-thread-head, .yc-news-intro, .yc-composer, .yc-status) {
+#ycWorkspace #ycPanel :is(.yc-thread-head, .yc-news-intro, .yc-composer, .yc-status) {
   background: color-mix(in srgb, var(--layout-inset-surface) 45%, transparent);
   border-color: var(--layout-stroke);
 }
-#ycPanel .yc-thread-head { min-height: 47px; padding: 8px 12px; }
-#ycPanel .yc-thread-head .yc-row-name { font-size: 16px; }
-#ycPanel .yc-msg { max-width: min(90%, 680px); }
-#ycPanel .yc-msg-bubble { overflow-wrap: anywhere; }
-#ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
-#ycPanel .yc-row:hover,
-#ycPanel .yc-row[aria-current="true"] {
+#ycWorkspace #ycPanel .yc-thread-head { min-height: 47px; padding: 8px 12px; }
+#ycWorkspace #ycPanel .yc-thread-head .yc-row-name { font-size: 16px; }
+#ycWorkspace #ycPanel .yc-msg { max-width: min(90%, 680px); }
+#ycWorkspace #ycPanel .yc-msg-bubble { overflow-wrap: anywhere; }
+#ycWorkspace #ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
+#ycWorkspace #ycPanel .yc-row:hover,
+#ycWorkspace #ycPanel .yc-row[aria-current="true"] {
   background: var(--layout-hover);
   border-color: var(--layout-edge);
   transform: none;
 }
-#ycPanel .yc-msg:not(.mine, .system, .pinged) .yc-msg-bubble:not(.jumbo, .img, .embed-only) {
+#ycWorkspace #ycPanel .yc-msg:not(.mine, .system, .pinged) .yc-msg-bubble:not(.jumbo, .img, .embed-only) {
   background: var(--layout-chat-detail);
 }
-#ycPanel :is(.yc-composer-inner, .yc-back, .yc-attach:hover) {
+#ycWorkspace #ycPanel :is(.yc-composer-inner, .yc-back, .yc-attach:hover) {
   background: var(--layout-inset-surface);
   border-color: var(--layout-edge);
 }
-#ycPanel .yc-composer-inner:focus-within { border-color: var(--layout-focus); }
-#ycPanel .yc-composer { gap: 6px; padding: 8px; }
-#ycPanel .yc-composer-inner { border-radius: 17px; }
-#ycPanel .yc-composer .yc-attach { width: 30px; }
-#ycPanel .yc-send { width: 36px; height: 36px; margin-bottom: 2px; }
-#ycPanel .yc-status { padding: 5px 10px; }
-#ycPanel :is(.yc-loading, .yc-emoji-pop, .yc-share-pop, .yc-mention-pop, .yc-react-picker) {
+#ycWorkspace #ycPanel .yc-composer-inner:focus-within { border-color: var(--layout-focus); }
+#ycWorkspace #ycPanel .yc-composer { gap: 6px; padding: 8px; }
+#ycWorkspace #ycPanel .yc-composer-inner { border-radius: 17px; }
+#ycWorkspace #ycPanel .yc-composer .yc-attach { width: 30px; }
+#ycWorkspace #ycPanel .yc-send { width: 36px; height: 36px; margin-bottom: 2px; }
+#ycWorkspace #ycPanel .yc-status { padding: 5px 10px; }
+#ycWorkspace #ycPanel :is(.yc-loading, .yc-emoji-pop, .yc-share-pop, .yc-mention-pop, .yc-react-picker) {
   background: var(--layout-solid);
   border-color: var(--layout-edge);
 }
-#ycPanel :is(.yc-emoji-pop, .yc-share-pop, .yc-mention-pop) {
+#ycWorkspace #ycPanel :is(.yc-emoji-pop, .yc-share-pop, .yc-mention-pop) {
   max-width: 400px;
   right: auto;
   width: calc(100% - 24px);
 }
-#ycPanel .yc-emoji-pop.open {
+#ycWorkspace #ycPanel .yc-emoji-pop.open {
   display: flex;
   flex-direction: column;
   max-height: calc(100% - 84px);
 }
-#ycPanel :is(.yc-emoji-head, .yc-emoji-cats, .yc-emoji-foot) { flex: none; }
-#ycPanel .yc-emoji-scroll { min-height: 0; }
-#ycPanel .yc-share-pop { max-height: min(300px, calc(100% - 84px)); }
-#ycPanel .yc-mention-pop { max-height: min(190px, calc(100% - 84px)); }
-#ycPanel .yc-gate { padding-block: 16px; }
-#ycPanel #ycViewGate { overflow-y: auto; }
-#ycPanel [hidden] { display: none !important; }
+#ycWorkspace #ycPanel :is(.yc-emoji-head, .yc-emoji-cats, .yc-emoji-foot) { flex: none; }
+#ycWorkspace #ycPanel .yc-emoji-scroll { min-height: 0; }
+#ycWorkspace #ycPanel .yc-share-pop { max-height: min(300px, calc(100% - 84px)); }
+#ycWorkspace #ycPanel .yc-mention-pop { max-height: min(190px, calc(100% - 84px)); }
+#ycWorkspace #ycPanel .yc-gate { padding-block: 16px; }
+#ycWorkspace #ycPanel #ycViewGate { overflow-y: auto; }
+#ycWorkspace #ycPanel [hidden] { display: none !important; }
 #ycWorkspace button:focus-visible { outline: 2px solid var(--layout-focus); outline-offset: -2px; }
 
 @media (max-width: 860px) {
-  body.big-lyrics-layout.yc-chat-open #lyricsPanel { display: none !important; }
+  body.big-lyrics-layout.yc-chat-open:not(.yc-classic-chat) #lyricsPanel { display: none !important; }
   body.big-lyrics-layout #app > .yc-workspace {
     height: max(210px, var(--yc-workspace-height, calc(100dvh - 275px - env(safe-area-inset-bottom))));
     gap: 7px;
   }
-  body.big-lyrics-layout #ycPanel { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); border-radius: 18px; }
-  #ycPanel .yc-rail {
+  body.big-lyrics-layout #ycWorkspace #ycPanel { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); border-radius: 18px; }
+  #ycWorkspace #ycPanel .yc-rail {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -756,12 +760,41 @@ body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
     gap: 6px;
     padding: 6px;
   }
-  #ycPanel .yc-head { order: 1; padding: 0; }
-  #ycPanel .yc-head h2,
-  #ycPanel .yc-rail #ycViewDms { display: none !important; }
-  #ycPanel .yc-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1; }
-  #ycPanel .yc-tab { min-height: 30px; }
-  #ycPanel .yc-scroll { padding: 8px 9px; }
+  #ycWorkspace #ycPanel .yc-head { display: flex; flex: 1; min-width: 0; padding: 0; }
+  #ycWorkspace #ycPanel .yc-head h2,
+  #ycWorkspace #ycPanel .yc-rail #ycViewDms { display: none !important; }
+  #ycWorkspace #ycPanel .yc-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1; }
+  #ycWorkspace #ycPanel .yc-tab { min-height: 30px; }
+  #ycWorkspace #ycPanel .yc-scroll { padding: 8px 9px; }
+}
+/* The classic sidebar reuses the same live chat and its original chrome. */
+#app > #ycPanel :is(.yc-rail, .yc-conversation) { display: contents; }
+#app > #ycPanel :is(.yc-head h2, .yc-dm-search, .yc-room-heading) { display: none; }
+#app > #ycPanel .yc-row-time { color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
+#app > #ycPanel #ycDmList button.yc-row { text-align: start; }
+#app > #ycPanel #ycDmList .yc-row-sub { display: block; }
+body.yc-classic-chat.yc-chat-open #settingsModal { z-index: 1201; }
+body.big-lyrics-layout.yc-classic-chat:not(.performance-mode) #ycPanel {
+  background: var(--layout-chat-surface, var(--layout-surface)) !important;
+}
+body.big-lyrics-layout.yc-classic-chat #ycPanel :is(.yc-head, .yc-composer, .yc-body, .yc-tabs, .yc-composer-inner) {
+  border-color: var(--layout-edge);
+}
+body.big-lyrics-layout.yc-classic-chat #ycPanel :is(.yc-tabs, .yc-composer-inner) {
+  background: var(--layout-chat-detail, #ffffff0d);
+}
+body.big-lyrics-layout.yc-classic-chat #ycPanel .yc-composer-inner:focus-within { border-color: var(--accent); }
+body.big-lyrics-layout.yc-classic-chat #ycPanel .yc-tab.active { color: var(--layout-ink); background: var(--layout-hover); }
+body.big-lyrics-layout.yc-classic-chat #ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
+body.big-lyrics-layout.yc-classic-chat #ycPanel .yc-msg:not(.mine, .system, .pinged) .yc-msg-bubble:not(.jumbo, .img, .embed-only) {
+  background: var(--layout-chat-detail, #ffffff0e);
+}
+@media (min-width: 901px) and (max-width: 1240px) {
+  body.big-lyrics-layout.yc-classic-chat.yc-chat-open #app { margin-right: 0; }
+}
+@media (max-width: 460px) {
+  #app > #ycPanel .yc-head { gap: 6px; }
+  #app > #ycPanel .yc-tab { padding-inline: 5px; gap: 3px; }
 }
 body.big-lyrics-layout #player .player-embed-header { gap: 8px; flex-wrap: wrap; }
 body.big-lyrics-layout #player .player-embed-label { color: var(--layout-ink); }
@@ -1317,6 +1350,12 @@ body.big-lyrics-layout #player :is(#progressBar, .player-right .volume-slider).i
   transition: none !important;
 }
 
+/* The main player declares display with !important on desktop. Hide the
+   entire normal UI here while keeping the shared backdrop and fullscreen view. */
+body.big-lyrics-layout.full-lyrics-open #app :is(#sidebar, #mainContent, #player, #lyricsPanel, #effectsPanel, #ycWorkspace, #ycPanel) {
+  display: none !important;
+}
+
 /* Keep Big Lyrics' own entrance/exit transition from fading the
    snapshots while the browser handles the shared-element movement. */
 html.youtify-big-lyrics-view-transition #fullLyricsPlayer,
@@ -1480,7 +1519,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 </svg></span>
         <span class="btn-text">Changelog</span>
       </div>
-      <div class="nav-item-click" id="ycNavButton" data-view="none" onclick="YoutifyChat.toggle()" aria-controls="ycWorkspace" aria-expanded="false">
+      <div class="nav-item-click" id="ycNavButton" data-view="none" onclick="YoutifyChat.toggle()" aria-controls="ycPanel" aria-expanded="false">
         <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
 </svg></span>
@@ -1657,20 +1696,21 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     <h1 id="ycWorkspaceTitle" tabindex="-1">Chat</h1>
     <button type="button" class="yc-close" onclick="YoutifyChat.close(true)" aria-label="Close chat" title="Close chat">×</button>
   </header>
-  <div class="yc-panel" id="ycPanel">
+  <div class="yc-panel" id="ycPanel" inert>
     <div class="yc-rail" id="ycRail">
       <div class="yc-head">
         <h2>Conversations</h2>
+        <nav class="yc-tabs" aria-label="Chat sections">
+          <button class="yc-tab" data-tab="announce" onclick="YoutifyChat.tab('announce')">News <span class="yc-badge" id="ycNewsBadge"></span></button>
+          <button class="yc-tab" data-tab="room" onclick="YoutifyChat.tab('room')">Room <span class="yc-badge" id="ycRoomBadge"></span></button>
+          <button class="yc-tab" data-tab="dms" onclick="YoutifyChat.tab('dms')">DMs <span class="yc-badge" id="ycDmBadge"></span></button>
+          <button class="yc-tab" data-tab="people" onclick="YoutifyChat.tab('people')">People <span class="yc-count" id="ycOnlineCount"></span></button>
+        </nav>
         <button class="yc-me-btn" id="ycMeBtn" onclick="YoutifyChat.tab('me')" title="Your profile" style="display:none">
           <span class="yc-av sm" id="ycMeAv">?</span>
         </button>
+        <button type="button" class="yc-close yc-classic-close" onclick="YoutifyChat.close(true)" aria-label="Close chat" title="Close chat">×</button>
       </div>
-      <nav class="yc-tabs" aria-label="Chat sections">
-        <button class="yc-tab" data-tab="announce" onclick="YoutifyChat.tab('announce')">News <span class="yc-badge" id="ycNewsBadge"></span></button>
-        <button class="yc-tab" data-tab="room" onclick="YoutifyChat.tab('room')">Room <span class="yc-badge" id="ycRoomBadge"></span></button>
-        <button class="yc-tab" data-tab="dms" onclick="YoutifyChat.tab('dms')">DMs <span class="yc-badge" id="ycDmBadge"></span></button>
-        <button class="yc-tab" data-tab="people" onclick="YoutifyChat.tab('people')">People <span class="yc-count" id="ycOnlineCount"></span></button>
-      </nav>
     </div>
     <div class="yc-conversation" id="ycConversation">
 
@@ -1787,7 +1827,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 
         <!-- public room -->
         <div class="yc-view" id="ycViewRoom" style="display:none">
-          <header class="yc-thread-head">
+          <header class="yc-thread-head yc-room-heading">
             <span class="yc-row-name">Public room</span>
           </header>
           <div class="yc-scroll" id="ycRoomScroll"></div>
@@ -3499,6 +3539,12 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
         <div class="setting-toggle-row">
           <span class="setting-toggle-label">Performance Mode</span>
           <button class="toggle-slider" id="performanceModeBtn" type="button" role="switch" aria-checked="false" onclick="togglePerformanceMode()">
+            <span class="slider-thumb"></span>
+          </button>
+        </div>
+        <div class="setting-toggle-row">
+          <span class="setting-toggle-label" id="classicChatLabel">Use Classic Chat</span>
+          <button class="toggle-slider" id="classicChatToggle" type="button" role="switch" aria-labelledby="classicChatLabel" aria-checked="false">
             <span class="slider-thumb"></span>
           </button>
         </div>
