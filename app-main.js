@@ -3676,7 +3676,7 @@ function togglePerformanceMode() {
   if (document.body.classList.contains('performance-mode')) {
    document.body.style.background = 'var(--accent)';
   }
-  FullLyricsPlayer.syncBackdropMotion();
+  LyricsBackdrop.sync();
 }
 
 function toggleSidebarPosition() {
@@ -9616,7 +9616,7 @@ function syncFullLyricsModes() {
 
 const fullLyricsScriptSource = document.currentScript?.src;
 
-function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true) {
+function createLyricsBackground(canvas, isMotionEnabled) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let renderer, scriptLoad, artwork, frame, image, tap, analyser, samples;
   let hasImage = false;
@@ -9628,7 +9628,7 @@ function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true
   let phase = 0, level = .35, playingAmount = 0, analysisAmount = 0;
 
   function canDraw() {
-    return isOpen() && !document.hidden;
+    return !document.hidden;
   }
 
   function shouldAnimate() {
@@ -9863,14 +9863,84 @@ function createFullLyricsBackground(canvas, isOpen, isMotionEnabled = () => true
   };
 }
 
-const FullLyricsPlayer = (() => {
-  let opened = false;
-  let backdropURL = null;
+function createLyricsBackdropFallback(layers) {
+  let backdropURL;
   let backdropRequest = 0;
   let visibleBackdrop = 0;
-  let warpedBackdrop, queueSnapshot, queueRenderFrame, resumeQueueRender;
-  let backdropMotion = true;
-  try { backdropMotion = localStorage.getItem('youtify_fullscreen_background_motion') !== 'off'; } catch {}
+
+  return function showArtwork(url) {
+    if (url === backdropURL) return;
+    backdropURL = url;
+    const request = ++backdropRequest;
+    if (!url) {
+      layers.forEach(layer => layer.classList.remove('shown'));
+      return;
+    }
+
+    const next = 1 - visibleBackdrop;
+    const incoming = layers[next];
+    const outgoing = layers[visibleBackdrop];
+    incoming.classList.remove('shown');
+    incoming.style.transition = 'none';
+    incoming.style.zIndex = '1';
+    outgoing.style.zIndex = '0';
+    incoming.src = url;
+    incoming.decode().then(() => {
+      if (request !== backdropRequest) return;
+      // Commit the new image at zero opacity, with the previous cover as its backdrop.
+      void incoming.offsetWidth;
+      incoming.style.removeProperty('transition');
+      incoming.classList.add('shown');
+      visibleBackdrop = next;
+    }).catch(() => {
+      if (request === backdropRequest) outgoing.classList.remove('shown');
+    });
+  };
+}
+
+const LyricsBackdrop = (() => {
+  let motionEnabled = true;
+  try { motionEnabled = localStorage.getItem('youtify_fullscreen_background_motion') !== 'off'; } catch {}
+  let background;
+
+  function sync() {
+    background?.sync();
+  }
+
+  function setMotion(enabled) {
+    motionEnabled = enabled;
+    try { localStorage.setItem('youtify_fullscreen_background_motion', enabled ? 'on' : 'off'); } catch {}
+    sync();
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const cover = document.getElementById('playerImg');
+    const canvas = document.getElementById('bigLyricsLayoutCanvas');
+    const layers = [document.getElementById('lyricsBackdropA'), document.getElementById('lyricsBackdropB')];
+    if (!cover || !canvas || !layers.every(Boolean)) return;
+
+    const showArtwork = createLyricsBackdropFallback(layers);
+    function syncArtwork() {
+      const url = cover.getAttribute('src') || '';
+      showArtwork(url);
+      if (!url && !background) return;
+      background ??= createLyricsBackground(canvas, () => motionEnabled);
+      background.setArtwork(url);
+    }
+
+    new MutationObserver(syncArtwork).observe(cover, { attributes: true, attributeFilter: ['src'] });
+    for (const player of [audio, audio2]) {
+      for (const event of ['play', 'pause', 'ended']) player.addEventListener(event, sync);
+    }
+    syncArtwork();
+  }, { once: true });
+
+  return { isMotionEnabled: () => motionEnabled, setMotion, sync };
+})();
+
+const FullLyricsPlayer = (() => {
+  let opened = false;
+  let queueSnapshot, queueRenderFrame, resumeQueueRender;
   let sourcePicker;
 
   const $ = id => document.getElementById(id);
@@ -9882,12 +9952,6 @@ const FullLyricsPlayer = (() => {
   const motionAnimations = new Map();
   const revealFrames = [{ opacity: 0, translate: '0 8px' }, { opacity: 1, translate: '0 0' }];
 
-  function setBackdropMotion(enabled) {
-    backdropMotion = enabled;
-    try { localStorage.setItem('youtify_fullscreen_background_motion', backdropMotion ? 'on' : 'off'); } catch {}
-    warpedBackdrop?.sync();
-  }
-
   function openSettings() {
     const dialog = $('fullLyricsSettingsDialog');
     if (!opened || !dialog || dialog.open || $('fullLyricsSourcePicker')?.open) return;
@@ -9896,7 +9960,7 @@ const FullLyricsPlayer = (() => {
     const { elements } = settings;
     elements.layout.value = overlay.dataset.layout;
     elements.hidePast.checked = hidePastLyrics;
-    elements.motion.checked = backdropMotion;
+    elements.motion.checked = LyricsBackdrop.isMotionEnabled();
     dialog.showModal();
     settings.scrollTo({ top: 0, behavior: 'instant' });
     syncSettingsLyrics();
@@ -10148,37 +10212,6 @@ const FullLyricsPlayer = (() => {
     syncEndingInfo();
   }
 
-  function syncBackdrop(url) {
-    if (url === backdropURL) return;
-    backdropURL = url;
-    const request = ++backdropRequest;
-    const layers = [$('fullLyricsBackdropA'), $('fullLyricsBackdropB')];
-    if (!layers.every(Boolean)) return;
-    if (!url) {
-      layers.forEach(layer => layer.classList.remove('shown'));
-      return;
-    }
-
-    const next = 1 - visibleBackdrop;
-    const incoming = layers[next];
-    const outgoing = layers[visibleBackdrop];
-    incoming.classList.remove('shown');
-    incoming.style.transition = 'none';
-    incoming.style.zIndex = '1';
-    outgoing.style.zIndex = '0';
-    incoming.src = url;
-    incoming.decode().then(() => {
-      if (request !== backdropRequest) return;
-      // Commit the new image at zero opacity, with the previous cover as its backdrop.
-      void incoming.offsetWidth;
-      incoming.style.removeProperty('transition');
-      incoming.classList.add('shown');
-      visibleBackdrop = next;
-    }).catch(() => {
-      if (request === backdropRequest) outgoing.classList.remove('shown');
-    });
-  }
-
   function renderQueue() {
     const panel = $('fullLyricsQueuePanel');
     const list = $('fullLyricsQueueList');
@@ -10401,12 +10434,6 @@ const FullLyricsPlayer = (() => {
     }
     if (!artwork && cover?.hasAttribute('src')) cover.removeAttribute('src');
     cover?.setAttribute('alt', artwork ? `${track.title} album art` : '');
-    syncBackdrop(artwork);
-    const canvas = $('fullLyricsCanvas');
-    if (canvas) {
-      warpedBackdrop ??= createFullLyricsBackground(canvas, () => opened, () => backdropMotion);
-      warpedBackdrop.setArtwork(artwork);
-    }
 
     for (const [id, text] of [['fullLyricsTitle', track?.title || 'No track playing'],
       ['fullLyricsArtist', track?.artist || 'Select a track to play']]) {
@@ -10600,7 +10627,6 @@ const FullLyricsPlayer = (() => {
     motionAnimations.clear();
     endingQueueTrack = null;
     clearPastLyrics();
-    warpedBackdrop?.sync();
     toggleQueue(false);
     document.getElementById('mainContent').style.display = "";
     document.getElementById('sidebar').style.display = "";
@@ -10632,9 +10658,7 @@ const FullLyricsPlayer = (() => {
     open, close, mirrorLyrics, syncTrackInfo, syncPlayback, seek, toggleQueue, renderQueue, setLayout, setPlayerSide, recenter, syncEndingInfo,
     setHidePastLyrics, updatePastLyrics,
     isOpen: () => opened,
-    openSourcePicker, closeSourcePicker, openSettings, syncSettingsLyrics, setBackdropMotion,
-    isBackdropMotionEnabled: () => backdropMotion,
-    syncBackdropMotion: () => warpedBackdrop?.sync()
+    openSourcePicker, closeSourcePicker, openSettings, syncSettingsLyrics
   };
 })();
 
@@ -10910,7 +10934,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (input.name) {
       case 'layout': FullLyricsPlayer.setLayout(input.value); break;
       case 'hidePast': FullLyricsPlayer.setHidePastLyrics(input.checked); break;
-      case 'motion': FullLyricsPlayer.setBackdropMotion(input.checked); break;
+      case 'motion': LyricsBackdrop.setMotion(input.checked); break;
       case 'spacing': lyricsManager?.setSpacing(Number(input.value)); break;
       case 'focus': lyricsManager?.toggleFocus(); break;
     }
@@ -10953,7 +10977,6 @@ document.addEventListener('DOMContentLoaded', () => {
       player.addEventListener(event, () => {
         if (player !== audio) return;
         FullLyricsPlayer.syncPlayback();
-        if (event === 'play' || event === 'pause' || event === 'ended') FullLyricsPlayer.syncBackdropMotion();
       });
     }
   }
@@ -11097,39 +11120,6 @@ function handleEffectsButtonClick() {
   }
 }
 
-
-document.addEventListener('DOMContentLoaded', () => {
-  const cover = document.getElementById('playerImg');
-  const artwork = document.getElementById('bigLyricsLayoutArtwork');
-  const canvas = document.getElementById('bigLyricsLayoutCanvas');
-  if (!cover || !artwork || !canvas) return;
-
-  let background;
-  const isVisible = () => !FullLyricsPlayer.isOpen();
-  const syncBackground = () => {
-    if (!isVisible()) {
-      background?.sync();
-      return;
-    }
-    const url = cover.getAttribute('src') || '';
-    if (url !== (artwork.getAttribute('src') || '')) {
-      artwork.hidden = true;
-      if (url) artwork.src = url;
-      else artwork.removeAttribute('src');
-    }
-    if (!url && !background) return;
-    background ??= createFullLyricsBackground(canvas, isVisible, FullLyricsPlayer.isBackdropMotionEnabled);
-    background.setArtwork(url);
-  };
-
-  artwork.addEventListener('load', () => { artwork.hidden = false; });
-  new MutationObserver(syncBackground).observe(cover, { attributes: true, attributeFilter: ['src'] });
-  new MutationObserver(syncBackground).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  for (const player of [audio, audio2]) {
-    for (const event of ['play', 'pause', 'ended']) player.addEventListener(event, syncBackground);
-  }
-  syncBackground();
-});
 
 document.addEventListener('DOMContentLoaded', () => {
   ['playerImg', 'playerTitle', 'playerArtist'].forEach(id => {
