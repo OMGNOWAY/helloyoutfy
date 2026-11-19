@@ -575,202 +575,15 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
   body.big-lyrics-layout #mainContent :is(.tracklist-header, .tracklist-row) > :nth-child(3) { display: none; }
 }
 
-
-/* Big Lyrics arrangement refinement — keeps #44 appearance and Classic intact. */
-#player .player-mini-shell { display: contents; }
-.bl-tab-label { display: none; }
-
-/* Desktop: content on the right, album + integrated player on the left. */
+/* Big Lyrics #44: a floating taskbar and in-place mini lyrics / EQ / queue. */
 @media (min-width: 861px) {
   body.big-lyrics-layout #app,
   body.big-lyrics-layout.sidebar-bottom #app {
     grid-template-columns: minmax(250px, 35%) minmax(0, 1fr) !important;
     grid-template-rows: minmax(0, 1fr) !important;
-    column-gap: clamp(18px, 4vw, 64px);
-    padding-bottom: 106px !important;
+    gap: clamp(18px, 4vw, 64px);
+    padding-bottom: 102px;
   }
-  body.big-lyrics-layout #app > .main,
-  body.big-lyrics-layout.sidebar-bottom #app > .main {
-    grid-column: 2 !important;
-    grid-row: 1 !important;
-    padding: 10px 4px 18px;
-  }
-  body.big-lyrics-layout #app #player,
-  body.big-lyrics-layout.sidebar-bottom #app #player {
-    --layout-cover: min(100%, 380px, clamp(210px, calc(100dvh - 525px), 380px));
-    grid-column: 1 !important;
-    grid-row: 1 !important;
-    gap: 11px;
-    padding: 2px 1px !important;
-    overflow-x: hidden;
-    overflow-y: auto;
-    scrollbar-width: none;
-  }
-  body.big-lyrics-layout #app #player::-webkit-scrollbar { display: none; }
-  body.big-lyrics-layout #player .player-track { gap: 11px; }
-  body.big-lyrics-layout #player #playerTitle {
-    font-size: clamp(1.35rem, 2.15vw, 2.1rem);
-    letter-spacing: -.025em;
-    line-height: 1.2;
-  }
-  body.big-lyrics-layout #player #playerArtist { opacity: .88; }
-  body.big-lyrics-layout #player .player-controls-section {
-    flex: 0 0 auto !important;
-    width: min(100%, 420px);
-    min-width: 0 !important;
-    gap: 8px;
-    padding: 12px 15px !important;
-    border: 1px solid #ffffff20;
-    border-radius: 19px;
-    background: #10182266;
-    box-shadow: inset 0 1px #ffffff0e;
-  }
-  body.big-lyrics-layout #player .player-controls { width: 100%; justify-content: space-evenly; }
-  body.big-lyrics-layout #player .player-btn { flex-shrink: 0; }
-  body.big-lyrics-layout #player .progress-section { gap: 10px; max-width: 100%; }
-  body.big-lyrics-layout #player .progress-bar { height: 6px; }
-  body.big-lyrics-layout #player .time { min-width: 34px; font-size: 11px; }
-
-  /* One continuous mini-player panel instead of several disconnected cards. */
-  body.big-lyrics-layout #player .player-mini-shell {
-    order: 4;
-    display: flex;
-    flex: 1 0 auto;
-    flex-direction: column;
-    align-self: center;
-    min-height: 245px;
-    max-height: min(44dvh, 450px);
-    width: min(100%, 420px);
-    border: 1px solid #ffffff24;
-    border-radius: 20px;
-    background: #10182296;
-    box-shadow: 0 16px 40px #0003, inset 0 1px #ffffff11;
-    overflow: hidden;
-  }
-  body.big-lyrics-layout #player .player-right {
-    order: -1;
-    flex: 0 0 auto !important;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) 40px;
-    grid-template-rows: 39px 9px;
-    align-items: center;
-    justify-items: stretch;
-    column-gap: 6px !important;
-    row-gap: 10px !important;
-    width: 100%;
-    min-width: 0 !important;
-    padding: 10px 11px 13px !important;
-    margin: 0 !important;
-    border: none;
-    border-bottom: 1px solid #ffffff20;
-    border-radius: 0;
-    background: #ffffff08;
-  }
-  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn) {
-    position: relative !important;
-    display: inline-flex !important;
-    align-items: center;
-    justify-content: center;
-    flex: 1 1 0 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    height: 39px !important;
-    padding: 0 6px !important;
-    gap: 6px;
-    border-radius: 12px !important;
-    color: #dfe3f0 !important;
-    box-shadow: none !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    transform: none !important;
-  }
-  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn):hover {
-    background: #ffffff16 !important;
-  }
-  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn).active {
-    color: #fff !important;
-    background: #ffffff29 !important;
-    border-color: #ffffff26 !important;
-  }
-  body.big-lyrics-layout #player .player-right .bl-tab-label {
-    display: inline;
-    font: 600 11px/1.2 system-ui, sans-serif;
-    white-space: nowrap;
-    letter-spacing: .01em;
-  }
-  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn) svg {
-    width: 17px !important;
-    height: 17px !important;
-    flex-shrink: 0;
-  }
-  body.big-lyrics-layout #player .player-right .uq-toggle-badge { top: -3px; right: -3px; }
-  body.big-lyrics-layout #player .player-right .volume-btn {
-    display: inline-flex !important;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 37px !important;
-    width: 37px !important;
-    height: 37px !important;
-    min-width: 37px !important;
-    padding: 0 !important;
-    margin-left: 3px;
-    color: #dfe3f0 !important;
-    border-radius: 12px !important;
-    border: 1px solid transparent !important;
-    background: transparent !important;
-    box-shadow: none !important;
-  }
-  body.big-lyrics-layout #player .player-right .volume-btn:hover { background: #ffffff16 !important; }
-  /* Full-width volume slider below the tabs, always adjustable. */
-  body.big-lyrics-layout #player .player-right .volume-slider {
-    display: block !important;
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: calc(100% - 16px);
-    height: 6px;
-    max-width: none;
-    min-width: 0;
-    margin: 0 8px;
-    align-self: center;
-    cursor: pointer;
-  }
-
-  body.big-lyrics-layout #player #playerEmbed {
-    order: 0;
-    display: flex !important;
-    flex: 1 1 auto !important;
-    align-self: stretch;
-    width: 100%;
-    min-height: 185px !important;
-    max-height: none;
-    margin: 0 !important;
-    border: none !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    overflow: hidden;
-  }
-  body.big-lyrics-layout #player #playerEmbedStage { min-height: 100%; }
-  body.big-lyrics-layout #player .player-embed-face { padding: 14px 16px 15px; }
-  body.big-lyrics-layout #player .player-embed-header { min-height: 24px; margin-bottom: 8px; }
-  body.big-lyrics-layout #player .player-embed-label {
-    font: 700 11px/1.3 system-ui, sans-serif;
-    text-transform: uppercase;
-    letter-spacing: .075em;
-    color: #c8d0dd;
-  }
-  body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line {
-    line-height: 1.5;
-    border-radius: 9px;
-    padding: 8px 9px;
-    margin-bottom: 3px;
-  }
-  body.big-lyrics-layout #player :is(.player-embed-lyrics-content, .player-embed-face, .uq-embed-list) {
-    scrollbar-width: none;
-  }
-  body.big-lyrics-layout #player :is(.player-embed-lyrics-content, .player-embed-face, .uq-embed-list)::-webkit-scrollbar { display: none; }
-
-  /* Dock: fewer icons, clear active states, and the existing More popover. */
   body.big-lyrics-layout #app > .sidebar,
   body.big-lyrics-layout.sidebar-bottom #app > .sidebar {
     position: fixed !important;
@@ -784,18 +597,18 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
     align-items: center;
     justify-content: center;
     flex-wrap: nowrap;
-    gap: 6px;
+    gap: 5px;
     width: max-content;
-    max-width: calc(100vw - 32px);
-    height: 66px;
-    min-height: 66px;
+    max-width: calc(100vw - 28px);
+    height: 68px;
+    min-height: 68px;
     padding: 8px 12px;
     border: 1px solid var(--layout-edge) !important;
     border-radius: 23px;
-    background: #111823de !important;
+    background: #111823c9 !important;
     backdrop-filter: blur(28px) saturate(140%) !important;
     -webkit-backdrop-filter: blur(28px) saturate(140%) !important;
-    box-shadow: 0 16px 52px #0006, inset 0 1px #ffffff18 !important;
+    box-shadow: 0 16px 52px #0006, inset 0 1px #ffffff17 !important;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
@@ -815,159 +628,165 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
     margin: 0 !important;
   }
   body.big-lyrics-layout #app > .sidebar .sidebar-section:has(> .nav-item-click) {
-    padding-left: 9px;
-    margin-left: 4px !important;
-    border-left: 1px solid #ffffff22;
+    padding-left: 10px;
+    margin-left: 6px !important;
+    border-left: 1px solid #ffffff2b;
   }
-  body.big-lyrics-layout #app > .sidebar .sidebar-section:has(> .nav-item-click)
-    > .nav-item-click:not([onclick*="YoutifyChat.toggle"]) { display: none !important; }
   body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click) {
     display: flex;
     flex: 0 0 43px;
-    align-items: center;
-    justify-content: center;
     width: 43px;
     min-width: 43px;
     height: 43px;
     min-height: 43px;
-    margin: 0 !important;
     padding: 0 !important;
+    margin: 0 !important;
+    justify-content: center;
+    align-items: center;
     border-radius: 14px;
-    transform: none !important;
-    transition: background .16s ease, color .16s ease;
-  }
-  body.big-lyrics-layout #app > .sidebar .nav-item.active {
-    color: #fff !important;
-    background: #ffffff2e !important;
-  }
-  body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click):hover {
-    color: #fff !important;
-    background: #ffffff1d !important;
   }
   body.big-lyrics-layout #app > .sidebar :is(.nav-text, .btn-text) { display: none !important; }
   body.big-lyrics-layout #app > .sidebar .nav-icon { display: flex; align-items: center; justify-content: center; }
   body.big-lyrics-layout #app > .sidebar > .nav-item-click[onclick^="openSettings"] { margin: 0 !important; }
-  body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click):focus-visible,
-  body.big-lyrics-layout #app > .sidebar #layoutMobileToolsToggle:focus-visible {
+  body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click):focus-visible {
     outline: 2px solid #fff;
     outline-offset: -2px;
   }
-  body.big-lyrics-layout #app > .sidebar #layoutMobileToolsToggle {
-    display: grid;
-    place-items: center;
-    flex: 0 0 43px;
-    width: 43px;
-    height: 43px;
-    min-height: 43px;
-    padding: 0;
-    border: 0;
-    border-radius: 14px;
-    color: #e6ebf1;
-    background: transparent;
-    cursor: pointer;
+  body.big-lyrics-layout #app > .main,
+  body.big-lyrics-layout.sidebar-bottom #app > .main {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    padding-top: 10px;
+    padding-bottom: 12px;
   }
-  body.big-lyrics-layout #app > .sidebar #layoutMobileToolsToggle:hover,
-  body.big-lyrics-layout #app > .sidebar #layoutMobileToolsToggle[aria-expanded="true"] {
-    color: #fff;
-    background: #ffffff1d;
+  body.big-lyrics-layout #app #player,
+  body.big-lyrics-layout.sidebar-bottom #app #player {
+    --layout-cover: min(100%, 380px, max(164px, calc(100dvh - 550px)));
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    gap: 10px;
+    padding: 2px 1px !important;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
-  body.big-lyrics-layout #layoutMobileTools:popover-open {
-    display: grid;
-    position: fixed;
-    inset: auto auto 100px 50%;
-    transform: translateX(-50%);
-    gap: 4px;
-    width: max-content;
-    min-width: 172px;
-    margin: 0;
-    padding: 7px;
-    color: #f6f7fb;
-    border: 1px solid var(--layout-edge);
-    border-radius: 17px;
-    background: #151c28f5;
-    box-shadow: 0 16px 42px #0007;
-    backdrop-filter: blur(28px);
+  body.big-lyrics-layout #player .player-controls-section {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    width: min(100%, 420px);
+    padding: 10px 12px !important;
+    border: 1px solid #ffffff22;
+    border-radius: 18px;
+    background: #10182252;
   }
-  body.big-lyrics-layout #layoutMobileTools button {
-    padding: 10px 12px;
-    font: 500 13px/1.2 system-ui, sans-serif;
-    color: #f6f7fb;
-    border: 0;
-    border-radius: 10px;
-    background: transparent;
-    text-align: left;
-    cursor: pointer;
+  body.big-lyrics-layout #player .player-controls { justify-content: space-around; width: 100%; }
+  body.big-lyrics-layout #player .player-right {
+    order: 3;
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    width: min(100%, 420px);
+    gap: 7px !important;
+    justify-content: center !important;
+    flex-wrap: wrap;
+    padding: 6px 8px !important;
+    border-radius: 18px;
+    border: 1px solid #ffffff22;
+    background: #10182252;
   }
-  body.big-lyrics-layout #layoutMobileTools button:hover,
-  body.big-lyrics-layout #layoutMobileTools button:focus-visible {
-    background: #ffffff1c;
+  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn, .volume-btn) {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    border-radius: 13px !important;
   }
-  body.big-lyrics-layout.performance-mode #layoutMobileTools:popover-open {
-    background: #182131f5;
-    backdrop-filter: none;
+  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn).active {
+    background: #ffffff32 !important;
   }
+  body.big-lyrics-layout #player .player-right .volume-slider {
+    flex: 1 1 68px;
+    min-width: 42px;
+    max-width: 100px;
+  }
+  body.big-lyrics-layout #player #playerEmbed {
+    order: 4;
+    display: flex !important;
+    flex: 1 1 160px !important;
+    width: min(100%, 420px);
+    align-self: center;
+    min-height: 160px !important;
+    max-height: 360px;
+    margin-top: 0 !important;
+    border: 1px solid #ffffff24 !important;
+    border-radius: 20px !important;
+    background: #10182285 !important;
+    box-shadow: 0 10px 30px #0003 !important;
+    overflow: hidden;
+  }
+  body.big-lyrics-layout #player #playerEmbedStage { min-height: 100%; }
+  body.big-lyrics-layout #player .player-embed-face { padding: 14px 16px; }
+  body.big-lyrics-layout #player .player-embed-header { margin-bottom: 8px; }
+  body.big-lyrics-layout #player :is(.player-embed-lyrics-content, .player-embed-face, .uq-embed-list) { scrollbar-width: none; }
+  body.big-lyrics-layout #player :is(.player-embed-lyrics-content, .player-embed-face, .uq-embed-list)::-webkit-scrollbar { display: none; }
 }
-@media (min-width: 861px) and (max-width: 1120px) {
-  body.big-lyrics-layout #app > .sidebar { gap: 3px; padding: 7px 9px; }
-  body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click),
-  body.big-lyrics-layout #app > .sidebar #layoutMobileToolsToggle {
-    flex-basis: 40px;
-    width: 40px;
-    min-width: 40px;
+@media (min-width: 861px) and (max-width: 1060px) {
+  body.big-lyrics-layout #player .player-right .volume-slider { flex: 0 0 100%; max-width: 180px; height: 10px; }
+  body.big-lyrics-layout #app > .sidebar { gap: 2px; padding: 7px 9px; }
+  body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click) {
+    width: 39px;
+    min-width: 39px;
+    flex-basis: 39px;
     height: 42px;
     min-height: 42px;
   }
-  body.big-lyrics-layout #player .player-right .bl-tab-label { font-size: 10px; }
-  body.big-lyrics-layout #player .player-right :is(.lyrics-toggle-btn, .effects-toggle-btn, .uq-toggle-btn) { gap: 4px; padding-inline: 3px !important; }
 }
+/* Phones keep the existing functional lyrics/EQ slide-outs. */
 @media (max-width: 860px) {
-  /* Mobile remains a compact dock with working non-embedded panels. */
   body.big-lyrics-layout #app > .sidebar {
     position: fixed !important;
     left: 50% !important;
     right: auto !important;
     bottom: calc(10px + env(safe-area-inset-bottom)) !important;
     transform: translateX(-50%);
-    justify-content: center;
-    gap: 3px;
     width: max-content;
     max-width: calc(100vw - 20px);
     min-width: 0;
     height: 62px;
     padding: 7px 9px;
-    border: 1px solid var(--layout-edge) !important;
     border-radius: 21px;
-    background: #111823eb !important;
+    border: 1px solid var(--layout-edge) !important;
+    background: #111823e3 !important;
     box-shadow: 0 10px 34px #0006 !important;
     backdrop-filter: blur(22px) saturate(130%);
     -webkit-backdrop-filter: blur(22px) saturate(130%);
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
+    justify-content: center;
+    gap: 3px;
   }
   body.big-lyrics-layout #app > .sidebar::-webkit-scrollbar { display: none; }
   body.big-lyrics-layout #app > .sidebar .nav { flex: 0 0 auto; gap: 2px; }
   body.big-lyrics-layout #app > .sidebar .nav-item {
-    flex: 0 0 32px;
-    width: 32px;
-    min-width: 32px;
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
     height: 40px;
     padding: 5px 3px !important;
     border-radius: 12px;
   }
   body.big-lyrics-layout #app > .sidebar > .nav-item-click[onclick^="openSettings"] {
-    flex: 0 0 34px;
-    width: 34px;
-    min-width: 34px;
+    flex: 0 0 36px;
+    width: 36px;
+    min-width: 36px;
     height: 40px;
     margin: 0 !important;
     border-radius: 12px;
   }
   body.big-lyrics-layout #app #player { bottom: calc(83px + env(safe-area-inset-bottom)); }
   body.big-lyrics-layout #app { padding-bottom: calc(245px + env(safe-area-inset-bottom)) !important; }
-}
-@media (prefers-reduced-motion: reduce) {
-  body.big-lyrics-layout #app > .sidebar :is(.nav-item, .nav-item-click) { transition: none !important; }
 }
 </style>
 <div class="app" id="app">
@@ -997,21 +816,21 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
 
     <div class="sidebar-section"></div><div class="sidebar-section"></div>
     <nav class="nav">
-      <div class="nav-item active" data-view="home" onclick="returnToHome()" title="Home" role="button" tabindex="0" aria-label="Home">
+      <div class="nav-item active" data-view="home" onclick="returnToHome()">
         <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
   <polyline points="9 22 9 12 15 12 15 22"></polyline>
 </svg></span>
         <span class="nav-text">Home</span>
       </div>
-      <div class="nav-item" data-view="search" onclick="returnTo('search')" title="Search" role="button" tabindex="0" aria-label="Search">
+      <div class="nav-item" data-view="search" onclick="returnTo('search')">
         <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="11" cy="11" r="8"></circle>
   <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
 </svg></span>
         <span class="nav-text">Search YouTube</span>
       </div>
-      <div class="nav-item" data-view="downloads" onclick="returnTo('downloads')" title="Downloads" role="button" tabindex="0" aria-label="Downloads">
+      <div class="nav-item" data-view="downloads" onclick="returnTo('downloads')">
         <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
   <polyline points="7 10 12 15 17 10"></polyline>
@@ -1019,7 +838,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
 </svg></span>
         <span class="nav-text">Downloads</span>
       </div>
-      <div class="nav-item" data-view="stats" onclick="returnTo('stats')" title="Stats" role="button" tabindex="0" aria-label="Stats">
+      <div class="nav-item" data-view="stats" onclick="returnTo('stats')">
         <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <line x1="18" y1="20" x2="18" y2="10"></line>
   <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -1027,7 +846,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
 </svg></span>
         <span class="nav-text">Stats</span>
       </div>
-      <div class="nav-item" data-view="albums" onclick="returnTo('album')" title="Albums" role="button" tabindex="0" aria-label="Albums">
+      <div class="nav-item" data-view="albums" onclick="returnTo('album')">
         <span class="nav-icon">
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="12" cy="12" r="10"></circle>
@@ -1037,7 +856,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
         </span>
         <span class="nav-text">Albums</span>
       </div>
-      <div class="nav-item" data-view="playlists" onclick="returnTo('playlists')" title="Playlists" role="button" tabindex="0" aria-label="Playlists">
+      <div class="nav-item" data-view="playlists" onclick="returnTo('playlists')">
         <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><path d="M18 9v9"></path><circle cx="16" cy="18" r="2"></circle></svg></span>
         <span class="nav-text">Playlists</span>
       </div>
@@ -1066,7 +885,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
 </svg></span>
         <span class="btn-text">Changelog</span>
       </div>
-      <div class="nav-item-click" data-view="none" onclick="YoutifyChat.toggle()" title="Chat" role="button" tabindex="0" aria-label="Chat">
+      <div class="nav-item-click" data-view="none" onclick="YoutifyChat.toggle()">
         <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
 </svg></span>
@@ -1083,7 +902,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
       <input type="file" id="folderInput" webkitdirectory="" directory="" multiple="">
       </div>
 
-    <button id="layoutMobileToolsToggle" type="button" popovertarget="layoutMobileTools" aria-label="More app tools" title="More app tools">
+    <button id="layoutMobileToolsToggle" type="button" popovertarget="layoutMobileTools" aria-label="More app tools">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
     </button>
     <div id="layoutMobileTools" popover>
@@ -1092,7 +911,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
       <button type="button" onclick="this.parentElement.hidePopover(); showChangelogModal(true)">Changelog</button>
       <button type="button" onclick="this.parentElement.hidePopover(); DevConsole.toggle()">Developer console</button>
     </div>
-    <div class="nav-item-click" data-view="none" onclick="openSettings()" style="margin-top:auto;" title="Settings" role="button" tabindex="0" aria-label="Settings">
+    <div class="nav-item-click" data-view="none" onclick="openSettings()" style="margin-top:auto;">
       <span class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="12" cy="12" r="3"></circle>
   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1296,7 +1115,6 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
       </div>
     </div>
 
-    <div class="player-mini-shell">
     <div class="player-embed" id="playerEmbed">
       <!-- put the queue thing in here -->
       <div class="player-embed-stage" id="playerEmbedStage">
@@ -1355,7 +1173,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
   <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
   <line x1="12" y1="19" x2="12" y2="23"></line>
   <line x1="8" y1="23" x2="16" y2="23"></line>
-</svg><span class="bl-tab-label" aria-hidden="true">Lyrics</span>
+</svg>
 </button><button class="effects-toggle-btn" id="effectsToggleBtn" onclick="handleEffectsButtonClick()" title="Equalizer"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <line x1="4" y1="21" x2="4" y2="14"></line>
   <line x1="4" y1="10" x2="4" y2="3"></line>
@@ -1366,7 +1184,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
   <line x1="1" y1="14" x2="7" y2="14"></line>
   <line x1="9" y1="8" x2="15" y2="8"></line>
   <line x1="17" y1="16" x2="23" y2="16"></line>
-</svg><span class="bl-tab-label" aria-hidden="true">EQ</span></button><button class="uq-toggle-btn" id="uqBtn" onclick="uqToggle()" title="Queue" aria-label="Queue"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><polygon points="16 13 22 17 16 21 16 13" fill="currentColor"></polygon></svg><span class="uq-toggle-badge" id="uqBadge">0</span><span class="bl-tab-label" aria-hidden="true">Queue</span></button><button class="volume-btn" id="volumebutton" onclick="toggleMute()" title="Mute"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+</svg></button><button class="uq-toggle-btn" id="uqBtn" onclick="uqToggle()" title="Queue" aria-label="Queue"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="14" y2="6"></line><line x1="3" y1="12" x2="14" y2="12"></line><line x1="3" y1="18" x2="10" y2="18"></line><polygon points="16 13 22 17 16 21 16 13" fill="currentColor"></polygon></svg><span class="uq-toggle-badge" id="uqBadge">0</span></button><button class="volume-btn" id="volumebutton" onclick="toggleMute()" title="Mute"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
   <path d="M4 10v4h3l5 4V6l-5 4H4z"></path>
   <path d="M16 9.5a4 4 0 0 1 0 5"></path>
   <path d="M18.8 7a7.5 7.5 0 0 1 0 10"></path>
@@ -1375,7 +1193,7 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
           <div class="volume-fill" id="volumeFill" style="width: 100%;"></div>
       </div>
     </div>
-    </div><!-- /.player-mini-shell -->
+
 
   </div>
 </div>
