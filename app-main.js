@@ -5,7 +5,7 @@ const CHANGELOG_DATA = {
     `Redesigned THE WHOLE APP 👀`,
     `The app should be less laggy now..! (<(you can always turn on performance mode if its laggy)>)`,
     `Added settings page to the big lyrics`,
-    `Fixed the volume and song progress sliders (<(so they actually slide now)>)`
+    `Fixed the volume and song progress sliders (<(so they actually slide now)>)`,
     `Thats it! (<(keep in mind that this new ui is still in beta, so if you want to go back to the old one you can.)>)`
   ],
   "Release 1.5": [
