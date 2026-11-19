@@ -10409,6 +10409,7 @@ const BigLyricsMorph = (() => {
   const EASING = 'cubic-bezier(.22, 1, .36, 1)';
   let enabled = false;
   let active = null;
+  let lastMini = null;
   try { enabled = localStorage.getItem(STORAGE_KEY) === 'on'; } catch {}
 
   const $ = id => document.getElementById(id);
@@ -10520,42 +10521,35 @@ const BigLyricsMorph = (() => {
     return snapshot;
   }
 
-  // Pull only three nearby real lyric lines. am-lyrics uses a shadow root,
-  // so clone the already-rendered visible text, never the web component.
-  function visibleLyrics(fullscreen) {
+  // Capture the focused line as a *coordinate only*. The live fullscreen
+  // lyrics are animated as one layer instead of creating duplicate text nodes.
+  function lyricGeometry(fullscreen) {
     const host = $(fullscreen ? 'fullLyricsContent' : 'playerEmbedLyricsContent');
-    if (!host || !withinViewport(host.getBoundingClientRect())) return [];
+    if (!host) return null;
+    const view = host.getBoundingClientRect();
+    if (!withinViewport(view)) return null;
     const am = lyricsManager?.amEl;
-    const amInHost = lyricsManager?.amActive && am?.parentElement === host;
-    const root = amInHost ? am.shadowRoot : host;
-    if (!root) return [];
-    const all = Array.from(root.querySelectorAll('.lyrics-line:not(.lyrics-footer)'));
-    if (!all.length) return [];
-
-    const currentNode = amInHost ? lyricsManager.getAmCurrentLine?.() : null;
-    let focus = currentNode ? all.indexOf(currentNode) : all.findIndex(node => node.classList.contains('active'));
-    if (focus < 0) {
-      const hostRect = host.getBoundingClientRect();
-      const midpoint = (hostRect.top + hostRect.bottom) / 2;
-      let smallest = Infinity;
-      all.forEach((node, index) => {
-        const r = node.getBoundingClientRect();
-        const distance = Math.abs((r.top + r.bottom) / 2 - midpoint);
-        if (distance < smallest) { smallest = distance; focus = index; }
-      });
+    const root = lyricsManager?.amActive && am?.parentElement === host ? am.shadowRoot : host;
+    const lines = root ? Array.from(root.querySelectorAll('.lyrics-line:not(.lyrics-footer)')) : [];
+    let focus = root && lyricsManager?.amActive && am?.parentElement === host
+      ? lyricsManager.getAmCurrentLine?.() : null;
+    if (!focus || !lines.includes(focus)) focus = lines.find(line => line.classList.contains('active'));
+    if (!focus && lines.length) {
+      const middle = (view.top + view.bottom) / 2;
+      focus = lines.reduce((best, line) => {
+        const rect = line.getBoundingClientRect();
+        const dist = Math.abs((rect.top + rect.bottom) / 2 - middle);
+        return dist < best.distance ? { line, distance: dist } : best;
+      }, { line: null, distance: Infinity }).line;
     }
-    if (focus < 0) return [];
-    const hostRect = host.getBoundingClientRect();
-    return all.slice(Math.max(0, focus - 1), Math.min(all.length, focus + 2))
-      .map((node, offset) => {
-        const index = Math.max(0, focus - 1) + offset;
-        const rect = node.getBoundingClientRect();
-        if (!withinViewport(rect) || rect.bottom < hostRect.top || rect.top > hostRect.bottom) return null;
-        const value = visualSnapshot(node, 'lyric', 'lyric:' + index);
-        if (!value) return null;
-        value.text = (node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-        return value.text ? value : null;
-      }).filter(Boolean);
+    const lineRect = focus?.getBoundingClientRect();
+    const inside = lineRect && lineRect.bottom >= view.top && lineRect.top <= view.bottom;
+    const fontSize = focus ? parseFloat(getComputedStyle(focus).fontSize) : NaN;
+    return {
+      rect: { left: view.left, top: view.top, width: view.width, height: view.height },
+      focusY: inside ? (lineRect.top + lineRect.bottom) / 2 : view.top + view.height / 2,
+      fontSize: Number.isFinite(fontSize) && fontSize > 0 ? fontSize : (fullscreen ? 40 : 17)
+    };
   }
 
   function capture(fullscreen) {
@@ -10568,7 +10562,6 @@ const BigLyricsMorph = (() => {
       const snapshot = visualSnapshot(el, pair[3], pair[0]);
       if (snapshot) items.push(snapshot);
     }
-    items.push(...visibleLyrics(fullscreen));
     return items;
   }
 
@@ -10619,32 +10612,47 @@ const BigLyricsMorph = (() => {
     const state = active;
     if (!state) return;
     active = null;
+    if (state.raf) cancelAnimationFrame(state.raf);
     for (const animation of state.animations) animation.cancel();
     for (const item of state.pieces) item.node.remove();
-    state.overlay?.classList.remove('big-lyrics-morph-entering');
+    state.overlay?.classList.remove('big-lyrics-morph-entering', 'big-lyrics-morph-lyrics-running', 'big-lyrics-morph-exiting');
     document.body.classList.remove('big-lyrics-morph-closing');
-    if (state.raf) cancelAnimationFrame(state.raf);
+    // A close interrupted by Escape, toggling, resize, etc. must finish.
+    if (state.direction === 'close' && FullLyricsPlayer.isOpen()) {
+      FullLyricsPlayer.close();
+      if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
+    }
+  }
+
+  function updatePieceVisual(piece, visual) {
+    if (!visual) return;
+    const node = piece.node;
+    node.style.color = visual.color;
+    node.style.fontFamily = visual.fontFamily;
+    node.style.fontWeight = visual.fontWeight;
+    if (piece.snapshot.kind === 'button') {
+      node.style.backgroundColor = visual.background;
+      node.replaceChildren();
+      if (visual.icon) node.appendChild(visual.icon.cloneNode(true));
+    }
   }
 
   function tween(state, from, to, item) {
     const node = item.node;
-    const original = from.rect, target = to.rect;
-    // Font size/position interpolate independently; no stretched giant box.
-    const frame = (r, snap) => ({
-      left: r.left + 'px',
-      top: r.top + 'px',
-      width: r.width + 'px',
-      height: r.height + 'px',
+    const frame = snap => ({
+      left: snap.rect.left + 'px',
+      top: snap.rect.top + 'px',
+      width: snap.rect.width + 'px',
+      height: snap.rect.height + 'px',
       fontSize: snap.fontSize,
       borderRadius: snap.borderRadius,
+      backgroundColor: snap.kind === 'button' ? snap.background : 'transparent',
       opacity: 1
     });
-    const options = {
-      duration: item.key.startsWith('lyric:') ? DURATION + 70 : DURATION,
-      easing: EASING, fill: 'forwards'
-    };
     try {
-      const animation = node.animate([frame(original, from), frame(target, to)], options);
+      const animation = node.animate([frame(from), frame(to)], {
+        duration: DURATION, easing: EASING, fill: 'forwards'
+      });
       state.animations.push(animation);
       return animation.finished.catch(() => {});
     } catch {
@@ -10653,51 +10661,118 @@ const BigLyricsMorph = (() => {
     }
   }
 
-  function finish(state, destinationIsFull) {
-    if (active !== state) return;
-    // The real am-lyrics instance is already in the destination host.
-    clear();
-    if (destinationIsFull) FullLyricsPlayer.recenter();
+  // Move the ACTUAL fullscreen lyric viewport as a single, uniformly scaled
+  // layer. Every line keeps its original line-height / scroll geometry, so
+  // individual lines cannot collide or duplicate while the view expands.
+  function moveLiveLyrics(state, mini, full, opening) {
+    const host = $('fullLyricsContent');
+    if (!host || !mini || !full || !withinViewport(host.getBoundingClientRect())) return Promise.resolve();
+    const target = full.rect;
+    const source = mini.rect;
+    const fontRatio = mini.fontSize / Math.max(1, full.fontSize);
+    const widthRatio = source.width / Math.max(1, target.width);
+    const scale = Math.max(.26, Math.min(.94, fontRatio, widthRatio));
+    const tx = source.left - target.left;
+    const ty = mini.focusY - target.top - (full.focusY - target.top) * scale;
+    const visibleHeight = Math.min(target.height, Math.max(1, source.height / scale));
+    const localFocus = full.focusY - target.top;
+    const sourceFocusOffset = (mini.focusY - source.top) / scale;
+    const clipTop = Math.max(0, Math.min(target.height - visibleHeight, localFocus - sourceFocusOffset));
+    const clipBottom = Math.max(0, target.height - visibleHeight - clipTop);
+    const miniFrame = {
+      transform: 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')',
+      clipPath: 'inset(' + clipTop + 'px 0px ' + clipBottom + 'px 0px round 14px)',
+      opacity: .96
+    };
+    const fullFrame = { transform: 'translate(0px, 0px) scale(1)', clipPath: 'inset(0px 0px 0px 0px)', opacity: 1 };
+    state.overlay?.classList.add('big-lyrics-morph-lyrics-running');
+    try {
+      const animation = host.animate(opening ? [miniFrame, fullFrame] : [fullFrame, miniFrame], {
+        duration: DURATION, easing: EASING, fill: 'forwards'
+      });
+      state.animations.push(animation);
+      return animation.finished.catch(() => {});
+    } catch {
+      return Promise.resolve();
+    }
   }
 
-  function begin(fromFull, toFull, before) {
+  function finish(state) {
+    if (active !== state) return;
+    const closing = state.direction === 'close';
+    clear();
+    if (!closing) FullLyricsPlayer.recenter();
+    else lastMini = null;
+  }
+
+  function beginOpening(before, mini) {
     const overlay = $('fullLyricsPlayer');
     const state = {
-      overlay, animations: [], pieces: before.map(snapshot => ({
+      direction: 'open', overlay, animations: [], pieces: before.map(snapshot => ({
         key: snapshot.key, snapshot, node: createPiece(snapshot)
       })), raf: 0
     };
     active = state;
-    if (toFull) overlay?.classList.add('big-lyrics-morph-entering');
-    else document.body.classList.add('big-lyrics-morph-closing');
+    overlay?.classList.add('big-lyrics-morph-entering');
+    FullLyricsPlayer.open();
 
-    if (toFull) FullLyricsPlayer.open();
-    else {
-      FullLyricsPlayer.close();
-      if (lyricsManager?.amActive) lyricsManager.placeAm();
-    }
-
-    // Wait for the shared renderer to reparent and the new lyric scroll
-    // geometry to settle, then interpolate each real element separately.
     state.raf = requestAnimationFrame(() => {
       if (active !== state) return;
       state.raf = requestAnimationFrame(() => {
         if (active !== state) return;
-        const after = capture(toFull);
-        const targetByKey = new Map(after.map(item => [item.key, item]));
-        const moving = [];
+        const full = lyricGeometry(true);
+        const after = capture(true);
+        const targets = new Map(after.map(item => [item.key, item]));
+        const pending = [];
         for (const item of state.pieces) {
-          const dest = targetByKey.get(item.key);
-          if (!dest || (item.snapshot.kind === 'lyric' && dest.text !== item.snapshot.text)) {
-            item.node.remove();
-            continue;
-          }
-          moving.push(tween(state, item.snapshot, dest, item));
+          const dest = targets.get(item.key);
+          if (!dest) { item.node.remove(); continue; }
+          // During the transition, the icons use the native fullscreen
+          // appearance (including the white Play/Pause circle).
+          updatePieceVisual(item, dest);
+          pending.push(tween(state, item.snapshot, dest, item));
         }
-        if (!moving.length) { finish(state, toFull); return; }
-        Promise.all(moving).then(() => finish(state, toFull));
+        pending.push(moveLiveLyrics(state, mini, full, true));
+        Promise.all(pending).then(() => finish(state));
       });
     });
+  }
+
+  function beginClosing(before, full) {
+    const overlay = $('fullLyricsPlayer');
+    const mini = lastMini?.lyrics;
+    const targets = new Map((lastMini?.controls || []).map(item => [item.key, item]));
+    const state = {
+      direction: 'close', overlay, animations: [], pieces: before.map(snapshot => ({
+        key: snapshot.key, snapshot, node: createPiece(snapshot)
+      })), raf: 0
+    };
+    active = state;
+    overlay?.classList.add('big-lyrics-morph-exiting');
+    document.body.classList.add('big-lyrics-morph-closing');
+    const pending = [];
+    for (const item of state.pieces) {
+      const dest = targets.get(item.key);
+      if (!dest) { item.node.remove(); continue; }
+      pending.push(tween(state, item.snapshot, dest, item));
+    }
+    pending.push(moveLiveLyrics(state, mini, full, false));
+    // Let the underlying app reappear behind the transitioning fullscreen
+    // backdrop without moving the real synced lyric component prematurely.
+    for (const id of ['mainContent', 'sidebar', 'player']) {
+      const node = $(id);
+      if (node) node.style.display = '';
+    }
+    if (overlay?.animate) {
+      const fade = overlay.animate([
+        { opacity: 1, offset: 0 },
+        { opacity: 1, offset: .48 },
+        { opacity: 0, offset: 1 }
+      ], { duration: DURATION, easing: EASING, fill: 'forwards' });
+      state.animations.push(fade);
+      pending.push(fade.finished.catch(() => {}));
+    }
+    Promise.all(pending).then(() => finish(state));
   }
 
   function open() {
@@ -10708,37 +10783,42 @@ const BigLyricsMorph = (() => {
       return;
     }
     const before = capture(false);
-    if (!before.length) { FullLyricsPlayer.open(); return; }
-    begin(false, true, before);
+    const mini = lyricGeometry(false);
+    if (!before.length || !mini) { FullLyricsPlayer.open(); return; }
+    lastMini = { controls: before, lyrics: mini };
+    beginOpening(before, mini);
   }
 
   function close() {
     clear();
     if (!FullLyricsPlayer.isOpen()) return;
-    if (!enabledForTransition() || !miniLyricsSelected()) {
+    if (!enabledForTransition() || !miniLyricsSelected() || !lastMini?.lyrics) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive && layoutOn()) lyricsManager.placeAm();
+      lastMini = null;
       return;
     }
     const before = capture(true);
-    if (!before.length) {
+    const full = lyricGeometry(true);
+    if (!before.length || !full) {
       FullLyricsPlayer.close();
       if (lyricsManager?.amActive) lyricsManager.placeAm();
+      lastMini = null;
       return;
     }
-    begin(true, false, before);
+    beginClosing(before, full);
   }
 
   function setEnabled(value) {
     enabled = !!value;
     try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch {}
-    if (!enabled) clear();
+    if (!enabled) { clear(); lastMini = null; }
     $('miniLyricsExpandToggle')?.setAttribute('aria-checked', String(enabled));
   }
 
   // A suspended tab or mid-animation resize must never leave either view hidden.
   document.addEventListener('visibilitychange', () => { if (document.hidden) clear(); });
-  window.addEventListener('resize', () => { if (active) clear(); });
+  window.addEventListener('resize', () => { if (active) clear(); lastMini = null; });
 
   document.addEventListener('DOMContentLoaded', () => {
     const button = $('miniLyricsExpandToggle');
