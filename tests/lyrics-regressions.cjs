@@ -119,55 +119,46 @@ test('opening full lyrics waits for saved lyrics without starting a competing re
   assert.equal(fetches, 0);
 });
 
-test('fullscreen backdrop keeps the latest cover when artwork decodes out of order', async () => {
-  const { ctx } = fixture();
-  const nodes = new Map();
+test('shared backdrop keeps the latest cover when artwork decodes out of order', async () => {
   const decodes = [];
-  const node = () => {
-    const attributes = new Map();
+  const layer = () => {
     const classes = new Set();
     return {
       style: { removeProperty(key) { delete this[key]; } },
       classList: { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name) },
-      getAttribute: name => attributes.get(name),
-      setAttribute(name, value) { attributes.set(name, value); },
-      hasAttribute: name => attributes.has(name),
-      removeAttribute: name => attributes.delete(name),
-      decode() { return new Promise(resolve => decodes.push({ url: this.src, resolve })); },
-      querySelectorAll: () => [], querySelector: () => null,
-      focus() {}
+      decode() { return new Promise(resolve => decodes.push({ url: this.src, resolve })); }
     };
   };
-  for (const id of ['fullLyricsPlayer', 'mainContent', 'sidebar', 'player', 'fullLyricsArt',
-    'fullLyricsBackdropA', 'fullLyricsBackdropB', 'fullLyricsTitle', 'fullLyricsArtist']) nodes.set(id, node());
-  ctx.document = { getElementById: id => nodes.get(id) || null, body: node() };
-  ctx.isPlaying1 = false;
-  ctx.isPlaying2 = false;
-  ctx.lyricsManager = { onTrackChange() {} };
-  ctx.queue = [{ title: 'First', albumArt: 'first.jpg' }, { title: 'Second', albumArt: 'second.jpg' }, { title: 'Third', albumArt: 'third.jpg' }];
-  vm.runInContext(section('const FullLyricsPlayer =', 'function openFullLyricsPlayer()') + '\nthis.player = FullLyricsPlayer;', ctx);
-  ctx.player.open();
-  assert.equal(nodes.get('fullLyricsBackdropB').classList.contains('shown'), false);
+  const layers = [layer(), layer()];
+  const showArtwork = vm.runInNewContext(
+    section('function createLyricsBackdropFallback(', 'const LyricsBackdrop =') +
+    '\ncreateLyricsBackdropFallback(layers);', { layers }
+  );
+
+  showArtwork('first.jpg');
+  assert.equal(layers[1].classList.contains('shown'), false);
   decodes[0].resolve();
   await Promise.resolve();
-  assert.equal(nodes.get('fullLyricsBackdropB').classList.contains('shown'), true);
+  assert.equal(layers[1].classList.contains('shown'), true);
 
-  ctx.currentTrackIndex = 1;
-  ctx.player.syncTrackInfo();
-  ctx.currentTrackIndex = 2;
-  ctx.player.syncTrackInfo();
+  showArtwork('second.jpg');
+  showArtwork('third.jpg');
   assert.deepEqual(decodes.map(request => request.url), ['first.jpg', 'second.jpg', 'third.jpg']);
   decodes[1].resolve();
   await Promise.resolve();
-  assert.equal(nodes.get('fullLyricsBackdropA').classList.contains('shown'), false);
-  assert.equal(nodes.get('fullLyricsBackdropB').classList.contains('shown'), true);
+  assert.equal(layers[0].classList.contains('shown'), false);
+  assert.equal(layers[1].classList.contains('shown'), true);
 
   decodes[2].resolve();
   await Promise.resolve();
-  assert.equal(nodes.get('fullLyricsBackdropA').classList.contains('shown'), true);
-  assert.equal(nodes.get('fullLyricsBackdropA').src, 'third.jpg');
-  assert.equal(nodes.get('fullLyricsArt').getAttribute('src'), 'third.jpg');
-  assert.equal(nodes.get('fullLyricsTitle').textContent, 'Third');
+  assert.equal(layers[0].classList.contains('shown'), true);
+  assert.equal(layers[0].src, 'third.jpg');
+
+  showArtwork('fourth.jpg');
+  showArtwork('');
+  decodes[3].resolve();
+  await Promise.resolve();
+  assert.equal(layers.some(layer => layer.classList.contains('shown')), false);
 });
 
 function endingQueueFixture(native = true) {

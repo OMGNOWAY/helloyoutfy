@@ -8,41 +8,48 @@
   <div class="art-blob" id="blob6"></div>
 </div>
 <div id="bigLyricsLayoutBackdrop" aria-hidden="true">
-  <img id="bigLyricsLayoutArtwork" alt="" hidden>
+  <img id="lyricsBackdropA" alt="">
+  <img id="lyricsBackdropB" alt="">
   <canvas id="bigLyricsLayoutCanvas" width="1" height="1"></canvas>
 </div>
 <style id="bigLyricsLayoutStyles">
-/* The alternate layout uses the same player, views, and navigation. */
+/* One fixed artwork backdrop stays behind the app and fullscreen lyrics. */
 #bigLyricsLayoutBackdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background: radial-gradient(ellipse at 24% 72%, #253543, #10161f 72%);
+  background: radial-gradient(ellipse at 24% 75%, #253543, #10161f 72%);
 }
 body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
 #bigLyricsLayoutBackdrop::after {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 3;
   /* A separate tint preserves the artwork's color, contrast, and motion. */
   background:
     linear-gradient(var(--layout-backdrop-tint, transparent), var(--layout-backdrop-tint, transparent)),
-    linear-gradient(105deg, #10101526, #0b111864 55%, #09121e88);
+    linear-gradient(105deg, #10101522, #0b11183d 52%, #09121e4a);
 }
 #bigLyricsLayoutBackdrop img {
   position: absolute;
   inset: -12%;
   width: 124%;
   height: 124%;
+  max-width: none;
   object-fit: cover;
-  filter: blur(56px) saturate(1.3) brightness(.66);
-  transition: opacity .4s ease;
+  --lyrics-art-filter: blur(calc(65 * min(100vw / 1366, 100dvh / 768))) saturate(1.3) brightness(.73);
+  filter: var(--lyrics-art-filter);
+  opacity: 0;
+  transition: opacity .55s ease;
 }
+#bigLyricsLayoutBackdrop img.shown { opacity: 1; }
 #bigLyricsLayoutBackdrop canvas {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   filter: saturate(2.5) brightness(.65);
@@ -52,7 +59,7 @@ body:not(.big-lyrics-layout) #bigLyricsLayoutBackdrop { display: none; }
 #bigLyricsLayoutBackdrop canvas[data-ready] { opacity: 1; }
 #bigLyricsLayoutBackdrop:has(canvas[data-ready]) img { opacity: 0; }
 body.performance-mode #bigLyricsLayoutBackdrop canvas { filter: saturate(2.5) brightness(.65) !important; }
-body.performance-mode #bigLyricsLayoutBackdrop img { filter: blur(32px) brightness(.55) !important; }
+body.performance-mode #bigLyricsLayoutBackdrop img.shown { filter: var(--lyrics-art-filter) !important; }
 body.big-lyrics-layout #app > .main,
 body.big-lyrics-layout #app .queue-container {
   background: transparent !important;
@@ -1123,8 +1130,13 @@ html.youtify-big-lyrics-view-transition::view-transition-group(*) {
   animation-duration: 600ms;
   animation-timing-function: cubic-bezier(.22, 1, .36, 1);
 }
+/* Blend the shared backdrop evenly through the root snapshots. */
+html.youtify-big-lyrics-view-transition::view-transition-old(root),
+html.youtify-big-lyrics-view-transition::view-transition-new(root) {
+  mix-blend-mode: plus-lighter;
+}
 html.youtify-big-lyrics-view-transition::view-transition-old(root) {
-  animation: 290ms ease-out both youtify-vt-old-root;
+  animation: 390ms ease-out both youtify-vt-old-root;
 }
 html.youtify-big-lyrics-view-transition::view-transition-new(root) {
   animation: 390ms ease-out both youtify-vt-new-root;
@@ -1610,7 +1622,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     border-radius: 0;
     overflow: hidden;
     color: var(--full-lyrics-ink);
-    background: #111820;
+    background: transparent;
     font-family: inherit;
     opacity: 0;
     transform: translateY(calc(12 * var(--full-lyrics-unit))) scale(.985);
@@ -1623,47 +1635,6 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     transform: none;
     transition: opacity .24s ease, transform .32s cubic-bezier(.22, 1, .36, 1), visibility 0s;
   }
-  #fullLyricsPlayer .full-lyrics-backdrop {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    overflow: hidden;
-    pointer-events: none;
-    background: radial-gradient(ellipse at 24% 75%, #253543, #10161f 72%);
-  }
-  #fullLyricsPlayer .full-lyrics-backdrop::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    background: linear-gradient(105deg, #10101522, #0b11183d 52%, #09121e4a);
-  }
-  #fullLyricsPlayer .full-lyrics-backdrop img {
-    position: absolute;
-    inset: -12%;
-    width: 124%;
-    height: 124%;
-    max-width: none;
-    object-fit: cover;
-    --full-lyrics-backdrop-filter: blur(calc(65 * var(--full-lyrics-unit))) saturate(1.3) brightness(.73);
-    filter: var(--full-lyrics-backdrop-filter);
-    opacity: 0;
-    transition: opacity .55s ease;
-  }
-  #fullLyricsPlayer .full-lyrics-backdrop .shown { opacity: 1; }
-  #fullLyricsPlayer #fullLyricsCanvas {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    width: 100%;
-    height: 100%;
-    display: block;
-    --full-lyrics-backdrop-filter: saturate(2.5) brightness(.65);
-    filter: var(--full-lyrics-backdrop-filter);
-    opacity: 0;
-    transition: opacity .4s ease;
-  }
-  #fullLyricsPlayer #fullLyricsCanvas[data-ready] { opacity: 1; }
   #fullLyricsPlayer .full-lyrics-topbar {
     position: absolute;
     inset: 0 auto auto calc(100% + calc(12 * var(--full-lyrics-unit)));
@@ -2714,14 +2685,10 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     --full-lyrics-ink: var(--text-primary, #fff);
     --full-lyrics-muted: var(--text-secondary, #ffffffa6);
     --full-lyrics-menu-base: var(--bg-primary, #111820);
-    background: var(--bg-primary, #111820) !important;
+    background: transparent !important;
   }
   body.performance-mode #fullLyricsPlayer #fullLyricsPlayBtn {
     color: var(--bg-primary, #111820);
-  }
-  /* Keep the fullscreen artwork treatment in performance mode. */
-  body.performance-mode #fullLyricsPlayer .full-lyrics-backdrop :is(canvas, img.shown) {
-    filter: var(--full-lyrics-backdrop-filter) !important;
   }
   body.performance-mode #fullLyricsPlayer :is(.full-lyrics-topbar, .full-lyrics-queue) { background: var(--bg-secondary, #222); }
   body.performance-mode #fullLyricsPlayer .full-lyrics-dialog {
@@ -2767,11 +2734,6 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
   }
 </style>
 <div id="fullLyricsPlayer" class="full-lyrics-player" tabindex="-1" data-layout="classic" data-player-side="left" aria-hidden="true" inert>
-  <div class="full-lyrics-backdrop" aria-hidden="true">
-    <img id="fullLyricsBackdropA" alt="">
-    <img id="fullLyricsBackdropB" alt="">
-    <canvas id="fullLyricsCanvas" width="1" height="1"></canvas>
-  </div>
   <div class="full-lyrics-main">
     <section class="full-lyrics-art-side" aria-label="Now playing">
       <div class="full-lyrics-album">
