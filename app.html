@@ -536,20 +536,232 @@ body.big-lyrics-layout :is(#settingsModal, .effects-panel) .settings-section {
   box-shadow: none !important;
 }
 body.big-lyrics-layout #settingsModal .settings-section-title { color: var(--layout-ink); }
-body.big-lyrics-layout:not(.performance-mode) #ycPanel {
-  background: var(--layout-chat-surface, var(--layout-surface)) !important;
+body.big-lyrics-layout #app > .yc-workspace[hidden],
+body.big-lyrics-layout.full-lyrics-open #app > .yc-workspace,
+body.big-lyrics-layout.yc-chat-open #app > #mainContent { display: none !important; }
+body.big-lyrics-layout.yc-chat-open #app { margin-right: 0; }
+body.big-lyrics-layout.yc-chat-open #sidebar .nav-item.active {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
-body.big-lyrics-layout #ycPanel :is(.yc-head, .yc-composer, .yc-body, .yc-tabs, .yc-composer-inner) {
+body.big-lyrics-layout.yc-chat-open #sidebar #ycNavButton {
+  background: var(--layout-hover) !important;
+  border-color: var(--layout-edge) !important;
+  color: var(--layout-ink);
+}
+body.big-lyrics-layout #app > .yc-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.yc-workspace-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-inline: 2px;
+}
+.yc-workspace-title h1 {
+  margin: 0;
+  color: var(--layout-open-ink, var(--layout-ink));
+  font-size: clamp(1.65rem, 3.2vw, 2.85rem);
+  line-height: 1.12;
+}
+#ycWorkspace .yc-close {
+  color: var(--layout-open-ink, var(--layout-ink));
+  background: var(--layout-open-hover, var(--layout-hover));
+  border-color: var(--layout-edge);
+  font: inherit;
+}
+#ycWorkspace .yc-close:hover { background: var(--layout-active); }
+body.big-lyrics-layout #ycPanel {
+  position: relative;
+  inset: auto;
+  display: grid;
+  grid-template-columns: minmax(150px, 31%) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--layout-edge);
+  border-radius: 22px;
+  transform: none;
+  transition: none;
+  z-index: auto;
+  color: var(--layout-ink);
+  box-shadow: 0 12px 30px #0003, inset 0 1px var(--layout-stroke);
+}
+body.big-lyrics-layout:not(.performance-mode) #ycPanel {
+  background: var(--layout-chat-surface) !important;
+  backdrop-filter: blur(20px) saturate(117%);
+}
+body.big-lyrics-layout.performance-mode #ycPanel { backdrop-filter: none; }
+#ycPanel .yc-rail,
+#ycPanel .yc-conversation {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+#ycPanel .yc-rail {
+  padding: 12px 8px;
+  gap: 10px;
+  background: color-mix(in srgb, var(--layout-inset-surface) 55%, transparent);
+  border-inline-end: 1px solid var(--layout-stroke);
+}
+#ycPanel .yc-conversation { position: relative; }
+#ycPanel .yc-head {
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 4px;
+  border: 0;
+}
+#ycPanel .yc-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+#ycPanel .yc-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: none;
+  border-radius: 14px;
+  background: var(--layout-inset-surface);
+  border-color: var(--layout-stroke);
+}
+#ycPanel .yc-tab {
+  min-height: 34px;
+  padding: 4px 19px 4px 6px;
+  justify-content: start;
+  border-radius: 10px;
+  color: var(--layout-muted);
+}
+#ycPanel .yc-tab:is(:hover, .active) {
+  color: var(--layout-ink);
+  background: var(--layout-hover);
+  box-shadow: none;
+}
+#ycPanel .yc-tab :is(.yc-badge, .yc-count) {
+  position: absolute;
+  inset-inline-end: 2px;
+  padding-inline: 3px;
+  min-width: 13px;
+  max-width: 24px;
+  font-size: 9px;
+}
+#ycPanel .yc-rail #ycDmList { padding: 2px 0; gap: 5px; }
+#ycPanel #ycDmList button.yc-row {
+  width: 100%;
+  text-align: start;
+  font: inherit;
+}
+#ycPanel .yc-rail .yc-row { padding: 6px; gap: 6px; }
+#ycPanel .yc-rail .yc-row .yc-av { width: 28px; height: 28px; font-size: 11px; }
+#ycPanel .yc-rail .yc-row .yc-row-name { font-size: 12px; }
+#ycPanel #ycDmList .yc-row-sub { display: block; }
+#ycPanel .yc-rail .yc-row .yc-row-sub { font-size: 10px; }
+#ycPanel .yc-row-time { color: var(--layout-muted); font-size: 11px; flex-shrink: 0; }
+#ycPanel .yc-rail .yc-row-time { display: none; }
+
+#ycPanel .yc-dm-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 14px 0;
+  padding: 6px 9px;
+  color: var(--layout-muted);
+  background: var(--layout-inset-surface);
+  border: 1px solid var(--layout-stroke);
+  border-radius: 13px;
+}
+#ycPanel .yc-dm-search svg { flex: none; width: 15px; height: 15px; }
+#ycPanel .yc-dm-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--layout-ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+}
+#ycPanel .yc-dm-search input::placeholder { color: var(--layout-muted); }
+#ycPanel .yc-dm-search:focus-within { border-color: var(--layout-focus); }
+#ycPanel .yc-rail .yc-dm-search { margin: 2px 0 8px; }
+
+#ycPanel :is(.yc-thread-head, .yc-news-intro, .yc-composer, .yc-status) {
+  background: color-mix(in srgb, var(--layout-inset-surface) 45%, transparent);
+  border-color: var(--layout-stroke);
+}
+#ycPanel .yc-thread-head { min-height: 47px; padding: 8px 12px; }
+#ycPanel .yc-thread-head .yc-row-name { font-size: 16px; }
+#ycPanel .yc-msg { max-width: min(90%, 680px); }
+#ycPanel .yc-msg-bubble { overflow-wrap: anywhere; }
+#ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
+#ycPanel .yc-row:hover,
+#ycPanel .yc-row[aria-current="true"] {
+  background: var(--layout-hover);
+  border-color: var(--layout-edge);
+  transform: none;
+}
+#ycPanel .yc-msg:not(.mine, .system, .pinged) .yc-msg-bubble:not(.jumbo, .img, .embed-only) {
+  background: var(--layout-chat-detail);
+}
+#ycPanel :is(.yc-composer-inner, .yc-back, .yc-attach:hover) {
+  background: var(--layout-inset-surface);
   border-color: var(--layout-edge);
 }
-body.big-lyrics-layout #ycPanel :is(.yc-tabs, .yc-composer-inner) {
-  background: var(--layout-chat-detail, #ffffff0d);
+#ycPanel .yc-composer-inner:focus-within { border-color: var(--layout-focus); }
+#ycPanel .yc-composer { gap: 6px; padding: 8px; }
+#ycPanel .yc-composer-inner { border-radius: 17px; }
+#ycPanel .yc-composer .yc-attach { width: 30px; }
+#ycPanel .yc-send { width: 36px; height: 36px; margin-bottom: 2px; }
+#ycPanel .yc-status { padding: 5px 10px; }
+#ycPanel :is(.yc-loading, .yc-emoji-pop, .yc-share-pop, .yc-mention-pop, .yc-react-picker) {
+  background: var(--layout-solid);
+  border-color: var(--layout-edge);
 }
-body.big-lyrics-layout #ycPanel .yc-composer-inner:focus-within { border-color: var(--accent); }
-body.big-lyrics-layout #ycPanel .yc-tab.active { color: var(--layout-ink); background: var(--layout-hover); }
-body.big-lyrics-layout #ycPanel :is(.yc-msg-bubble, .yc-row) { border-color: var(--layout-stroke); }
-body.big-lyrics-layout #ycPanel .yc-msg:not(.mine, .system, .pinged) .yc-msg-bubble:not(.jumbo, .img, .embed-only) {
-  background: var(--layout-chat-detail, #ffffff0e);
+#ycPanel :is(.yc-emoji-pop, .yc-share-pop, .yc-mention-pop) {
+  max-width: 400px;
+  right: auto;
+  width: calc(100% - 24px);
+}
+#ycPanel .yc-emoji-pop.open {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 84px);
+}
+#ycPanel :is(.yc-emoji-head, .yc-emoji-cats, .yc-emoji-foot) { flex: none; }
+#ycPanel .yc-emoji-scroll { min-height: 0; }
+#ycPanel .yc-share-pop { max-height: min(300px, calc(100% - 84px)); }
+#ycPanel .yc-mention-pop { max-height: min(190px, calc(100% - 84px)); }
+#ycPanel .yc-gate { padding-block: 16px; }
+#ycPanel #ycViewGate { overflow-y: auto; }
+#ycPanel [hidden] { display: none !important; }
+#ycWorkspace button:focus-visible { outline: 2px solid var(--layout-focus); outline-offset: -2px; }
+
+@media (max-width: 860px) {
+  body.big-lyrics-layout.yc-chat-open #lyricsPanel { display: none !important; }
+  body.big-lyrics-layout #app > .yc-workspace {
+    height: max(210px, var(--yc-workspace-height, calc(100dvh - 275px - env(safe-area-inset-bottom))));
+    gap: 7px;
+  }
+  body.big-lyrics-layout #ycPanel { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); border-radius: 18px; }
+  #ycPanel .yc-rail {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--layout-stroke);
+    gap: 6px;
+    padding: 6px;
+  }
+  #ycPanel .yc-head { order: 1; padding: 0; }
+  #ycPanel .yc-head h2,
+  #ycPanel .yc-rail #ycViewDms { display: none !important; }
+  #ycPanel .yc-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1; }
+  #ycPanel .yc-tab { min-height: 30px; }
+  #ycPanel .yc-scroll { padding: 8px 9px; }
 }
 body.big-lyrics-layout #player .player-embed-header { gap: 8px; flex-wrap: wrap; }
 body.big-lyrics-layout #player .player-embed-label { color: var(--layout-ink); }
@@ -569,9 +781,6 @@ body.big-lyrics-layout #player .player-embed-lyrics-content .lyrics-line.active 
   body.big-lyrics-layout #app #player { border-radius: 0; }
   body.big-lyrics-layout #app #player .player-track { padding-top: 2px; }
   body.big-lyrics-layout #app #player #playerEmbed { min-height: 154px; }
-}
-@media (min-width: 901px) and (max-width: 1240px) {
-  body.big-lyrics-layout.yc-chat-open #app { margin-right: 0; }
 }
 @media (max-width: 860px) {
   body.big-lyrics-layout #app { padding-bottom: calc(226px + env(safe-area-inset-bottom)) !important; }
@@ -1271,7 +1480,7 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
 </svg></span>
         <span class="btn-text">Changelog</span>
       </div>
-      <div class="nav-item-click" data-view="none" onclick="YoutifyChat.toggle()">
+      <div class="nav-item-click" id="ycNavButton" data-view="none" onclick="YoutifyChat.toggle()" aria-controls="ycWorkspace" aria-expanded="false">
         <span><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
 </svg></span>
@@ -1443,6 +1652,280 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
   </div>
 </div>
   </main>
+<section class="main yc-workspace" id="ycWorkspace" aria-labelledby="ycWorkspaceTitle" hidden>
+  <header class="yc-workspace-title">
+    <h1 id="ycWorkspaceTitle" tabindex="-1">Chat</h1>
+    <button type="button" class="yc-close" onclick="YoutifyChat.close(true)" aria-label="Close chat" title="Close chat">×</button>
+  </header>
+  <div class="yc-panel" id="ycPanel">
+    <div class="yc-rail" id="ycRail">
+      <div class="yc-head">
+        <h2>Conversations</h2>
+        <button class="yc-me-btn" id="ycMeBtn" onclick="YoutifyChat.tab('me')" title="Your profile" style="display:none">
+          <span class="yc-av sm" id="ycMeAv">?</span>
+        </button>
+      </div>
+      <nav class="yc-tabs" aria-label="Chat sections">
+        <button class="yc-tab" data-tab="announce" onclick="YoutifyChat.tab('announce')">News <span class="yc-badge" id="ycNewsBadge"></span></button>
+        <button class="yc-tab" data-tab="room" onclick="YoutifyChat.tab('room')">Room <span class="yc-badge" id="ycRoomBadge"></span></button>
+        <button class="yc-tab" data-tab="dms" onclick="YoutifyChat.tab('dms')">DMs <span class="yc-badge" id="ycDmBadge"></span></button>
+        <button class="yc-tab" data-tab="people" onclick="YoutifyChat.tab('people')">People <span class="yc-count" id="ycOnlineCount"></span></button>
+      </nav>
+    </div>
+    <div class="yc-conversation" id="ycConversation">
+
+      <div class="yc-jam" id="ycJam">
+        <span class="eq"><i></i><i></i><i></i></span>
+        <span class="txt"></span>
+        <span class="acts"></span>
+      </div>
+
+      <div class="yc-loading" id="ycLoading">
+        <svg class="yc-loading-logo" width="76" height="76" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M26 18 Q32 26 30 30"></path>
+          <path d="M46 26 Q38 30 34 32"></path>
+          <path d="M42 46 Q36 38 34 34"></path>
+          <path d="M18 38 Q26 34 30 34"></path>
+          <path d="M24 18 Q16 28 18 38"></path>
+          <path d="M48 24 Q52 36 44 48"></path>
+          <circle cx="32" cy="32" r="3"></circle>
+          <circle cx="24" cy="16" r="2.5"></circle>
+          <circle cx="48" cy="24" r="2.5"></circle>
+          <circle cx="44" cy="48" r="2.5"></circle>
+          <circle cx="16" cy="40" r="2.5"></circle>
+        </svg>
+        <div class="yc-loading-text" id="ycLoadingText">connecting…</div>
+      </div>
+
+      <div class="yc-body" id="ycBody">
+        <!-- name gate -->
+        <div class="yc-view" id="ycViewGate" style="display: flex;">
+          <div class="yc-gate">
+            <!-- no picture picker here: there's no account to attach one to yet -->
+            <div class="yc-pfp-pick static">
+              <span class="yc-av" id="ycGateAv">?</span>
+            </div>
+            <h3 id="ycGateTitle">Join the chat</h3>
+            <p id="ycGateSub">Pick a name and password. Everyone with Youtify open sees the same room.</p>
+            <input id="ycNameInput" placeholder="username" maxlength="24" autocomplete="username">
+            <input id="ycPassInput" type="password" placeholder="password" maxlength="64" autocomplete="current-password">
+            <input id="ycPass2Input" type="password" placeholder="confirm password" maxlength="64" autocomplete="new-password">
+            <button class="primary" id="ycGateSubmit" onclick="YoutifyChat.gateSubmit()">Join</button>
+            <button class="ghost" id="ycGateSwitch" onclick="YoutifyChat.gateSwitchMode()">Already have an account? Log in</button>
+            <div class="yc-note" id="ycGateNote"></div>
+          </div>
+        </div>
+
+        <!-- your profile -->
+        <div class="yc-view" id="ycViewMe" style="display:none">
+          <div class="yc-thread-head">
+            <button class="yc-back" onclick="YoutifyChat.tab('room')" title="Back">←</button>
+            <div class="yc-row-main">
+              <div class="yc-row-name">Your profile</div>
+              <div class="yc-row-sub" id="ycMeSub"></div>
+            </div>
+          </div>
+          <div class="yc-gate">
+            <button class="yc-pfp-pick" onclick="YoutifyChat.pickAvatar()" title="Change profile picture">
+              <span class="yc-av" id="ycMeBigAv">?</span>
+              <span class="yc-pfp-edit">Change</span>
+              <span class="yc-cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+            </button>
+            <input id="ycMeName" placeholder="your name" maxlength="24" autocomplete="off">
+            <div class="yc-handle-wrap">
+              <span class="at">@</span>
+              <input id="ycMeHandle" placeholder="handle" maxlength="16" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="yc-handle-note" id="ycHandleNote"></div>
+            <div class="yc-bio-wrap">
+              <textarea id="ycMeBio" placeholder="write a short bio…" maxlength="160" rows="3"></textarea>
+              <span class="yc-bio-count" id="ycMeBioCount">0/160</span>
+            </div>
+            <button class="primary" onclick="YoutifyChat.saveProfile()">Save</button>
+            <button class="ghost" id="ycPreviewProfile" onclick="YoutifyChat.previewProfile()">Preview my profile</button>
+            <button class="ghost" id="ycRemovePhoto" onclick="YoutifyChat.removeAvatar()">Remove photo</button>
+            <button class="ghost" id="ycLogOut" onclick="YoutifyChat.logOut()">Log out</button>
+            <div class="yc-note" id="ycMeNote">Pictures get resized before sending, so they stay small.</div>
+            <button class="yc-toggle-row" id="ycNotifRow" onclick="YoutifyChat.toggleNotifs()">
+              <span class="yc-toggle-main">
+                <span class="yc-toggle-t">Notifications</span>
+                <span class="yc-toggle-s">Alerts you for DMs and @mentions when you're not looking at the chat. <span id="ycNotifNote"></span></span>
+              </span>
+              <span class="yc-switch" id="ycNotifSwitch"></span>
+            </button>
+            <button class="yc-toggle-row" id="ycReceiptRow" onclick="YoutifyChat.toggleReceipts()">
+              <span class="yc-toggle-main">
+                <span class="yc-toggle-t">Read receipts</span>
+                <span class="yc-toggle-s">Shows people when you've read their DM. Turning this off hides theirs from you too.</span>
+              </span>
+              <span class="yc-switch" id="ycReceiptSwitch"></span>
+            </button>
+            <button class="yc-toggle-row" id="ycShareRow" onclick="YoutifyChat.toggleShareStats()">
+              <span class="yc-toggle-main">
+                <span class="yc-toggle-t">Share my stats</span>
+                <span class="yc-toggle-s">Lets other people see your play counts, listening time and top tracks.</span>
+              </span>
+              <span class="yc-switch" id="ycShareSwitch"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- someone's profile -->
+        <div class="yc-view" id="ycViewProfile" style="display:none">
+          <div class="yc-thread-head">
+            <button class="yc-back" id="ycProfileBack" onclick="YoutifyChat.backFromProfile()" title="Back">←</button>
+            <div class="yc-row-main">
+              <div class="yc-row-name" id="ycProfileTitle">Profile</div>
+              <div class="yc-row-sub" id="ycProfileSub"></div>
+            </div>
+            <button class="yc-statbtn" id="ycProfileDm" onclick="YoutifyChat.dmFromProfile()" title="Message them">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.9-.9L3 21l2-4.9A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"></path></svg>
+            </button>
+          </div>
+          <div class="yc-scroll" id="ycProfileScroll"></div>
+        </div>
+
+        <!-- public room -->
+        <div class="yc-view" id="ycViewRoom" style="display:none">
+          <header class="yc-thread-head">
+            <span class="yc-row-name">Public room</span>
+          </header>
+          <div class="yc-scroll" id="ycRoomScroll"></div>
+        </div>
+
+        <!-- announcement channel (read-only, posted from the control panel) -->
+        <div class="yc-view" id="ycViewNews" style="display:none">
+          <div class="yc-news-intro">📢 <b>Announcements</b><span>only the Youtify team can post here</span></div>
+          <div class="yc-scroll" id="ycNewsScroll"></div>
+        </div>
+
+        <!-- dm list -->
+        <div class="yc-view" id="ycViewDms" style="display:none">
+          <label class="yc-dm-search">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+            <input type="search" id="ycDmSearch" placeholder="Find a DM" aria-label="Find a DM" autocomplete="off">
+          </label>
+          <div class="yc-scroll" id="ycDmList"></div>
+        </div>
+
+        <!-- dm thread -->
+        <div class="yc-view" id="ycViewThread" style="display:none">
+          <div class="yc-thread-head">
+            <button class="yc-back" onclick="YoutifyChat.tab('dms')" aria-label="Back to DMs" title="Back">←</button>
+            <span class="yc-av-wrap"><span class="yc-av sm" id="ycThreadAv">?</span></span>
+            <div class="yc-row-main">
+              <div class="yc-row-name" id="ycThreadName">—</div>
+              <div class="yc-row-sub" id="ycThreadSub"></div>
+            </div>
+          </div>
+          <div class="yc-scroll" id="ycThreadScroll"></div>
+        </div>
+
+        <!-- new group -->
+        <div class="yc-view" id="ycViewNewGroup" style="display:none">
+          <div class="yc-thread-head">
+            <button class="yc-back" onclick="YoutifyChat.tab('dms')" aria-label="Back to DMs" title="Back">←</button>
+            <div class="yc-row-main">
+              <div class="yc-row-name">New group chat</div>
+              <div class="yc-row-sub">Name it and pick people</div>
+            </div>
+          </div>
+          <div class="yc-scroll" id="ycNewGroupScroll"></div>
+        </div>
+
+        <!-- group info -->
+        <div class="yc-view" id="ycViewGroup" style="display:none">
+          <div class="yc-thread-head">
+            <button class="yc-back" onclick="YoutifyChat.closeGroupInfo()" title="Back">←</button>
+            <div class="yc-row-main">
+              <div class="yc-row-name" id="ycGroupTitle">Group</div>
+              <div class="yc-row-sub" id="ycGroupSub"></div>
+            </div>
+          </div>
+          <div class="yc-scroll" id="ycGroupScroll"></div>
+        </div>
+
+        <!-- people -->
+        <div class="yc-view" id="ycViewPeople" style="display:none">
+          <div class="yc-scroll" id="ycPeopleList"></div>
+        </div>
+      </div>
+
+      <input type="file" id="ycPictureInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
+      <input type="file" id="ycAvatarInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
+
+      <div class="yc-uploading" id="ycUploading"><span class="yc-spinner"></span><span id="ycUploadingText">sending picture…</span></div>
+
+
+      <div class="yc-emoji-pop" id="ycEmojiPop">
+        <div class="yc-emoji-head">
+          <input id="ycEmojiSearch" placeholder="search emoji" autocomplete="off" spellcheck="false">
+          <button class="yc-emoji-close" onclick="YoutifyChat.closeEmoji()" title="Close">×</button>
+        </div>
+        <div class="yc-emoji-cats" id="ycEmojiCats"></div>
+        <div class="yc-emoji-scroll" id="ycEmojiScroll"><div class="yc-emoji-layer" id="ycEmojiLayer"></div></div>
+        <div class="yc-emoji-foot" id="ycEmojiFoot"></div>
+      </div>
+
+      <div class="yc-share-pop" id="ycSharePop"></div>
+
+      <div class="yc-mention-pop" id="ycMentionPop"></div>
+
+      <div class="yc-typing" id="ycTyping">
+        <span class="dots"><i></i><i></i><i></i></span>
+        <span class="who"></span>
+      </div>
+
+      <div class="yc-compose-chip" id="ycComposeChip" style="display:none">
+        <span class="bar"></span>
+        <span class="body">
+          <span class="lbl" id="ycChipLabel"></span>
+          <span class="txt" id="ycChipText"></span>
+        </span>
+        <button class="x" onclick="YoutifyChat.cancelCompose()" title="Cancel">×</button>
+      </div>
+
+      <div class="yc-composer" id="ycComposer" style="display:none">
+        <div class="yc-composer-inner">
+          <button class="yc-attach" id="ycEmojiBtn" onclick="YoutifyChat.toggleEmoji(event)" title="Emoji">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"></path>
+              <line x1="9" y1="9.5" x2="9.01" y2="9.5"></line>
+              <line x1="15" y1="9.5" x2="15.01" y2="9.5"></line>
+            </svg>
+          </button>
+          <button class="yc-attach" id="ycPictureBtn" onclick="YoutifyChat.sendPicture()" title="Send a picture">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+              <circle cx="8.5" cy="8.5" r="1.6"></circle>
+              <path d="M21 15l-5-5L5 21"></path>
+            </svg>
+          </button>
+          <button class="yc-attach" id="ycShareBtn" onclick="YoutifyChat.toggleShare(event)" title="Share a song or theme">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18V5l12-2v13"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="16" r="3"></circle>
+            </svg>
+          </button>
+          <textarea id="ycInput" rows="1" placeholder="message the room…" maxlength="1000" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+        </div>
+        <button class="yc-send" id="ycSendBtn" onclick="YoutifyChat.send()" title="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12l16-8-6 16-2.5-6.5z"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="yc-status">
+        <span id="ycStatusLeft" class="">signing in…</span>
+        <span id="ycStatusRight"></span>
+      </div>
+    </div>
+    <div class="yc-react-picker" id="ycReactPicker"></div>
+  </div>
+</section>
 <div>
 <div class="player" id="player">
     <div class="player-track">
@@ -3149,264 +3632,6 @@ html.youtify-big-lyrics-view-transition::view-transition-image-pair(youtify-vt-t
     <span class="yc-announce-text" id="ycAnnounceText"></span>
     <span id="ycAnnounceUpBut"></span>
     <button class="yc-announce-close" id="ycAnnounceClose" onclick="YoutifyChat.dismissAnnouncement()">✕</button>
-  </div>
-</div>
-
-<div class="yc-panel" id="ycPanel">
-  <div class="yc-head">
-    <div class="yc-tabs">
-      <button class="yc-tab" data-tab="announce" onclick="YoutifyChat.tab('announce')">News <span class="yc-badge" id="ycNewsBadge"></span></button>
-      <button class="yc-tab" data-tab="room" onclick="YoutifyChat.tab('room')">Room <span class="yc-badge" id="ycRoomBadge"></span></button>
-      <button class="yc-tab" data-tab="dms" onclick="YoutifyChat.tab('dms')">DMs <span class="yc-badge" id="ycDmBadge"></span></button>
-      <button class="yc-tab" data-tab="people" onclick="YoutifyChat.tab('people')">People <span class="yc-count" id="ycOnlineCount"></span></button>
-    </div>
-    <button class="yc-me-btn" id="ycMeBtn" onclick="YoutifyChat.tab('me')" title="Your profile" style="display:none">
-      <span class="yc-av sm" id="ycMeAv">?</span>
-    </button>
-    <button class="yc-close" onclick="YoutifyChat.close()" title="Close chat">✕</button>
-  </div>
-
-  <div class="yc-jam" id="ycJam">
-    <span class="eq"><i></i><i></i><i></i></span>
-    <span class="txt"></span>
-    <span class="acts"></span>
-  </div>
-
-  <div class="yc-loading" id="ycLoading">
-    <svg class="yc-loading-logo" width="76" height="76" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-      <path d="M26 18 Q32 26 30 30"></path>
-      <path d="M46 26 Q38 30 34 32"></path>
-      <path d="M42 46 Q36 38 34 34"></path>
-      <path d="M18 38 Q26 34 30 34"></path>
-      <path d="M24 18 Q16 28 18 38"></path>
-      <path d="M48 24 Q52 36 44 48"></path>
-      <circle cx="32" cy="32" r="3"></circle>
-      <circle cx="24" cy="16" r="2.5"></circle>
-      <circle cx="48" cy="24" r="2.5"></circle>
-      <circle cx="44" cy="48" r="2.5"></circle>
-      <circle cx="16" cy="40" r="2.5"></circle>
-    </svg>
-    <div class="yc-loading-text" id="ycLoadingText">connecting…</div>
-  </div>
-
-  <div class="yc-body">
-    <!-- name gate -->
-    <div class="yc-view" id="ycViewGate" style="display: flex;">
-      <div class="yc-gate">
-        <!-- no picture picker here: there's no account to attach one to yet -->
-        <div class="yc-pfp-pick static">
-          <span class="yc-av" id="ycGateAv">?</span>
-        </div>
-        <h3 id="ycGateTitle">Join the chat</h3>
-        <p id="ycGateSub">Pick a name and password. Everyone with Youtify open sees the same room.</p>
-        <input id="ycNameInput" placeholder="username" maxlength="24" autocomplete="username">
-        <input id="ycPassInput" type="password" placeholder="password" maxlength="64" autocomplete="current-password">
-        <input id="ycPass2Input" type="password" placeholder="confirm password" maxlength="64" autocomplete="new-password">
-        <button class="primary" id="ycGateSubmit" onclick="YoutifyChat.gateSubmit()">Join</button>
-        <button class="ghost" id="ycGateSwitch" onclick="YoutifyChat.gateSwitchMode()">Already have an account? Log in</button>
-        <div class="yc-note" id="ycGateNote"></div>
-      </div>
-    </div>
-
-    <!-- your profile -->
-    <div class="yc-view" id="ycViewMe" style="display:none">
-      <div class="yc-thread-head">
-        <button class="yc-back" onclick="YoutifyChat.tab('room')" title="Back">←</button>
-        <div class="yc-row-main">
-          <div class="yc-row-name">Your profile</div>
-          <div class="yc-row-sub" id="ycMeSub"></div>
-        </div>
-      </div>
-      <div class="yc-gate">
-        <button class="yc-pfp-pick" onclick="YoutifyChat.pickAvatar()" title="Change profile picture">
-          <span class="yc-av" id="ycMeBigAv">?</span>
-          <span class="yc-pfp-edit">Change</span>
-          <span class="yc-cam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
-        </button>
-        <input id="ycMeName" placeholder="your name" maxlength="24" autocomplete="off">
-        <div class="yc-handle-wrap">
-          <span class="at">@</span>
-          <input id="ycMeHandle" placeholder="handle" maxlength="16" autocomplete="off" spellcheck="false">
-        </div>
-        <div class="yc-handle-note" id="ycHandleNote"></div>
-        <div class="yc-bio-wrap">
-          <textarea id="ycMeBio" placeholder="write a short bio…" maxlength="160" rows="3"></textarea>
-          <span class="yc-bio-count" id="ycMeBioCount">0/160</span>
-        </div>
-        <button class="primary" onclick="YoutifyChat.saveProfile()">Save</button>
-        <button class="ghost" id="ycPreviewProfile" onclick="YoutifyChat.previewProfile()">Preview my profile</button>
-        <button class="ghost" id="ycRemovePhoto" onclick="YoutifyChat.removeAvatar()">Remove photo</button>
-        <button class="ghost" id="ycLogOut" onclick="YoutifyChat.logOut()">Log out</button>
-        <div class="yc-note" id="ycMeNote">Pictures get resized before sending, so they stay small.</div>
-        <button class="yc-toggle-row" id="ycNotifRow" onclick="YoutifyChat.toggleNotifs()">
-          <span class="yc-toggle-main">
-            <span class="yc-toggle-t">Notifications</span>
-            <span class="yc-toggle-s">Alerts you for DMs and @mentions when you're not looking at the chat. <span id="ycNotifNote"></span></span>
-          </span>
-          <span class="yc-switch" id="ycNotifSwitch"></span>
-        </button>
-        <button class="yc-toggle-row" id="ycReceiptRow" onclick="YoutifyChat.toggleReceipts()">
-          <span class="yc-toggle-main">
-            <span class="yc-toggle-t">Read receipts</span>
-            <span class="yc-toggle-s">Shows people when you've read their DM. Turning this off hides theirs from you too.</span>
-          </span>
-          <span class="yc-switch" id="ycReceiptSwitch"></span>
-        </button>
-        <button class="yc-toggle-row" id="ycShareRow" onclick="YoutifyChat.toggleShareStats()">
-          <span class="yc-toggle-main">
-            <span class="yc-toggle-t">Share my stats</span>
-            <span class="yc-toggle-s">Lets other people see your play counts, listening time and top tracks.</span>
-          </span>
-          <span class="yc-switch" id="ycShareSwitch"></span>
-        </button>
-      </div>
-    </div>
-
-    <!-- someone's profile -->
-    <div class="yc-view" id="ycViewProfile" style="display:none">
-      <div class="yc-thread-head">
-        <button class="yc-back" id="ycProfileBack" onclick="YoutifyChat.backFromProfile()" title="Back">←</button>
-        <div class="yc-row-main">
-          <div class="yc-row-name" id="ycProfileTitle">Profile</div>
-          <div class="yc-row-sub" id="ycProfileSub"></div>
-        </div>
-        <button class="yc-statbtn" id="ycProfileDm" onclick="YoutifyChat.dmFromProfile()" title="Message them">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.9-.9L3 21l2-4.9A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"></path></svg>
-        </button>
-      </div>
-      <div class="yc-scroll" id="ycProfileScroll"></div>
-    </div>
-
-    <!-- public room -->
-    <div class="yc-view" id="ycViewRoom" style="display:none">
-      <div class="yc-scroll" id="ycRoomScroll"></div>
-    </div>
-
-    <!-- announcement channel (read-only, posted from the control panel) -->
-    <div class="yc-view" id="ycViewNews" style="display:none">
-      <div class="yc-news-intro">📢 <b>Announcements</b><span>only the Youtify team can post here</span></div>
-      <div class="yc-scroll" id="ycNewsScroll"></div>
-    </div>
-
-    <!-- dm list -->
-    <div class="yc-view" id="ycViewDms" style="display:none">
-      <div class="yc-scroll" id="ycDmList"></div>
-    </div>
-
-    <!-- dm thread -->
-    <div class="yc-view" id="ycViewThread" style="display:none">
-      <div class="yc-thread-head">
-        <button class="yc-back" onclick="YoutifyChat.tab('dms')" title="Back">←</button>
-        <span class="yc-av-wrap"><span class="yc-av sm" id="ycThreadAv">?</span></span>
-        <div class="yc-row-main">
-          <div class="yc-row-name" id="ycThreadName">—</div>
-          <div class="yc-row-sub" id="ycThreadSub"></div>
-        </div>
-      </div>
-      <div class="yc-scroll" id="ycThreadScroll"></div>
-    </div>
-
-    <!-- new group -->
-    <div class="yc-view" id="ycViewNewGroup" style="display:none">
-      <div class="yc-thread-head">
-        <button class="yc-back" onclick="YoutifyChat.tab('dms')" title="Back">←</button>
-        <div class="yc-row-main">
-          <div class="yc-row-name">New group chat</div>
-          <div class="yc-row-sub">Name it and pick people</div>
-        </div>
-      </div>
-      <div class="yc-scroll" id="ycNewGroupScroll"></div>
-    </div>
-
-    <!-- group info -->
-    <div class="yc-view" id="ycViewGroup" style="display:none">
-      <div class="yc-thread-head">
-        <button class="yc-back" onclick="YoutifyChat.closeGroupInfo()" title="Back">←</button>
-        <div class="yc-row-main">
-          <div class="yc-row-name" id="ycGroupTitle">Group</div>
-          <div class="yc-row-sub" id="ycGroupSub"></div>
-        </div>
-      </div>
-      <div class="yc-scroll" id="ycGroupScroll"></div>
-    </div>
-
-    <!-- people -->
-    <div class="yc-view" id="ycViewPeople" style="display:none">
-      <div class="yc-scroll" id="ycPeopleList"></div>
-    </div>
-  </div>
-
-  <input type="file" id="ycPictureInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
-  <input type="file" id="ycAvatarInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none">
-
-  <div class="yc-uploading" id="ycUploading"><span class="yc-spinner"></span><span id="ycUploadingText">sending picture…</span></div>
-
-  <div class="yc-react-picker" id="ycReactPicker"></div>
-
-  <div class="yc-emoji-pop" id="ycEmojiPop">
-    <div class="yc-emoji-head">
-      <input id="ycEmojiSearch" placeholder="search emoji" autocomplete="off" spellcheck="false">
-      <button class="yc-emoji-close" onclick="YoutifyChat.closeEmoji()" title="Close">×</button>
-    </div>
-    <div class="yc-emoji-cats" id="ycEmojiCats"></div>
-    <div class="yc-emoji-scroll" id="ycEmojiScroll"><div class="yc-emoji-layer" id="ycEmojiLayer"></div></div>
-    <div class="yc-emoji-foot" id="ycEmojiFoot"></div>
-  </div>
-
-  <div class="yc-share-pop" id="ycSharePop"></div>
-
-  <div class="yc-mention-pop" id="ycMentionPop"></div>
-
-  <div class="yc-typing" id="ycTyping">
-    <span class="dots"><i></i><i></i><i></i></span>
-    <span class="who"></span>
-  </div>
-
-  <div class="yc-compose-chip" id="ycComposeChip" style="display:none">
-    <span class="bar"></span>
-    <span class="body">
-      <span class="lbl" id="ycChipLabel"></span>
-      <span class="txt" id="ycChipText"></span>
-    </span>
-    <button class="x" onclick="YoutifyChat.cancelCompose()" title="Cancel">×</button>
-  </div>
-
-  <div class="yc-composer" id="ycComposer" style="display:none">
-    <div class="yc-composer-inner">
-      <button class="yc-attach" id="ycEmojiBtn" onclick="YoutifyChat.toggleEmoji(event)" title="Emoji">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0"></path>
-          <line x1="9" y1="9.5" x2="9.01" y2="9.5"></line>
-          <line x1="15" y1="9.5" x2="15.01" y2="9.5"></line>
-        </svg>
-      </button>
-      <button class="yc-attach" id="ycPictureBtn" onclick="YoutifyChat.sendPicture()" title="Send a picture">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="3"></rect>
-          <circle cx="8.5" cy="8.5" r="1.6"></circle>
-          <path d="M21 15l-5-5L5 21"></path>
-        </svg>
-      </button>
-      <button class="yc-attach" id="ycShareBtn" onclick="YoutifyChat.toggleShare(event)" title="Share a song or theme">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 18V5l12-2v13"></path>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="16" r="3"></circle>
-        </svg>
-      </button>
-      <textarea id="ycInput" rows="1" placeholder="message the room…" maxlength="1000" autocorrect="off" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
-    </div>
-    <button class="yc-send" id="ycSendBtn" onclick="YoutifyChat.send()" title="Send">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 12l16-8-6 16-2.5-6.5z"></path>
-      </svg>
-    </button>
-  </div>
-
-  <div class="yc-status">
-    <span id="ycStatusLeft" class="">signing in…</span>
-    <span id="ycStatusRight"></span>
   </div>
 </div>
 

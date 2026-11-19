@@ -6042,6 +6042,7 @@ class ViewManager {
   }
 
   static returnTo(place) {
+    if (document.body.classList.contains('yc-chat-open')) window.YoutifyChat?.close();
     currentView = place;
     const main = document.getElementById('mainContent');
     main.innerHTML = ViewManager.HOME_HTML;
@@ -10634,6 +10635,7 @@ const FullLyricsPlayer = (() => {
     overlay.classList.remove('open', 'full-lyrics-toolbar-near');
     overlay.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('full-lyrics-open');
+    if (document.body.classList.contains('yc-chat-open')) window.YoutifyChat?.refreshVisible();
     $('playerImg')?.focus({ preventScroll: true });
 
     // If the normal lyrics panel is not open and the desktop embedded player
@@ -11107,6 +11109,10 @@ function handleLyricsButtonClick() {
     document.getElementById('lyricsToggleBtn')?.classList.add('active');
     PlayerEmbed.showFace('lyrics');
   } else {
+    if (document.body.classList.contains('yc-chat-open')) {
+      window.YoutifyChat.close();
+      if (document.getElementById('lyricsPanel')?.classList.contains('open')) return;
+    }
     toggleLyrics();
   }
 }
@@ -12600,7 +12606,7 @@ function listenPresence() {
     const others = Object.keys(state.people).filter((k) => k !== state.uid).length;
     const c = $("ycOnlineCount"); if (c) c.textContent = others ? String(others) : "";
     if (state.view === "people") schedule("people", renderPeople);
-    if (state.view === "dms") schedule("dms", renderThreads);
+    if (threadsAreVisible()) schedule("dms", renderThreads);
     if (state.view === "thread" && state.openThread) refreshThreadHead();
   });
 }
@@ -12608,8 +12614,8 @@ function listenPresence() {
 /* redraw whatever is currently on screen (used when profiles change) */
 function repaint() {
   refreshOwnAvatars();
+  renderThreads();
   if (state.view === "people") renderPeople();
-  else if (state.view === "dms") renderThreads();
   else if (state.view === "thread") { refreshThreadHead(); if (lastThreadMsgs) renderMessages($("ycThreadScroll"), lastThreadMsgs, "No messages yet — say hi."); }
   else if (state.view === "room" && lastRoomMsgs) renderMessages($("ycRoomScroll"), lastRoomMsgs, "No messages yet. Say something 👀");
   else if (state.view === "announce" && lastNewsMsgs) renderMessages($("ycNewsScroll"), lastNewsMsgs, "No announcements yet.");
@@ -12754,7 +12760,7 @@ function listenThreads() {
       );
     });
     recountUnread();
-    if (state.view === "dms") renderThreads();
+    renderThreads();
     if (state.view === "people") renderPeople();
   });
 }
@@ -12773,7 +12779,7 @@ function bumpRead(key, ts) {
 
 function panelIsOpen() {
   const p = $("ycPanel");
-  return !!p && p.classList.contains("open");
+  return !!p && p.classList.contains("open") && !document.body?.classList.contains("full-lyrics-open");
 }
 /* A message only counts as read if it was actually on screen: panel open,
    tab in the foreground, and the right view showing. */
@@ -14996,14 +15002,22 @@ function renderPeople() {
   }
 }
 
+const wideChat = window.matchMedia("(min-width: 861px)");
+
+function threadsAreVisible() {
+  return canSee("dms") || (wideChat.matches && canSee("thread"));
+}
+
 function renderThreads() {
-  if (!canSee("dms")) return;
+  if (!threadsAreVisible()) return;
   const box = $("ycDmList");
   if (!box) return;
-  box.innerHTML = "";
+  const previousScroll = box.scrollTop;
+  box.replaceChildren();
 
   // "new group" sits at the top of the list
-  const make = document.createElement("div");
+  const make = document.createElement("button");
+  make.type = "button";
   make.className = "yc-row";
   make.onclick = () => openNewGroup();
   const mkAv = document.createElement("span");
@@ -15012,12 +15026,12 @@ function renderThreads() {
   mkGlyph.className = "yc-av";
   mkGlyph.textContent = "+";
   mkAv.appendChild(mkGlyph);
-  const mkMain = document.createElement("div");
+  const mkMain = document.createElement("span");
   mkMain.className = "yc-row-main";
-  const mkName = document.createElement("div");
+  const mkName = document.createElement("span");
   mkName.className = "yc-row-name";
   mkName.textContent = "New group chat";
-  const mkSub = document.createElement("div");
+  const mkSub = document.createElement("span");
   mkSub.className = "yc-row-sub";
   mkSub.textContent = "Start a chat with a few people";
   mkMain.append(mkName, mkSub);
@@ -15043,8 +15057,11 @@ function renderThreads() {
     const unread = t.lastFrom !== state.uid && (t.lastTs || 0) > read;
     const nmStr = nameFor(t.uid, t.name);
 
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "yc-row";
+    row.dataset.threadName = nmStr.toLocaleLowerCase();
+    if (state.view === "thread" && state.openThread?.uid === t.uid) row.setAttribute("aria-current", "true");
     row.onclick = () => openThread(t.uid, nmStr);
 
     const avWrap = document.createElement("span");
@@ -15061,9 +15078,9 @@ function renderThreads() {
       avWrap.appendChild(ring);
     }
 
-    const main = document.createElement("div");
+    const main = document.createElement("span");
     main.className = "yc-row-main";
-    const nm = document.createElement("div");
+    const nm = document.createElement("span");
     nm.className = "yc-row-name";
     const nmText = document.createElement("span"); nmText.textContent = nmStr;
     nm.append(nmText);
@@ -15071,7 +15088,7 @@ function renderThreads() {
       const b = document.createElement("span"); b.className = "yc-badge"; b.textContent = "new";
       nm.appendChild(b);
     }
-    const sub = document.createElement("div");
+    const sub = document.createElement("span");
     sub.className = "yc-row-sub";
     const who = t.lastFrom === state.uid ? "you: " : (isGroup && t.lastName ? t.lastName + ": " : "");
     richPreview(sub, t.lastText || "");
@@ -15079,12 +15096,29 @@ function renderThreads() {
     main.append(nm, sub);
 
     const when = document.createElement("span");
-    when.style.cssText = "color:var(--text-muted);font-size:11px;flex-shrink:0";
+    when.className = "yc-row-time";
     when.textContent = shortTime(t.lastTs);
 
     row.append(avWrap, main, when);
     box.appendChild(row);
   });
+  filterThreads();
+  box.scrollTop = previousScroll;
+}
+
+function filterThreads() {
+  const box = $("ycDmList");
+  if (!box) return;
+  const query = $("ycDmSearch").value.trim().toLocaleLowerCase();
+  box.querySelector(".yc-search-empty")?.remove();
+  const rows = [...box.querySelectorAll("[data-thread-name]")];
+  for (const row of rows) row.hidden = !row.dataset.threadName.includes(query);
+  if (query && rows.length && rows.every(row => row.hidden)) {
+    const empty = document.createElement("div");
+    empty.className = "yc-empty yc-search-empty";
+    empty.textContent = "No matching conversations";
+    box.appendChild(empty);
+  }
 }
 
 /* ============================ GROUP CHATS ============================
@@ -15168,7 +15202,7 @@ function listenGroups() {
       );
     }
     recountUnread();
-    if (state.view === "dms") renderThreads();
+    renderThreads();
     if (state.openThread && state.openThread.uid === gid) refreshThreadHead();
     if (state.view === "group" && groupUi.gid === gid) renderGroupInfo();
   }, (err) => console.warn("[chat] can't read group", gid, err && err.code));
@@ -15183,7 +15217,7 @@ function listenGroups() {
       if (state.groups[gid]) groupGone(gid);
     });
     recountUnread();
-    if (state.view === "dms") renderThreads();
+    renderThreads();
   }, (err) => console.warn("[chat] group list unavailable", err && err.code));
 
   return () => {
@@ -15499,18 +15533,25 @@ function showView(v) {
   closeReactPicker();
   if (v !== "me" && v !== "profile") state.lastView = v;
   state.view = v;
+  const dms = $("ycViewDms");
+  const dmPanel = $(v === "thread" ? "ycRail" : "ycBody");
+  if (dms && dmPanel && dms.parentElement !== dmPanel) dmPanel.append(dms);
   const map = {
     gate: "ycViewGate", room: "ycViewRoom", announce: "ycViewNews", dms: "ycViewDms",
     thread: "ycViewThread", people: "ycViewPeople", me: "ycViewMe",
     profile: "ycViewProfile", group: "ycViewGroup", newgroup: "ycViewNewGroup"
   };
   Object.entries(map).forEach(([k, id]) => {
-    const el = $(id); if (el) el.style.display = k === v ? "flex" : "none";
+    const el = $(id);
+    if (el) el.style.display = k === v || (k === "dms" && v === "thread") ? "flex" : "none";
   });
 
   document.querySelectorAll(".yc-tab").forEach((t) => {
     const key = t.dataset.tab;
-    t.classList.toggle("active", key === v || (v === "thread" && key === "dms") || ((v === "group" || v === "newgroup") && key === "dms") || (v === "profile" && key === "people"));
+    const active = key === v || (key === "dms" && ["thread", "group", "newgroup"].includes(v)) || (key === "people" && v === "profile");
+    t.classList.toggle("active", active);
+    if (active) t.setAttribute("aria-current", "true");
+    else t.removeAttribute("aria-current");
   });
 
   const comp = $("ycComposer");
@@ -15529,7 +15570,11 @@ function showView(v) {
   } else if (state.typingScope) {
     listenTyping(null);
   }
-  if (v === "thread" && state.openThread) { markThreadRead(state.openThread.uid); scrollToBottom($("ycThreadScroll")); } 
+  if (v === "thread" && state.openThread && canSee("thread")) {
+    markThreadRead(state.openThread.uid);
+    scrollToBottom($("ycThreadScroll"));
+    renderThreads();
+  }
   if (v === "me") {
     refreshOwnAvatars();
     paintShareSwitch();
@@ -17542,19 +17587,52 @@ function paintBioCount() {
 }
 
 /* ---------- panel open/close ---------- */
+function sizeMobileChat() {
+  const workspace = $("ycWorkspace");
+  if (wideChat.matches || !panelIsOpen()) return;
+  const playerTop = $("player").getBoundingClientRect().top;
+  const chatTop = workspace.getBoundingClientRect().top;
+  workspace.style.setProperty("--yc-workspace-height", Math.floor(playerTop - Math.max(0, chatTop) - 8) + "px");
+}
+
+function refreshVisible() {
+  sizeMobileChat();
+  markVisibleRead();
+  if (state.view === "thread") renderThreads();
+}
+
 function open() {
+  $("ycWorkspace").hidden = false;
   $("ycPanel").classList.add("open");
+  $("ycNavButton")?.setAttribute("aria-expanded", "true");
   document.body.classList.add("yc-chat-open");
+  if (document.body.classList.contains("full-lyrics-open")) closeFullLyricsPlayer();
   if (!chatLoaded) setLoading(true, state.name ? "loading chat…" : "connecting…");
   if (!state.authUid && !configLooksFake()) showGate(defaultGateMode());
-  markVisibleRead();
-  setTimeout(() => { const i = $("ycInput"); if (i && state.name) i.focus(); scrollToBottom(state.view === "thread" ? $("ycThreadScroll") : $("ycRoomScroll")); }, 350);
+  refreshVisible();
+  const messages = state.view === "thread" ? $("ycThreadScroll") : $("ycRoomScroll");
+  scrollToBottom(messages);
+  if (wideChat.matches && state.name && $("ycComposer").style.display !== "none") {
+    $("ycInput").focus({ preventScroll: true });
+  } else {
+    $("ycWorkspaceTitle").focus({ preventScroll: true });
+  }
 }
-function close() {
+function close(restoreFocus = false) {
+  $("ycWorkspace").hidden = true;
   $("ycPanel").classList.remove("open");
+  $("ycNavButton")?.setAttribute("aria-expanded", "false");
   document.body.classList.remove("yc-chat-open");
+  closeReactPicker();
+  closeEmoji();
+  closeShare();
+  closeMentionPop();
   stopTyping();
   recountUnread();
+  if (restoreFocus) {
+    const control = wideChat.matches ? $("ycNavButton") : $("layoutMobileToolsToggle");
+    control?.focus({ preventScroll: true });
+  }
 }
 function toggle() { $("ycPanel").classList.contains("open") ? close() : open(); }
 
@@ -17791,6 +17869,7 @@ async function logOut() {
 /* ---------- wire up ---------- */
 window.YoutifyChat = {
   open, close, toggle, send,
+  refreshVisible,
   gateSubmit, gateSwitchMode, logOut,
   keysChanged,
   openNewGroup, createGroup, openGroupInfo, closeGroupInfo, deleteGroup, leaveGroup,
@@ -17991,7 +18070,15 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.value = "";
   });
 
-  // drag & drop a picture onto the panel
+  $("ycDmSearch")?.addEventListener("input", filterThreads);
+  wideChat.addEventListener("change", renderThreads);
+  window.addEventListener("resize", sizeMobileChat);
+  if (typeof ResizeObserver !== "undefined") {
+    const player = $("player");
+    if (player) new ResizeObserver(sizeMobileChat).observe(player);
+  }
+
+  // Drag & drop a picture onto the panel.
   const panel = $("ycPanel");
   if (panel) {
     panel.addEventListener("click", (e) => {
