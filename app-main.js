@@ -2947,8 +2947,12 @@ isPlaying2 = false;
     if (fill) fill.style.width = (isMuted ? 0 : currentVolume * 100) + '%';
     const btn = document.getElementById('volumebutton');
     if (btn) { btn.title = isMuted ? 'Unmute' : 'Mute'; btn.setAttribute('aria-label', btn.title); btn.setAttribute('aria-pressed', String(isMuted)); btn.classList.toggle('is-muted', isMuted); }
-    const slider = document.querySelector('.volume-slider');
-    if (slider) { slider.setAttribute('aria-valuenow', String(Math.round(currentVolume * 100))); slider.setAttribute('aria-valuetext', `${Math.round(currentVolume * 100)} percent`); }
+    const slider = document.querySelector('#player .player-right .volume-slider');
+    if (slider) {
+      slider.style.setProperty('--slider-progress', (isMuted ? 0 : currentVolume * 100) + '%');
+      slider.setAttribute('aria-valuenow', String(Math.round(currentVolume * 100)));
+      slider.setAttribute('aria-valuetext', `${Math.round(currentVolume * 100)} percent`);
+    }
     const fullscreenVolume = document.getElementById('fullLyricsVolume');
     if (fullscreenVolume) {
       fullscreenVolume.value = String(Math.round(currentVolume * 100));
@@ -2968,6 +2972,15 @@ isPlaying2 = false;
     const duration = document.getElementById('duration');
     const percent = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.max(0, Math.min(100, audio.currentTime / audio.duration * 100)) : 0;
     if (fill) fill.style.width = percent + '%';
+    const progressSlider = document.getElementById('progressBar');
+    if (progressSlider) {
+      const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+      const currentSeconds = Number.isFinite(audio.currentTime) ? Math.max(0, Math.min(durationSeconds, audio.currentTime)) : 0;
+      progressSlider.style.setProperty('--slider-progress', percent + '%');
+      progressSlider.setAttribute('aria-valuemax', String(Math.round(durationSeconds)));
+      progressSlider.setAttribute('aria-valuenow', String(Math.round(currentSeconds)));
+      progressSlider.setAttribute('aria-valuetext', `${Utils.formatTime(currentSeconds)} of ${Utils.formatTime(durationSeconds)}`);
+    }
     if (current)  current.textContent  = Utils.formatTime(audio.currentTime);
     if (duration) duration.textContent = Utils.formatTime(audio.duration);
     if (lyricsManager?.isOpen) lyricsManager.handleTimeUpdate();
@@ -3234,6 +3247,95 @@ const setVolume     = (e) => PlayerController.setVolume(e);
 const toggleMute    = () => PlayerController.toggleMute();
 const toggleShuffle = () => PlayerController.toggleShuffle();
 const toggleRepeat  = () => PlayerController.toggleRepeat();
+
+
+/* Drag and keyboard behavior for the embedded player progress/volume tracks.
+   The visible bars remain the same DOM nodes for Big Lyrics View Transitions. */
+(function installPlayerTrackSliders() {
+  const selector = '#player #progressBar, #player .player-right .volume-slider';
+  let activePointer = null;
+  const sliderFrom = target => target?.closest?.(selector) || null;
+  const isSeek = node => node.id === 'progressBar';
+
+  function setFromClientX(node, x) {
+    const rect = node.getBoundingClientRect();
+    if (!(rect.width > 0)) return;
+    const fraction = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    if (isSeek(node)) {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+      PlayerController.seekSeconds(fraction * audio.duration);
+      PlayerController.updateProgressBar();
+      FullLyricsPlayer?.syncPlayback?.();
+    } else {
+      PlayerController.applyVolume(fraction);
+    }
+  }
+
+  document.addEventListener('pointerdown', event => {
+    const slider = sliderFrom(event.target);
+    if (!slider || event.isPrimary === false ||
+        (event.pointerType === 'mouse' && event.button !== 0)) return;
+    event.preventDefault();
+    slider.focus?.({ preventScroll: true });
+    activePointer = { id: event.pointerId, slider };
+    slider.classList.add('is-dragging');
+    try { slider.setPointerCapture?.(event.pointerId); } catch {}
+    setFromClientX(slider, event.clientX);
+  });
+  document.addEventListener('pointermove', event => {
+    if (!activePointer || activePointer.id !== event.pointerId) return;
+    event.preventDefault();
+    setFromClientX(activePointer.slider, event.clientX);
+  });
+  function release(event, commit) {
+    if (!activePointer || activePointer.id !== event.pointerId) return;
+    const slider = activePointer.slider;
+    activePointer = null;
+    if (commit) setFromClientX(slider, event.clientX);
+    slider.classList.remove('is-dragging');
+    try { slider.releasePointerCapture?.(event.pointerId); } catch {}
+  }
+  document.addEventListener('pointerup', event => release(event, true));
+  document.addEventListener('pointercancel', event => release(event, false));
+  document.addEventListener('lostpointercapture', event => {
+    if (activePointer?.slider === event.target) {
+      activePointer.slider.classList.remove('is-dragging');
+      activePointer = null;
+    }
+  }, true);
+
+  // Keep mouse clicks available for browsers without Pointer Events.
+  if (typeof PointerEvent === 'undefined') {
+    document.addEventListener('click', event => {
+      const slider = sliderFrom(event.target);
+      if (slider) setFromClientX(slider, event.clientX);
+    });
+  }
+  document.addEventListener('keydown', event => {
+    const slider = sliderFrom(event.target);
+    if (!slider) return;
+    const key = event.key;
+    const delta = (key === 'ArrowRight' || key === 'ArrowUp' || key === 'PageUp') ? 1 :
+      (key === 'ArrowLeft' || key === 'ArrowDown' || key === 'PageDown') ? -1 : 0;
+    if (!delta && key !== 'Home' && key !== 'End') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (isSeek(slider)) {
+      const duration = Number(audio.duration);
+      if (!Number.isFinite(duration) || duration <= 0) return;
+      const step = key.startsWith('Page') || event.shiftKey ? 10 : 5;
+      const next = key === 'Home' ? 0 : key === 'End' ? duration :
+        Number(audio.currentTime || 0) + delta * step;
+      PlayerController.seekSeconds(next);
+      PlayerController.updateProgressBar();
+      FullLyricsPlayer?.syncPlayback?.();
+    } else {
+      const step = key.startsWith('Page') || event.shiftKey ? .1 : .05;
+      const next = key === 'Home' ? 0 : key === 'End' ? 1 : currentVolume + delta * step;
+      PlayerController.applyVolume(next);
+    }
+  }, true);
+})();
 
 function updatePlayPauseButton() { PlayerController.updatePlayPauseBtn(); }
 function updateVolumeUI()        { PlayerController.updateVolumeUI(); }
