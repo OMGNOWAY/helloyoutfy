@@ -1,6 +1,13 @@
 /* ===================== changelog.js ===================== */
-var version = "1.5";
+var version = "2";
 const CHANGELOG_DATA = {
+  "Release 2": [
+    `Redesigned THE WHOLE APP 👀`,
+    `The app should be less laggy now..! (<(you can always turn on performance mode if its laggy)>)`,
+    `Added settings page to the big lyrics`,
+    `Fixed the volume and song progress sliders (<(so they actually slide now)>)`
+    `Thats it! (<(keep in mind that this new ui is still in beta, so if you want to go back to the old one you can.)>)`
+  ],
   "Release 1.5": [
     `Redesigned the big lyrics view with an updated layout and visuals`
   ],
