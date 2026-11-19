@@ -10736,6 +10736,10 @@ const BigLyricsMorph = (() => {
     $('miniLyricsExpandToggle')?.setAttribute('aria-checked', String(enabled));
   }
 
+  // A suspended tab or mid-animation resize must never leave either view hidden.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) clear(); });
+  window.addEventListener('resize', () => { if (active) clear(); });
+
   document.addEventListener('DOMContentLoaded', () => {
     const button = $('miniLyricsExpandToggle');
     if (!button) return;
