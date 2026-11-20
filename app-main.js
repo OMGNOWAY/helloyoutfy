@@ -18475,3 +18475,48 @@ class WinterSnakeGame {
     PlayerController.updateVolumeUI();
 })();
 
+
+// Load Sidecar on demand from the same deployment as the signed-in app script.
+(function bindSidecar() {
+  const buttons = document.querySelectorAll('[data-open-sidecar]');
+  if (!buttons.length) return;
+  const appScript = new URL(document.currentScript?.src || window.YOUTIFY_GATE?.appJs || location.href);
+  const asset = new URL('sidecar.js', appScript);
+  asset.search = appScript.search;
+  let loading;
+
+  function loadSidecar() {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      const timeout = setTimeout(fail, 15000);
+      function fail() {
+        clearTimeout(timeout);
+        script.remove();
+        reject(new Error('Sidecar could not load'));
+      }
+      script.src = asset.href;
+      script.onload = () => {
+        clearTimeout(timeout);
+        if (window.YoutifySidecar) resolve(window.YoutifySidecar);
+        else fail();
+      };
+      script.onerror = fail;
+      document.head.append(script);
+    });
+  }
+
+  for (const button of buttons) {
+    button.addEventListener('click', async () => {
+      const mobileTools = button.closest('#layoutMobileTools');
+      const trigger = mobileTools ? document.getElementById('layoutMobileToolsToggle') : button;
+      mobileTools?.hidePopover();
+      try {
+        const sidecar = window.YoutifySidecar || await (loading ??= loadSidecar());
+        sidecar.open(trigger);
+      } catch {
+        loading = null;
+        toast('Could not open Sidecar. Try again.');
+      }
+    });
+  }
+})();
